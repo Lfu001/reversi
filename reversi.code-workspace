@@ -2,7 +2,14 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "app"
 		}
 	],
-	"settings": {}
+	"settings": {
+		"conventionalCommits.scopes": [
+			"app"
+		]
+	}
 }
