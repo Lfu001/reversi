@@ -1,6 +1,7 @@
-use super::state::{DiskColor, Position, Table};
+use super::state::{Board, DiskColor, Position, Table};
 use crate::position;
 use num_traits::FromPrimitive;
+use std::cmp::Ordering;
 
 /// A configuration of the put action.
 #[derive(Clone)]
@@ -47,7 +48,8 @@ impl Action {
         // Update the board
         match self {
             Action::PutDisk(config) => {
-                let flip_positions = get_flip_positions(table, &config.position);
+                let flip_positions =
+                    get_flip_positions(table.board(), table.turn(), &config.position);
                 let board = table.board_mut();
                 board.set_disk(config.position, *config.color());
                 for position in flip_positions {
@@ -86,7 +88,7 @@ impl Action {
                     return false;
                 }
                 // Check whether the disk can be put.
-                if get_flip_positions(table, &config.position()).len() == 0 {
+                if get_flip_positions(table.board(), table.turn(), &config.position()).len() == 0 {
                     return false;
                 }
 
@@ -98,7 +100,7 @@ impl Action {
                     return false;
                 }
                 // Check whether the disk cannot be put.
-                if get_puttable_positions(table).len() > 0 {
+                if get_puttable_positions(table.board(), table.turn()).len() > 0 {
                     return false;
                 }
 
@@ -112,24 +114,24 @@ impl Action {
 ///
 /// # Arguments
 ///
-/// * `table` - A table of the game.
+/// * `board` - A board of the game.
+/// * `turn` - A current turn color.
 ///
 /// # Returns
 ///
 /// A list of positions that can be put.
-fn get_puttable_positions(table: &Table) -> Vec<Position> {
+fn get_puttable_positions(board: &Board, turn: &DiskColor) -> Vec<Position> {
     let mut positions = vec![];
-    let turn = table.turn();
     for row in 0..8 {
         for column in 0..8 {
             let position = position!(
                 FromPrimitive::from_i8(row).unwrap(),
                 FromPrimitive::from_i8(column).unwrap()
             );
-            if table.board().get_disk(&position).is_some() {
+            if board.get_disk(&position).is_some() {
                 continue;
             }
-            if get_flip_positions(table, &position).len() > 0 {
+            if get_flip_positions(board, turn, &position).len() > 0 {
                 positions.push(position);
             };
         }
@@ -141,20 +143,20 @@ fn get_puttable_positions(table: &Table) -> Vec<Position> {
 ///
 /// # Arguments
 ///
-/// * `table` - A table of the game.
+/// * `board` - A board of the game.
+/// * `turn` - A current turn color.
 /// * `position` - A position to put the disk.
 ///
 /// # Returns
 ///
 /// A list of positions that can be flipped.
-fn get_flip_positions(table: &Table, position: &Position) -> Vec<Position> {
-    if table.board().get_disk(position).is_some() {
+fn get_flip_positions(board: &Board, turn: &DiskColor, position: &Position) -> Vec<Position> {
+    if board.get_disk(position).is_some() {
         return vec![];
     }
 
     let mut positions = vec![];
-    let rays = table.board().get_rays(&position);
-    let turn = table.turn();
+    let rays = board.get_rays(&position);
     for ray in rays {
         let mut local_positions = vec![];
         for (square, pos) in ray {
@@ -174,6 +176,60 @@ fn get_flip_positions(table: &Table, position: &Position) -> Vec<Position> {
     positions
 }
 
+/// Check if the game is over.
+///
+/// # Arguments
+///
+/// * `table` - A table of the game.
+///     
+/// # Returns
+///
+/// `true` if the game is over, otherwise `false`.
+fn is_game_over(table: &Table) -> bool {
+    // Nobody can put a disk
+    [DiskColor::Dark, DiskColor::Light]
+        .iter()
+        .all(|color| get_puttable_positions(table.board(), color).len() == 0)
+}
+
+/// Judge the winner of the game. Assumes that the game is over.
+///
+/// # Arguments
+///
+/// * `table` - A table of the game.
+///
+/// # Returns
+///
+/// * If dark wins: `Some(DiskColor::Dark)`
+/// * If light wins: `Some(DiskColor::Light)`
+/// * If draw: `None`
+///
+/// # Panics
+///
+/// Panics if the game is not over.
+fn judge(table: &Table) -> Option<DiskColor> {
+    debug_assert!(is_game_over(table));
+
+    let (dark_count, light_count) =
+        table
+            .board()
+            .raw_board()
+            .iter()
+            .fold((0, 0), |(acc_dark, acc_light), disk| match disk {
+                Some(color) => match color {
+                    DiskColor::Dark => (acc_dark + 1, acc_light),
+                    DiskColor::Light => (acc_dark, acc_light + 1),
+                },
+                None => (acc_dark, acc_light),
+            });
+
+    match dark_count.cmp(&light_count) {
+        Ordering::Less => Some(DiskColor::Light),
+        Ordering::Equal => None,
+        Ordering::Greater => Some(DiskColor::Dark),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,7 +240,7 @@ mod tests {
         // Check 1
         let mut table = Table::new();
         // Dark turn
-        let puttable = get_puttable_positions(&table);
+        let puttable = get_puttable_positions(table.board(), table.turn());
         assert_eq!(
             puttable,
             vec![
@@ -204,7 +260,7 @@ mod tests {
             .board_mut()
             .set_disk(position!(Row::Six, Column::F), DiskColor::Light);
         // Dark turn
-        let puttable = get_puttable_positions(&table);
+        let puttable = get_puttable_positions(table.board(), table.turn());
         assert_eq!(
             puttable,
             vec![
@@ -221,7 +277,11 @@ mod tests {
         // Check 1
         let mut table = Table::new();
         // Dark turn
-        let flip = get_flip_positions(&table, &position!(Row::Four, Column::B));
+        let flip = get_flip_positions(
+            table.board(),
+            table.turn(),
+            &position!(Row::Four, Column::B),
+        );
         assert_eq!(flip, vec![]);
 
         // Check 2
@@ -240,7 +300,11 @@ mod tests {
             .set_disk(position!(Row::Six, Column::E), DiskColor::Dark);
         // Light turn
         table.set_turn(DiskColor::Light);
-        let flip = get_flip_positions(&table, &position!(Row::Four, Column::F));
+        let flip = get_flip_positions(
+            table.board(),
+            table.turn(),
+            &position!(Row::Four, Column::F),
+        );
         assert_eq!(
             flip,
             vec![
@@ -503,6 +567,141 @@ mod tests {
             expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Light);
             assert_eq!(board.raw_board(), expected_board.raw_board());
             assert_eq!(table.turn(), &DiskColor::Dark);
+        }
+    }
+
+    #[test]
+    fn test_is_game_over() {
+        // Initial state
+        {
+            let table = Table::new();
+            assert_eq!(is_game_over(&table), false);
+        }
+
+        // Continuable game
+        {
+            let mut table = Table::new();
+            let board = table.board_mut();
+            board.set_disk(position!(Row::Four, Column::C), DiskColor::Dark);
+            board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
+            table.set_turn(DiskColor::Light);
+            assert_eq!(is_game_over(&table), false);
+        }
+
+        // No more empty square
+        {
+            let mut table = Table::new();
+            let board = table.board_mut();
+            for row in 0..8 {
+                for column in 0..8 {
+                    board.set_disk(
+                        position!(
+                            FromPrimitive::from_i8(row).unwrap(),
+                            FromPrimitive::from_i8(column).unwrap()
+                        ),
+                        DiskColor::Dark,
+                    );
+                }
+            }
+            table.set_turn(DiskColor::Light);
+            assert_eq!(is_game_over(&table), true);
+        }
+
+        // There are empty squares but nobody can put
+        {
+            let mut table = Table::new();
+            let board = table.board_mut();
+            board.set_disk(position!(Row::Two, Column::D), DiskColor::Dark);
+            board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
+            board.set_disk(position!(Row::Three, Column::D), DiskColor::Dark);
+            board.set_disk(position!(Row::Three, Column::E), DiskColor::Dark);
+            board.set_disk(position!(Row::Four, Column::B), DiskColor::Dark);
+            board.set_disk(position!(Row::Four, Column::C), DiskColor::Dark);
+            board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
+            board.set_disk(position!(Row::Four, Column::E), DiskColor::Dark);
+            board.set_disk(position!(Row::Four, Column::F), DiskColor::Dark);
+            board.set_disk(position!(Row::Five, Column::C), DiskColor::Dark);
+            board.set_disk(position!(Row::Five, Column::D), DiskColor::Dark);
+            board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
+            board.set_disk(position!(Row::Six, Column::D), DiskColor::Dark);
+            table.set_turn(DiskColor::Light);
+            assert_eq!(is_game_over(&table), true);
+        }
+    }
+
+    #[test]
+    fn test_judge() {
+        // Dark wins
+        {
+            let mut table = Table::new();
+            let board = table.board_mut();
+            board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
+            board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
+            board.set_disk(position!(Row::Four, Column::E), DiskColor::Dark);
+            board.set_disk(position!(Row::Four, Column::F), DiskColor::Dark);
+            board.set_disk(position!(Row::Four, Column::G), DiskColor::Dark);
+            board.set_disk(position!(Row::Five, Column::D), DiskColor::Dark);
+            board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
+            board.set_disk(position!(Row::Five, Column::F), DiskColor::Dark);
+            board.set_disk(position!(Row::Five, Column::G), DiskColor::Dark);
+            board.set_disk(position!(Row::Five, Column::H), DiskColor::Dark);
+            board.set_disk(position!(Row::Six, Column::E), DiskColor::Dark);
+            board.set_disk(position!(Row::Six, Column::G), DiskColor::Dark);
+            board.set_disk(position!(Row::Seven, Column::F), DiskColor::Dark);
+            board.set_disk(position!(Row::Eight, Column::E), DiskColor::Light);
+            board.set_disk(position!(Row::Eight, Column::G), DiskColor::Dark);
+            table.set_turn(DiskColor::Light);
+
+            assert_eq!(judge(&table).unwrap(), DiskColor::Dark);
+        }
+
+        // Light wins
+        {
+            let mut table = Table::new();
+            for row in 0..8 {
+                for column in 0..8 {
+                    table.board_mut().set_disk(
+                        position!(Row::from_u8(row).unwrap(), Column::from_u8(column).unwrap()),
+                        DiskColor::Light,
+                    );
+                }
+            }
+            table.set_turn(DiskColor::Dark);
+
+            assert_eq!(judge(&table).unwrap(), DiskColor::Light);
+        }
+
+        // Draw
+        {
+            let mut table = Table::new();
+            let board = table.board_mut();
+            board.set_disk(position!(Row::One, Column::A), DiskColor::Dark);
+            board.set_disk(position!(Row::One, Column::F), DiskColor::Light);
+            board.set_disk(position!(Row::Two, Column::B), DiskColor::Dark);
+            board.set_disk(position!(Row::Two, Column::F), DiskColor::Light);
+            board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
+            board.set_disk(position!(Row::Three, Column::E), DiskColor::Light);
+            board.set_disk(position!(Row::Three, Column::F), DiskColor::Light);
+            board.set_disk(position!(Row::Three, Column::G), DiskColor::Light);
+            board.set_disk(position!(Row::Four, Column::D), DiskColor::Light);
+            board.set_disk(position!(Row::Four, Column::E), DiskColor::Light);
+            board.set_disk(position!(Row::Four, Column::F), DiskColor::Light);
+            board.set_disk(position!(Row::Five, Column::C), DiskColor::Light);
+            board.set_disk(position!(Row::Five, Column::D), DiskColor::Light);
+            board.set_disk(position!(Row::Five, Column::E), DiskColor::Light);
+            board.set_disk(position!(Row::Five, Column::F), DiskColor::Light);
+            board.set_disk(position!(Row::Six, Column::F), DiskColor::Dark);
+            board.set_disk(position!(Row::Six, Column::H), DiskColor::Dark);
+            board.set_disk(position!(Row::Seven, Column::D), DiskColor::Dark);
+            board.set_disk(position!(Row::Seven, Column::E), DiskColor::Dark);
+            board.set_disk(position!(Row::Seven, Column::F), DiskColor::Dark);
+            board.set_disk(position!(Row::Seven, Column::G), DiskColor::Dark);
+            board.set_disk(position!(Row::Seven, Column::H), DiskColor::Dark);
+            board.set_disk(position!(Row::Eight, Column::F), DiskColor::Dark);
+            board.set_disk(position!(Row::Eight, Column::H), DiskColor::Dark);
+            table.set_turn(DiskColor::Dark);
+
+            assert_eq!(judge(&table), None);
         }
     }
 }

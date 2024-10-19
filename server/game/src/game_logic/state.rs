@@ -209,6 +209,11 @@ impl Table {
     pub fn history_mut(&mut self) -> &mut Vec<Action> {
         &mut self.history
     }
+
+    /// Returns a read-only reference to the history.
+    pub fn history(&self) -> &Vec<Action> {
+        &self.history
+    }
 }
 
 #[cfg(test)]
