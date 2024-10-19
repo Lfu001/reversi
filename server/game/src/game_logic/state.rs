@@ -1,7 +1,6 @@
+use super::action::Action;
 use crate::position;
 use num_traits::FromPrimitive;
-
-use super::action::Action;
 
 /// A color of the disk.
 #[derive(Copy, Clone, PartialEq, Debug)]
@@ -19,6 +18,49 @@ impl DiskColor {
             DiskColor::Light => DiskColor::Dark,
             DiskColor::Dark => DiskColor::Light,
         }
+    }
+}
+
+/// A judge of the game.
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub enum Winner {
+    /// A winner.
+    Win(DiskColor),
+    /// Draw result.
+    Draw,
+}
+
+/// A result of the game.
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct JudgeResult {
+    dark_count: u8,
+    light_count: u8,
+    winner: Winner,
+}
+
+impl JudgeResult {
+    /// Initializes a judge result.
+    pub fn new(dark_count: u8, light_count: u8, winner: Winner) -> Self {
+        Self {
+            dark_count,
+            light_count,
+            winner,
+        }
+    }
+
+    /// Returns the read-only reference to the number of dark disks.
+    pub fn dark_count(&self) -> u8 {
+        self.dark_count
+    }
+
+    /// Returns the read-only reference to the number of light disks.
+    pub fn light_count(&self) -> u8 {
+        self.light_count
+    }
+
+    /// Returns the read-only reference to the winner of the game.
+    pub fn winner(&self) -> Winner {
+        self.winner
     }
 }
 
