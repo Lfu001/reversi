@@ -4,7 +4,7 @@ use num_traits::FromPrimitive;
 
 /// A configuration of the put action.
 #[derive(Clone)]
-struct PutConfig {
+pub struct PutConfig {
     /// A color of the disk.
     color: DiskColor,
     /// A position of the square in the board.
