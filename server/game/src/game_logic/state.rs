@@ -50,17 +50,8 @@ impl JudgeResult {
         }
     }
 
-    /// Returns the read-only reference to the number of dark disks.
-    pub fn dark_count(&self) -> u8 {
-        self.dark_count
-    }
-
-    /// Returns the read-only reference to the number of light disks.
-    pub fn light_count(&self) -> u8 {
-        self.light_count
-    }
-
     /// Returns the read-only reference to the winner of the game.
+    #[cfg(test)]
     pub fn winner(&self) -> Winner {
         self.winner
     }
@@ -111,6 +102,7 @@ impl Position {
     /// # Arguments
     ///
     /// * `index` - A 1D index of the board.
+    #[cfg(test)]
     fn from_index(index: usize) -> Self {
         Position {
             row: FromPrimitive::from_usize(index / 8).unwrap(),
@@ -256,11 +248,6 @@ impl Table {
     /// Returns a writable reference to the history.
     pub fn history_mut(&mut self) -> &mut Vec<Action> {
         &mut self.history
-    }
-
-    /// Returns a read-only reference to the history.
-    pub fn history(&self) -> &Vec<Action> {
-        &self.history
     }
 }
 
