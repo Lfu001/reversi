@@ -1,9 +1,11 @@
 use super::action::Action;
 use crate::position;
 use num_traits::FromPrimitive;
+use serde::{Deserialize, Serialize};
+use serde_big_array::BigArray;
 
 /// A color of the disk.
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum DiskColor {
     /// A light side of the disk.
     Light,
@@ -22,7 +24,7 @@ impl DiskColor {
 }
 
 /// A judge of the game.
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Winner {
     /// A winner.
     Win(DiskColor),
@@ -31,7 +33,7 @@ pub enum Winner {
 }
 
 /// A result of the game.
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct JudgeResult {
     dark_count: u8,
     light_count: u8,
@@ -64,7 +66,7 @@ impl JudgeResult {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, FromPrimitive)]
+#[derive(Copy, Clone, PartialEq, Debug, FromPrimitive, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Row {
     One,
@@ -77,7 +79,7 @@ pub enum Row {
     Eight,
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, FromPrimitive)]
+#[derive(Copy, Clone, PartialEq, Debug, FromPrimitive, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Column {
     A,
@@ -91,7 +93,7 @@ pub enum Column {
 }
 
 /// A position of the square in the board.
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct Position {
     /// A row of the board.
     row: Row,
@@ -146,8 +148,10 @@ const DIRECTIONS: [(i8, i8); 8] = [
 ];
 
 /// A board of Reversi.
+#[derive(Serialize, Deserialize)]
 pub struct Board {
     /// An 1D expression of the board.
+    #[serde(with = "BigArray")]
     board: [Option<DiskColor>; 64],
 }
 
@@ -208,8 +212,10 @@ impl Board {
 }
 
 /// A state of a game table.
+#[derive(Serialize, Deserialize)]
 pub struct Table {
     /// A board of Reversi.
+    #[serde(flatten)]
     board: Board,
     /// A color of the next turn.
     turn: DiskColor,

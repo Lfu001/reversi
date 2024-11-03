@@ -1,9 +1,10 @@
 use super::state::{Board, DiskColor, Position, Table};
 use crate::position;
 use num_traits::FromPrimitive;
+use serde::{Deserialize, Serialize};
 
 /// A configuration of the put action.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PutConfig {
     /// A color of the disk.
     color: DiskColor,
@@ -12,6 +13,17 @@ pub struct PutConfig {
 }
 
 impl PutConfig {
+    /// Creates a new put config.
+    ///     
+    /// # Arguments
+    ///
+    /// * `color` - A color of the disk.
+    /// * `position` - A position of the square in the board.
+    #[cfg(test)]
+    pub fn new(color: DiskColor, position: Position) -> Self {
+        Self { color, position }
+    }
+
     /// Returns a read-only reference to the color of the disk.
     pub fn color(&self) -> &DiskColor {
         &self.color
@@ -24,7 +36,7 @@ impl PutConfig {
 }
 
 /// Reversi actions.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum Action {
     /// Put a disk to the square.
     PutDisk(PutConfig),
@@ -39,11 +51,13 @@ impl Action {
     ///
     /// * `table` - A table of the game.
     ///
-    /// # Panics
+    /// # Returns
     ///
-    /// Panics if the action cannot be executed.
-    pub fn execute(&self, table: &mut Table) {
-        debug_assert!(self.check_inputs(&table));
+    /// `Ok(())` if the action is executed successfully, `Err(())` if the action is invalid.
+    pub fn execute(&self, table: &mut Table) -> Result<(), ()> {
+        if !self.check_inputs(&table) {
+            return Err(());
+        }
         // Update the board
         match self {
             Action::PutDisk(config) => {
@@ -64,6 +78,8 @@ impl Action {
 
         // Update the turn
         table.set_turn(table.turn().opposite());
+
+        Ok(())
     }
 
     /// Checks if the action can be executed.
@@ -382,7 +398,7 @@ mod tests {
                 color: DiskColor::Dark,
                 position: position!(Row::Four, Column::C),
             });
-            action.execute(&mut table);
+            action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Four, Column::C), DiskColor::Dark);
             expected_board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
@@ -396,7 +412,7 @@ mod tests {
                 color: DiskColor::Light,
                 position: position!(Row::Three, Column::C),
             });
-            action.execute(&mut table);
+            action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Light);
             expected_board.set_disk(position!(Row::Four, Column::D), DiskColor::Light);
@@ -410,7 +426,7 @@ mod tests {
                 color: DiskColor::Dark,
                 position: position!(Row::Two, Column::C),
             });
-            action.execute(&mut table);
+            action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Two, Column::C), DiskColor::Dark);
             expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
@@ -424,7 +440,7 @@ mod tests {
                 color: DiskColor::Light,
                 position: position!(Row::Two, Column::B),
             });
-            action.execute(&mut table);
+            action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Two, Column::B), DiskColor::Light);
             expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Light);
@@ -438,7 +454,7 @@ mod tests {
                 color: DiskColor::Dark,
                 position: position!(Row::Six, Column::E),
             });
-            action.execute(&mut table);
+            action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Six, Column::E), DiskColor::Dark);
             expected_board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
@@ -452,7 +468,7 @@ mod tests {
                 color: DiskColor::Light,
                 position: position!(Row::One, Column::C),
             });
-            action.execute(&mut table);
+            action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::One, Column::C), DiskColor::Light);
             expected_board.set_disk(position!(Row::Two, Column::C), DiskColor::Light);
@@ -466,7 +482,7 @@ mod tests {
                 color: DiskColor::Dark,
                 position: position!(Row::One, Column::A),
             });
-            action.execute(&mut table);
+            action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::One, Column::A), DiskColor::Dark);
             expected_board.set_disk(position!(Row::Two, Column::B), DiskColor::Dark);
@@ -482,7 +498,7 @@ mod tests {
                 color: DiskColor::Light,
                 position: position!(Row::Three, Column::A),
             });
-            action.execute(&mut table);
+            action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Three, Column::A), DiskColor::Light);
             expected_board.set_disk(position!(Row::Two, Column::B), DiskColor::Light);
@@ -493,7 +509,7 @@ mod tests {
         // Dark pass
         {
             let action = Action::PassTurn(DiskColor::Dark);
-            action.execute(&mut table);
+            action.execute(&mut table).unwrap();
             let board = table.board();
             assert_eq!(board.raw_board(), expected_board.raw_board());
             assert_eq!(table.turn(), &DiskColor::Light);
@@ -505,7 +521,7 @@ mod tests {
                 color: DiskColor::Light,
                 position: position!(Row::Five, Column::C),
             });
-            action.execute(&mut table);
+            action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Five, Column::C), DiskColor::Light);
             expected_board.set_disk(position!(Row::Four, Column::C), DiskColor::Light);
