@@ -2,11 +2,18 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "server/game"
 		}
 	],
 	"settings": {
 		"conventionalCommits.scopes": [
+			"game",
 			"ml"
+		],
+		"cSpell.words": [
+			"Reversi"
 		]
 	}
 }
