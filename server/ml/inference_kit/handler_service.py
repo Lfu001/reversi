@@ -1,7 +1,6 @@
 import importlib
 
-from api_model import PredictionOutput, TableState
-
+from .api_model import PredictionOutput, TableState
 from .base_inference_handler import BaseInferenceHandler
 
 USER_MODULE = "inference"
