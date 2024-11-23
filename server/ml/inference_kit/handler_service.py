@@ -3,7 +3,7 @@ import importlib
 from .api_model import PredictionOutput, TableState
 from .base_inference_handler import BaseInferenceHandler
 
-USER_MODULE = "inference"
+USER_MODULE = ".inference"
 USER_HANDLER = "InferenceHandler"
 
 
@@ -13,8 +13,9 @@ class HandlerService:
     """
 
     def __init__(self):
-        inference_handler = importlib.import_module(USER_MODULE)
-        handler_cls = getattr(inference_handler, USER_HANDLER)
+        root_module = __name__.split(".")[0]
+        inference_module = importlib.import_module(USER_MODULE, root_module)
+        handler_cls = getattr(inference_module, USER_HANDLER)
         if not issubclass(handler_cls, BaseInferenceHandler):
             raise TypeError(
                 f"{USER_HANDLER} must be a subclass of BaseInferenceHandler."
