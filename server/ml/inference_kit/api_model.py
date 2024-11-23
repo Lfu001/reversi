@@ -1,5 +1,3 @@
-from typing import List
-
 from pydantic import BaseModel, Field
 
 
@@ -8,14 +6,14 @@ class TableState(BaseModel):
     Current state of the game table
 
     Parameters:
-        board (List[int]): The current state of the board
+        board (list[int]): The current state of the board
         turn (int): The current player
-        puttable_positions (List[int]): The positions that the current player can put
+        puttable_positions (list[int]): The positions that the current player can put
     """
 
-    board: List[int]
+    board: list[int]
     turn: int
-    puttable_positions: List[int]
+    puttable_positions: list[int]
 
 
 class PredictionOutput(BaseModel):
