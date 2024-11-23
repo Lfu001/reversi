@@ -14,12 +14,12 @@ class HandlerService:
 
     def __init__(self):
         inference_handler = importlib.import_module(USER_MODULE)
-        handler = getattr(inference_handler, USER_HANDLER)
-        if not issubclass(handler, BaseInferenceHandler):
+        handler_cls = getattr(inference_handler, USER_HANDLER)
+        if not issubclass(handler_cls, BaseInferenceHandler):
             raise TypeError(
                 f"{USER_HANDLER} must be a subclass of BaseInferenceHandler."
             )
-        self.handler: BaseInferenceHandler = handler
+        self.handler = handler_cls()
         self.model = self.handler.load_model()
 
     def transform(self, table_state: TableState) -> PredictionOutput:
