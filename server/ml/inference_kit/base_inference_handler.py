@@ -1,14 +1,19 @@
+from abc import ABCMeta, abstractmethod
+from collections.abc import Callable
+from typing import Any
+
 from .api_model import PredictionOutput, TableState
 
 
-class BaseInferenceHandler:
+class BaseInferenceHandler(metaclass=ABCMeta):
     """
     Base class for handling inference-related operations. This class defines
     the necessary methods that any subclass should implement to perform
     inference tasks.
     """
 
-    def load_model(self):
+    @abstractmethod
+    def load_model(self) -> Callable[..., Any]:
         """
         Loads the machine learning model required for inference.
         Subclasses should implement the model loading logic.
@@ -16,9 +21,10 @@ class BaseInferenceHandler:
         Returns:
             The loaded model object.
         """
-        raise NotImplementedError("Please implement load_model()")
+        ...
 
-    def prepare_input(self, table_state: TableState):
+    @abstractmethod
+    def prepare_input(self, table_state: TableState) -> Any:
         """
         Prepares and processes the input data from the given board state
         for the inference model. Subclasses should implement the input preparation logic.
@@ -29,9 +35,10 @@ class BaseInferenceHandler:
         Returns:
             The processed input data.
         """
-        raise NotImplementedError("Please implement prepare_input()")
+        ...
 
-    def predict(self, data, model):
+    @abstractmethod
+    def predict(self, data: Any, model: Callable[..., Any]) -> Any:
         """
         Runs prediction on the processed input data using the loaded model.
         Subclasses should implement the prediction logic.
@@ -43,9 +50,10 @@ class BaseInferenceHandler:
         Returns:
             The prediction result.
         """
-        raise NotImplementedError("Please implement predict()")
+        ...
 
-    def output(self, prediction) -> PredictionOutput:
+    @abstractmethod
+    def output(self, prediction: Any) -> PredictionOutput:
         """
         Processes and formats the prediction result to a desired output format.
         Subclasses should define the output transformation logic.
@@ -56,4 +64,4 @@ class BaseInferenceHandler:
         Returns:
             The formatted output.
         """
-        raise NotImplementedError("Please implement output()")
+        ...
