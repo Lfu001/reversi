@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "server/game"
+		},
+		{
+			"path": "server/gateway"
 		}
 	],
 	"settings": {
@@ -12,7 +15,8 @@
 			"Reversi"
 		],
 		"conventionalCommits.scopes": [
-			"game"
+			"game",
+			"gateway"
 		]
 	}
 }
