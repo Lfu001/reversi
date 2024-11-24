@@ -14,13 +14,14 @@
 		}
 	],
 	"settings": {
-		"cSpell.words": [
-			"Reversi"
-		],
 		"conventionalCommits.scopes": [
 			"app",
 			"game",
-			"gateway"
+			"gateway",
+			"ml"
+		],
+		"cSpell.words": [
+			"Reversi"
 		]
 	}
 }
