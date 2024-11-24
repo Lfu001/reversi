@@ -8,6 +8,9 @@
 		},
 		{
 			"path": "server/game"
+		},
+		{
+			"path": "server/gateway"
 		}
 	],
 	"settings": {
@@ -16,7 +19,8 @@
 		],
 		"conventionalCommits.scopes": [
 			"app",
-			"game"
+			"game",
+			"gateway"
 		]
 	}
 }
