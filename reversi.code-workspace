@@ -4,6 +4,9 @@
 			"path": "."
 		},
 		{
+			"path": "app"
+		},
+		{
 			"path": "server/game"
 		},
 		{
@@ -15,6 +18,7 @@
 			"Reversi"
 		],
 		"conventionalCommits.scopes": [
+			"app",
 			"game",
 			"gateway"
 		]
