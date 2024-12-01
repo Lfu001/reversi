@@ -1,0 +1,35 @@
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "server/gateway/**"
+
+name: code quality (gateway)
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run rustfmt
+        run: |
+          cargo fmt --all --check
+        working-directory: ./server/gateway
+
+  lint:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-Dwarnings"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features
+        working-directory: ./server/gateway
