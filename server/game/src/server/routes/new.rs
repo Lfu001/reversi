@@ -11,7 +11,7 @@ use actix_web::Responder;
 /// A new table and puttable positions.
 pub async fn create_new_table() -> impl Responder {
     let table = Table::new();
-    let puttable_positions = get_puttable_positions(&table.board(), table.turn());
+    let puttable_positions = get_puttable_positions(table.board(), table.turn());
 
     ResponseMessage {
         table,

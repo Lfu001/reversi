@@ -94,7 +94,7 @@ pub struct Position {
 
 impl Position {
     /// Converts a position to a 1D index.
-    fn to_index(&self) -> usize {
+    fn to_index(self) -> usize {
         (self.row as usize) * 8 + (self.column as usize)
     }
     /// Constructs a position from a 1D index.
@@ -165,7 +165,7 @@ impl Board {
     /// * `position` - A position of the square in the board.
     /// * `color` - A color of the disk.
     pub fn set_disk(&mut self, position: Position, color: DiskColor) {
-        self.board[position.to_index() as usize] = Some(color);
+        self.board[position.to_index()] = Some(color);
     }
 
     /// Gets a disk from the specified position.
@@ -174,7 +174,7 @@ impl Board {
     ///
     /// * `position` - A position of the square in the board.
     pub fn get_disk(&self, position: &Position) -> Option<DiskColor> {
-        self.board[position.to_index() as usize]
+        self.board[position.to_index()]
     }
 
     /// Gets a read-only reference to raw expression of the board.
@@ -188,7 +188,7 @@ impl Board {
         for (i, &(dx, dy)) in DIRECTIONS.iter().enumerate() {
             let mut column = position.column as i8 + dx;
             let mut row = position.row as i8 + dy;
-            while column >= 0 && column < 8 && row >= 0 && row < 8 {
+            while (0..8).contains(&column) && (0..8).contains(&row) {
                 let position = position!(
                     FromPrimitive::from_i8(row).unwrap(),
                     FromPrimitive::from_i8(column).unwrap()

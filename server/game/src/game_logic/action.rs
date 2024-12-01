@@ -55,7 +55,7 @@ impl Action {
     ///
     /// `Ok(())` if the action is executed successfully, `Err(())` if the action is invalid.
     pub fn execute(&self, table: &mut Table) -> Result<(), ()> {
-        if !self.check_inputs(&table) {
+        if !self.check_inputs(table) {
             return Err(());
         }
         // Update the board
@@ -103,7 +103,7 @@ impl Action {
                     return false;
                 }
                 // Check whether the disk can be put.
-                if get_flip_positions(table.board(), table.turn(), &config.position()).len() == 0 {
+                if get_flip_positions(table.board(), table.turn(), config.position()).is_empty() {
                     return false;
                 }
 
@@ -115,7 +115,7 @@ impl Action {
                     return false;
                 }
                 // Check whether the disk cannot be put.
-                if get_puttable_positions(table.board(), table.turn()).len() > 0 {
+                if !get_puttable_positions(table.board(), table.turn()).is_empty() {
                     return false;
                 }
 
@@ -146,7 +146,7 @@ pub fn get_puttable_positions(board: &Board, turn: &DiskColor) -> Vec<Position> 
             if board.get_disk(&position).is_some() {
                 continue;
             }
-            if get_flip_positions(board, turn, &position).len() > 0 {
+            if !get_flip_positions(board, turn, &position).is_empty() {
                 positions.push(position);
             };
         }
@@ -171,7 +171,7 @@ fn get_flip_positions(board: &Board, turn: &DiskColor, position: &Position) -> V
     }
 
     let mut positions = vec![];
-    let rays = board.get_rays(&position);
+    let rays = board.get_rays(position);
     for ray in rays {
         let mut local_positions = vec![];
         for (square, pos) in ray {
@@ -286,14 +286,14 @@ mod tests {
                 color: DiskColor::Dark,
                 position: position!(Row::One, Column::A),
             });
-            assert_eq!(action.check_inputs(&table), false);
+            assert!(!action.check_inputs(&table));
 
             // The square is not empty
             let action = Action::PutDisk(PutConfig {
                 color: DiskColor::Dark,
                 position: position!(Row::Four, Column::E),
             });
-            assert_eq!(action.check_inputs(&table), false);
+            assert!(!action.check_inputs(&table));
         }
         // Invalid turn
         {
@@ -303,7 +303,7 @@ mod tests {
                 color: DiskColor::Light,
                 position: position!(Row::Four, Column::F),
             });
-            assert_eq!(action.check_inputs(&table), false);
+            assert!(!action.check_inputs(&table));
 
             // Light's turn but dark try to put
             let board = table.board_mut();
@@ -314,7 +314,7 @@ mod tests {
                 color: DiskColor::Dark,
                 position: position!(Row::Four, Column::C),
             });
-            assert_eq!(action.check_inputs(&table), false);
+            assert!(!action.check_inputs(&table));
         }
 
         // Pass turn
@@ -330,7 +330,7 @@ mod tests {
             board.set_disk(position!(Row::Five, Column::D), DiskColor::Light);
             board.set_disk(position!(Row::Five, Column::F), DiskColor::Light);
             let action = Action::PassTurn(DiskColor::Light);
-            assert_eq!(action.check_inputs(&table), false);
+            assert!(!action.check_inputs(&table));
 
             // Light's turn but dark try to pass
             let mut table = Table::new();
@@ -343,14 +343,14 @@ mod tests {
             board.set_disk(position!(Row::Six, Column::E), DiskColor::Dark);
             board.set_disk(position!(Row::Six, Column::F), DiskColor::Dark);
             let action = Action::PassTurn(DiskColor::Dark);
-            assert_eq!(action.check_inputs(&table), false);
+            assert!(!action.check_inputs(&table));
         }
         // Invalid pass
         {
             // Dark can put but try to pass
             let table = Table::new();
             let action = Action::PassTurn(DiskColor::Dark);
-            assert_eq!(action.check_inputs(&table), false);
+            assert!(!action.check_inputs(&table));
 
             // Light can put but try to pass
             let mut table = Table::new();
@@ -359,7 +359,7 @@ mod tests {
             board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
             board.set_disk(position!(Row::Five, Column::F), DiskColor::Dark);
             let action = Action::PassTurn(DiskColor::Light);
-            assert_eq!(action.check_inputs(&table), false);
+            assert!(!action.check_inputs(&table));
         }
 
         // Valid put
@@ -369,7 +369,7 @@ mod tests {
                 color: DiskColor::Dark,
                 position: position!(Row::Four, Column::C),
             });
-            assert_eq!(action.check_inputs(&table), true);
+            assert!(action.check_inputs(&table));
         }
         // Valid pass
         {
@@ -383,7 +383,7 @@ mod tests {
             board.set_disk(position!(Row::Five, Column::D), DiskColor::Light);
             board.set_disk(position!(Row::Five, Column::F), DiskColor::Light);
             let action = Action::PassTurn(DiskColor::Light);
-            assert_eq!(action.check_inputs(&table), true);
+            assert!(action.check_inputs(&table));
         }
     }
 

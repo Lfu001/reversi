@@ -55,7 +55,7 @@ impl Controller {
         // Nobody can put a disk
         [DiskColor::Dark, DiskColor::Light]
             .iter()
-            .all(|color| get_puttable_positions(table.board(), color).len() == 0)
+            .all(|color| get_puttable_positions(table.board(), color).is_empty())
     }
 
     /// Judge the winner of the game. Assumes that the game is over.
@@ -108,7 +108,7 @@ mod tests {
         // Initial state
         {
             let table = Table::new();
-            assert_eq!(Controller::is_game_over(&table), false);
+            assert!(!Controller::is_game_over(&table));
         }
 
         // Continuable game
@@ -118,7 +118,7 @@ mod tests {
             board.set_disk(position!(Row::Four, Column::C), DiskColor::Dark);
             board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
             table.set_turn(DiskColor::Light);
-            assert_eq!(Controller::is_game_over(&table), false);
+            assert!(!Controller::is_game_over(&table));
         }
 
         // No more empty square
@@ -137,7 +137,7 @@ mod tests {
                 }
             }
             table.set_turn(DiskColor::Light);
-            assert_eq!(Controller::is_game_over(&table), true);
+            assert!(Controller::is_game_over(&table));
         }
 
         // There are empty squares but nobody can put
@@ -158,7 +158,7 @@ mod tests {
             board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
             board.set_disk(position!(Row::Six, Column::D), DiskColor::Dark);
             table.set_turn(DiskColor::Light);
-            assert_eq!(Controller::is_game_over(&table), true);
+            assert!(Controller::is_game_over(&table));
         }
     }
 
