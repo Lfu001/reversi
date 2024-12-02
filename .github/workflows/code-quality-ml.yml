@@ -1,0 +1,33 @@
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - server/ml/**
+
+name: code quality (ml)
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/ruff-action@v1
+        name: Run ruff format
+        with:
+          args: format --check
+          src: ./server/ml
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/ruff-action@v1
+        name: Run ruff lint
+        with:
+          args: check
+          src: ./server/ml

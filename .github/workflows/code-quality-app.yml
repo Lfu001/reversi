@@ -1,0 +1,24 @@
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "app/**"
+
+name: code quality (app)
+
+jobs:
+  lint-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run eslint and eslint stylistic
+        run: |
+          npm ci
+          npm run lint
+        working-directory: ./app

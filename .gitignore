@@ -53,6 +53,8 @@ dist
 .nuxt-*
 .output
 .gen
+.data
+.nitro
 
 # Node dependencies
 node_modules

@@ -4,15 +4,24 @@
 			"path": "."
 		},
 		{
+			"path": "app"
+		},
+		{
 			"path": "server/game"
+		},
+		{
+			"path": "server/gateway"
 		}
 	],
 	"settings": {
+		"conventionalCommits.scopes": [
+			"app",
+			"game",
+			"gateway",
+			"ml"
+		],
 		"cSpell.words": [
 			"Reversi"
-		],
-		"conventionalCommits.scopes": [
-			"game"
 		]
 	}
 }
