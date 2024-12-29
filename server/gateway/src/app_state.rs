@@ -1,5 +1,8 @@
 use crate::redis_client::RedisClient;
-use jwt_simple::prelude::HS256Key;
+use jwt_simple::{
+    prelude::HS256Key,
+    reexports::rand::{thread_rng, RngCore},
+};
 
 /// Application state holding shared resources.
 pub struct AppState {
@@ -7,6 +10,8 @@ pub struct AppState {
     redis_client: Box<dyn RedisClient>,
     /// Key for signing JWTs.
     jwt_key: HS256Key,
+    /// A salt for password hashing.
+    salt: u32,
 }
 
 impl AppState {
@@ -15,11 +20,13 @@ impl AppState {
     /// # Arguments
     ///
     /// * `redis_client` - A Redis client instance.
-    /// * `jwt_key` - A key for JWT signing.
-    pub fn new(redis_client: Box<dyn RedisClient>, jwt_key: HS256Key) -> Self {
+    pub fn new(redis_client: Box<dyn RedisClient>) -> Self {
+        let jwt_key = HS256Key::generate();
+        let salt = thread_rng().next_u32();
         AppState {
             redis_client,
             jwt_key,
+            salt,
         }
     }
 
@@ -31,5 +38,10 @@ impl AppState {
     /// Returns a reference to the JWT signing key.
     pub fn jwt_key(&self) -> &HS256Key {
         &self.jwt_key
+    }
+
+    /// Returns the salt for password hashing.
+    pub fn salt(&self) -> u32 {
+        self.salt
     }
 }

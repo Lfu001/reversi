@@ -26,9 +26,16 @@ pub struct PlayerRegistrationResponse {
 
 /// A claim about a player in a JWT.
 #[derive(Serialize, Deserialize)]
-struct PlayerClaims {
+pub struct PlayerClaims {
     /// A player ID
     player_id: String,
+}
+
+impl PlayerClaims {
+    /// Returns a reference to the player ID.
+    pub fn player_id(&self) -> &str {
+        &self.player_id
+    }
 }
 
 /// Registers a player and publishes a JWT.
@@ -106,8 +113,10 @@ fn generate_jwt(key: &HS256Key, player_id: &str) -> Result<String, jwt_simple::E
 #[cfg(test)]
 mod tests {
     use super::*;
-    use redis::Commands;
+    use crate::redis_client::GameTable;
+    use redis::{Commands, JsonCommands};
     use redis_test::{MockCmd, MockRedisConnection};
+    use serde_json::Value;
 
     /// Mock implementation of RedisClient.
     pub struct MockRedisClient {}
@@ -126,6 +135,45 @@ mod tests {
             )]);
             let _: () = mock_conn.set(key, value)?;
             Ok(())
+        }
+
+        fn json_get(&self, key: &str, path: &str) -> Result<GameTable, RedisError> {
+            let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
+                redis::cmd("JSON.GET").arg(key).arg(path),
+                Ok("[]"),
+            )]);
+            let game_table: GameTable = mock_conn.json_get(key, path)?;
+            Ok(game_table)
+        }
+
+        fn json_set(&self, key: &str, path: &str, value: &Value) -> Result<(), RedisError> {
+            let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
+                redis::cmd("JSON.SET")
+                    .arg(key)
+                    .arg(path)
+                    .arg(serde_json::to_string(value)?),
+                Ok("1"),
+            )]);
+            let _: () = mock_conn.json_set(key, path, &value)?;
+            Ok(())
+        }
+
+        fn json_arr_append(&self, key: &str, path: &str, value: &str) -> Result<(), RedisError> {
+            let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
+                redis::cmd("JSON.ARRAPPEND").arg(key).arg(path).arg(value),
+                Ok("1"),
+            )]);
+            let _: () = mock_conn.json_arr_append(key, path, &value)?;
+            Ok(())
+        }
+
+        fn exists(&self, key: &str) -> Result<bool, RedisError> {
+            let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
+                redis::cmd("EXISTS").arg(key),
+                Ok("1"),
+            )]);
+            let exists: bool = mock_conn.exists(key)?;
+            Ok(exists)
         }
 
         fn expire(&self, key: &str, seconds: i64) -> Result<(), RedisError> {
@@ -150,8 +198,8 @@ mod tests {
             let mock_redis_client = MockRedisClient::new();
 
             // AppState setup
-            let jwt_key = HS256Key::generate();
-            let app_state = AppState::new(Box::new(mock_redis_client), jwt_key.clone());
+            let app_state = AppState::new(Box::new(mock_redis_client));
+            let jwt_key = app_state.jwt_key().to_owned();
 
             // Test app
             let app = test::init_service(
