@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// A game table.
+#[cfg_attr(test, derive(Clone))]
 #[derive(Serialize, Deserialize, FromRedisValue)]
 pub struct GameTable {
     /// A list of player IDs
@@ -130,5 +131,102 @@ impl RedisClient for RealRedisClient {
         let mut conn = self.client.get_connection()?;
         let _: () = conn.expire(key, seconds)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use super::*;
+    use crate::redis_client::GameTable;
+    use redis_test::{MockCmd, MockRedisConnection};
+    use serde_json::Value;
+
+    /// Mock implementation of RedisClient.
+    pub struct MockRedisClient {
+        pub set_result: String,
+        pub json_get_result: String,
+        pub json_set_result: String,
+        pub json_arr_append_result: String,
+        pub exists_result: String,
+        pub expire_result: String,
+    }
+
+    impl Default for MockRedisClient {
+        fn default() -> Self {
+            Self {
+                set_result: String::from("1"),
+                json_get_result: serde_json::to_string(&GameTable {
+                    players: vec![],
+                    game_state: String::from(""),
+                })
+                .unwrap(),
+                json_set_result: String::from("1"),
+                json_arr_append_result: String::from("1"),
+                exists_result: String::from("0"),
+                expire_result: String::from("1"),
+            }
+        }
+    }
+
+    impl RedisClient for MockRedisClient {
+        fn set(&self, key: &str, value: &str) -> Result<(), RedisError> {
+            let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
+                redis::cmd("SET").arg(key).arg(value),
+                Ok(self.set_result.to_owned()),
+            )]);
+            let _: () = mock_conn.set(key, value)?;
+            Ok(())
+        }
+
+        fn json_get(&self, key: &str, path: &str) -> Result<GameTable, RedisError> {
+            let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
+                redis::cmd("JSON.GET").arg(key).arg(path),
+                Ok(self.json_get_result.to_owned()),
+            )]);
+            let game_table: GameTable = mock_conn.json_get(key, path)?;
+            Ok(game_table)
+        }
+
+        fn json_set(&self, key: &str, path: &str, value: &Value) -> Result<(), RedisError> {
+            let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
+                redis::cmd("JSON.SET")
+                    .arg(key)
+                    .arg(path)
+                    .arg(serde_json::to_string(value)?),
+                Ok(self.json_set_result.to_owned()),
+            )]);
+            let _: () = mock_conn.json_set(key, path, &value)?;
+            Ok(())
+        }
+
+        fn json_arr_append(&self, key: &str, path: &str, value: &str) -> Result<(), RedisError> {
+            let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
+                redis::cmd("JSON.ARRAPPEND")
+                    .arg(key)
+                    .arg(path)
+                    .arg(serde_json::to_string(value)?),
+                Ok(self.json_arr_append_result.to_owned()),
+            )]);
+            let _: () = mock_conn.json_arr_append(key, path, &value)?;
+            Ok(())
+        }
+
+        fn exists(&self, key: &str) -> Result<bool, RedisError> {
+            let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
+                redis::cmd("EXISTS").arg(key),
+                Ok(self.exists_result.to_owned()),
+            )]);
+            let exists: bool = mock_conn.exists(key)?;
+            Ok(exists)
+        }
+
+        fn expire(&self, key: &str, seconds: i64) -> Result<(), RedisError> {
+            let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
+                redis::cmd("EXPIRE").arg(key).arg(seconds),
+                Ok(self.expire_result.to_owned()),
+            )]);
+            let _: () = mock_conn.expire(key, seconds)?;
+            Ok(())
+        }
     }
 }
