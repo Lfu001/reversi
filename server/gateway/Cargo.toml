@@ -21,3 +21,4 @@ uuid = { version = "1.11.0", features = ["v4", "fast-rng", "macro-diagnostics", 
 
 [dev-dependencies]
 redis-test = "0.6.0"
+serial_test = "3.2.0"

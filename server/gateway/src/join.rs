@@ -157,6 +157,7 @@ fn add_player_to_table(
 mod tests {
     use super::*;
     use crate::redis_client::test::MockRedisClient;
+    use serial_test::serial;
 
     #[derive(Serialize, Deserialize)]
     struct CustomClaims {
@@ -171,6 +172,7 @@ mod tests {
         };
 
         #[actix_web::test]
+        #[serial]
         async fn test_join() {
             let mock_redis_client = MockRedisClient::default();
             let app_state = AppState::new(Box::new(mock_redis_client));
@@ -266,6 +268,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_add_player_to_table_create_new() {
         let client = MockRedisClient {
             exists_result: String::from("0"),
@@ -274,7 +277,7 @@ mod tests {
         let player_id = "player1";
         let table_id = "table1";
         let mut server = mockito::Server::new();
-        let mock = setup_mock_sync(&mut server);
+        let mock = setup_mock(&mut server);
 
         let result = add_player_to_table(&client, player_id, table_id);
         assert!(result.is_ok());
@@ -312,7 +315,7 @@ mod tests {
         }
     }
 
-    fn setup_mock_base(server: &mut mockito::ServerGuard) -> mockito::Mock {
+    fn _setup_mock(server: &mut mockito::Server) -> mockito::Mock {
         env::set_var(NEW_GAME_URL_ENV_VAR, format!("{}/new", server.url()));
         server
         .mock("GET", "/new")
@@ -321,11 +324,11 @@ mod tests {
         .with_body("{\"table\":{\"board\":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\"Light\",\"Dark\",null,null,null,null,null,null,\"Dark\",\"Light\",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],\"turn\":\"Dark\",\"history\":[]},\"puttable_positions\":[{\"row\":\"Three\",\"column\":\"D\"},{\"row\":\"Four\",\"column\":\"C\"},{\"row\":\"Five\",\"column\":\"F\"},{\"row\":\"Six\",\"column\":\"E\"}]}}")
     }
 
-    fn setup_mock_sync(server: &mut mockito::ServerGuard) -> mockito::Mock {
-        setup_mock_base(server).create()
+    fn setup_mock(server: &mut mockito::Server) -> mockito::Mock {
+        _setup_mock(server).create()
     }
 
     async fn setup_mock_async(server: &mut mockito::ServerGuard) -> mockito::Mock {
-        setup_mock_base(server).create_async().await
+        _setup_mock(server).create_async().await
     }
 }
