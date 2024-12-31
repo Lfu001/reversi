@@ -26,9 +26,16 @@ pub struct PlayerRegistrationResponse {
 
 /// A claim about a player in a JWT.
 #[derive(Serialize, Deserialize)]
-struct PlayerClaims {
+pub struct PlayerClaims {
     /// A player ID
     player_id: String,
+}
+
+impl PlayerClaims {
+    /// Returns a reference to the player ID.
+    pub fn player_id(&self) -> &str {
+        &self.player_id
+    }
 }
 
 /// Registers a player and publishes a JWT.
@@ -106,37 +113,7 @@ fn generate_jwt(key: &HS256Key, player_id: &str) -> Result<String, jwt_simple::E
 #[cfg(test)]
 mod tests {
     use super::*;
-    use redis::Commands;
-    use redis_test::{MockCmd, MockRedisConnection};
-
-    /// Mock implementation of RedisClient.
-    pub struct MockRedisClient {}
-
-    impl MockRedisClient {
-        pub fn new() -> Self {
-            MockRedisClient {}
-        }
-    }
-
-    impl RedisClient for MockRedisClient {
-        fn set(&self, key: &str, value: &str) -> Result<(), RedisError> {
-            let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
-                redis::cmd("SET").arg(key).arg(value),
-                Ok("1"),
-            )]);
-            let _: () = mock_conn.set(key, value)?;
-            Ok(())
-        }
-
-        fn expire(&self, key: &str, seconds: i64) -> Result<(), RedisError> {
-            let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
-                redis::cmd("EXPIRE").arg(key).arg(EXPIRE_TIME_SECONDS),
-                Ok("1"),
-            )]);
-            let _: () = mock_conn.expire(key, seconds)?;
-            Ok(())
-        }
-    }
+    use crate::redis_client::test::MockRedisClient;
 
     mod endpoint_test {
         use super::*;
@@ -147,11 +124,11 @@ mod tests {
             let player_name = "foo";
 
             // Mock Redis setup
-            let mock_redis_client = MockRedisClient::new();
+            let mock_redis_client = MockRedisClient::default();
 
             // AppState setup
-            let jwt_key = HS256Key::generate();
-            let app_state = AppState::new(Box::new(mock_redis_client), jwt_key.clone());
+            let app_state = AppState::new(Box::new(mock_redis_client));
+            let jwt_key = app_state.jwt_key().to_owned();
 
             // Test app
             let app = test::init_service(
@@ -185,7 +162,7 @@ mod tests {
     fn test_write_player_id_name() {
         let player_id = Uuid::new_v4().to_string();
         let name = "foo";
-        let client = MockRedisClient::new();
+        let client = MockRedisClient::default();
         let res = write_player_id_name(&client, &player_id, name);
         assert!(res.is_ok());
     }
