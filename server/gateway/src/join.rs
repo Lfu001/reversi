@@ -1,9 +1,8 @@
-use crate::players::PlayerClaims;
+use crate::authentication::{extract_bearer_token, validate_jwt};
 use crate::redis_client::GameTable;
 use crate::{app_state::AppState, redis_client::RedisClient};
 use actix_web::{http::header, web, HttpRequest, HttpResponse, Responder};
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
-use jwt_simple::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha3::{
     digest::{ExtendableOutput, Update, XofReader},
@@ -56,42 +55,6 @@ pub async fn join_table(
     HttpResponse::Created()
         .insert_header((header::LOCATION, format!("/{}", table_id)))
         .finish()
-}
-
-/// Extracts a Bearer token from a Authorization header.
-///
-/// # Arguments
-///
-/// * `req` - A HTTP request.
-///
-/// # Returns
-///
-/// A Bearer token if it exists, or an error message otherwise.
-fn extract_bearer_token(req: &HttpRequest) -> Result<String, String> {
-    match req.headers().get(header::AUTHORIZATION) {
-        Some(bearer) => match bearer.to_str().unwrap().strip_prefix("Bearer ") {
-            Some(bearer) => Ok(String::from(bearer)),
-            None => Err(String::from("Invalid Bearer token.")),
-        },
-        None => Err(String::from("Missing Bearer token.")),
-    }
-}
-
-/// Validates a JWT and returns the player ID.
-///
-/// # Arguments
-///
-/// * `key` - A JWT secret key.
-/// * `jwt` - A JWT.
-///
-/// # Returns
-///
-/// A player ID if the JWT is valid, or an error message otherwise.
-fn validate_jwt(key: &HS256Key, jwt: &str) -> Result<String, String> {
-    match key.verify_token::<PlayerClaims>(jwt, None) {
-        Ok(claims) => Ok(claims.custom.player_id().to_owned()),
-        Err(err) => Err(format!("JWT validation failed: {}", err)),
-    }
 }
 
 /// Converts a password to a table ID.
@@ -159,17 +122,11 @@ mod tests {
     use crate::redis_client::test::MockRedisClient;
     use serial_test::serial;
 
-    #[derive(Serialize, Deserialize)]
-    struct CustomClaims {
-        player_id: String,
-    }
-
     mod endpoint_test {
         use super::*;
-        use actix_web::{
-            http::{self, header},
-            test, App,
-        };
+        use crate::authentication::PlayerClaims;
+        use actix_web::{http, test, App};
+        use jwt_simple::prelude::*;
 
         #[actix_web::test]
         #[serial]
@@ -184,9 +141,7 @@ mod tests {
             )
             .await;
 
-            let custom_claims = CustomClaims {
-                player_id: String::from("foo"),
-            };
+            let custom_claims = PlayerClaims::new(String::from("foo"));
             let claims = Claims::with_custom_claims(custom_claims, Duration::from_secs(60));
             let jwt = jwt_key.authenticate(claims).unwrap();
 
@@ -204,54 +159,6 @@ mod tests {
             mock.assert_async().await;
             assert_eq!(resp.status(), http::StatusCode::CREATED);
         }
-
-        #[test]
-        async fn test_extract_bearer_token() {
-            let req = test::TestRequest::default()
-                .insert_header((header::AUTHORIZATION, "Bearer test_token"))
-                .to_http_request();
-
-            let token = extract_bearer_token(&req).unwrap();
-            assert_eq!(token, "test_token");
-        }
-
-        #[test]
-        async fn test_extract_bearer_token_missing() {
-            let req = test::TestRequest::default().to_http_request();
-            assert!(extract_bearer_token(&req).is_err());
-        }
-
-        #[test]
-        async fn test_extract_bearer_token_invalid() {
-            let req = test::TestRequest::default()
-                .insert_header((header::AUTHORIZATION, "foo bar"))
-                .to_http_request();
-            assert!(extract_bearer_token(&req).is_err());
-        }
-    }
-
-    #[test]
-    fn test_validate_jwt() {
-        // Prepare test JWT.
-        let key = HS256Key::generate();
-        let player_id = "player1";
-
-        let claims = Claims::with_custom_claims(
-            CustomClaims {
-                player_id: player_id.to_owned(),
-            },
-            Duration::from_secs(10),
-        );
-        let jwt = key.authenticate(claims).unwrap();
-
-        // Valid JWT.
-        let result = validate_jwt(&key, &jwt).unwrap();
-        assert_eq!(result, player_id);
-
-        // Invalid JWT.
-        let invalid_jwt = "invalid_jwt";
-        let result = validate_jwt(&key, invalid_jwt);
-        assert!(result.is_err());
     }
 
     #[test]

@@ -1,4 +1,5 @@
 mod app_state;
+mod authentication;
 mod join;
 mod players;
 mod redis_client;
