@@ -8,6 +8,8 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "storybook": "storybook dev --port 6006",
     "build-storybook": "storybook build"
   },
@@ -26,6 +28,9 @@
     "@storybook/builder-vite": "^8.4.5",
     "@storybook/test": "^8.4.5",
     "@storybook/vue3": "^8.4.5",
-    "storybook": "^8.4.5"
+    "storybook": "^8.4.5",
+    "@nuxt/eslint": "^0.7.2",
+    "eslint": "^9.16.0",
+    "typescript": "^5.7.2"
   }
 }

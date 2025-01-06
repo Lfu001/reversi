@@ -6,9 +6,19 @@ edition = "2021"
 [dependencies]
 actix-web = "4.9.0"
 actix-ws = "0.3.0"
+base64 = "0.22.1"
+env_logger = "0.11.6"
 jwt-simple = "0.12.10"
-redis = "0.27.5"
+log = "0.4.22"
+mockito = "1.6.1"
+redis = { version = "0.27.5", features = ["json"] }
+redis-macros = "0.4.3"
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.133"
+sha3 = "0.10.8"
 ureq = "2.10.1"
 uuid = { version = "1.11.0", features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
+
+[dev-dependencies]
+redis-test = "0.6.0"
+serial_test = "3.2.0"

@@ -1,9 +1,11 @@
 use super::action::Action;
 use crate::position;
 use num_traits::FromPrimitive;
+use serde::{Deserialize, Serialize};
+use serde_big_array::BigArray;
 
 /// A color of the disk.
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum DiskColor {
     /// A light side of the disk.
     Light,
@@ -22,7 +24,7 @@ impl DiskColor {
 }
 
 /// A judge of the game.
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Winner {
     /// A winner.
     Win(DiskColor),
@@ -31,7 +33,7 @@ pub enum Winner {
 }
 
 /// A result of the game.
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct JudgeResult {
     dark_count: u8,
     light_count: u8,
@@ -48,23 +50,14 @@ impl JudgeResult {
         }
     }
 
-    /// Returns the read-only reference to the number of dark disks.
-    pub fn dark_count(&self) -> u8 {
-        self.dark_count
-    }
-
-    /// Returns the read-only reference to the number of light disks.
-    pub fn light_count(&self) -> u8 {
-        self.light_count
-    }
-
     /// Returns the read-only reference to the winner of the game.
+    #[cfg(test)]
     pub fn winner(&self) -> Winner {
         self.winner
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, FromPrimitive)]
+#[derive(Copy, Clone, PartialEq, Debug, FromPrimitive, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Row {
     One,
@@ -77,7 +70,7 @@ pub enum Row {
     Eight,
 }
 
-#[derive(Copy, Clone, PartialEq, Debug, FromPrimitive)]
+#[derive(Copy, Clone, PartialEq, Debug, FromPrimitive, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Column {
     A,
@@ -91,7 +84,7 @@ pub enum Column {
 }
 
 /// A position of the square in the board.
-#[derive(PartialEq, Debug, Copy, Clone)]
+#[derive(PartialEq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct Position {
     /// A row of the board.
     row: Row,
@@ -101,7 +94,7 @@ pub struct Position {
 
 impl Position {
     /// Converts a position to a 1D index.
-    fn to_index(&self) -> usize {
+    fn to_index(self) -> usize {
         (self.row as usize) * 8 + (self.column as usize)
     }
     /// Constructs a position from a 1D index.
@@ -109,6 +102,7 @@ impl Position {
     /// # Arguments
     ///
     /// * `index` - A 1D index of the board.
+    #[cfg(test)]
     fn from_index(index: usize) -> Self {
         Position {
             row: FromPrimitive::from_usize(index / 8).unwrap(),
@@ -146,8 +140,10 @@ const DIRECTIONS: [(i8, i8); 8] = [
 ];
 
 /// A board of Reversi.
+#[derive(Serialize, Deserialize)]
 pub struct Board {
     /// An 1D expression of the board.
+    #[serde(with = "BigArray")]
     board: [Option<DiskColor>; 64],
 }
 
@@ -169,7 +165,7 @@ impl Board {
     /// * `position` - A position of the square in the board.
     /// * `color` - A color of the disk.
     pub fn set_disk(&mut self, position: Position, color: DiskColor) {
-        self.board[position.to_index() as usize] = Some(color);
+        self.board[position.to_index()] = Some(color);
     }
 
     /// Gets a disk from the specified position.
@@ -178,7 +174,7 @@ impl Board {
     ///
     /// * `position` - A position of the square in the board.
     pub fn get_disk(&self, position: &Position) -> Option<DiskColor> {
-        self.board[position.to_index() as usize]
+        self.board[position.to_index()]
     }
 
     /// Gets a read-only reference to raw expression of the board.
@@ -192,7 +188,7 @@ impl Board {
         for (i, &(dx, dy)) in DIRECTIONS.iter().enumerate() {
             let mut column = position.column as i8 + dx;
             let mut row = position.row as i8 + dy;
-            while column >= 0 && column < 8 && row >= 0 && row < 8 {
+            while (0..8).contains(&column) && (0..8).contains(&row) {
                 let position = position!(
                     FromPrimitive::from_i8(row).unwrap(),
                     FromPrimitive::from_i8(column).unwrap()
@@ -208,8 +204,10 @@ impl Board {
 }
 
 /// A state of a game table.
+#[derive(Serialize, Deserialize)]
 pub struct Table {
     /// A board of Reversi.
+    #[serde(flatten)]
     board: Board,
     /// A color of the next turn.
     turn: DiskColor,
@@ -250,11 +248,6 @@ impl Table {
     /// Returns a writable reference to the history.
     pub fn history_mut(&mut self) -> &mut Vec<Action> {
         &mut self.history
-    }
-
-    /// Returns a read-only reference to the history.
-    pub fn history(&self) -> &Vec<Action> {
-        &self.history
     }
 }
 
