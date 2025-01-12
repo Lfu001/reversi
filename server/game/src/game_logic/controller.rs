@@ -3,13 +3,13 @@ use super::state::{DiskColor, JudgeResult, Position, Table, Winner};
 use std::cmp::Ordering;
 
 /// The result of the action execution.
-struct StepResult {
-    judge_result: Option<JudgeResult>,
-    puttable_positions: Option<Vec<Position>>,
+pub struct StepResult {
+    pub judge_result: Option<JudgeResult>,
+    pub puttable_positions: Vec<Position>,
 }
 
 /// The controller of the game.
-struct Controller {}
+pub struct Controller;
 
 impl Controller {
     /// Execute an action.
@@ -22,24 +22,23 @@ impl Controller {
     /// # Returns
     ///
     /// The result of the action execution. If the game is over after the action, judge result is returned.
-    /// Otherwise, next puttable positions are returned.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the action cannot be executed.
-    pub fn step(table: &mut Table, action: Action) -> StepResult {
-        action.execute(table);
+    /// Otherwise, next puttable positions are returned. `Err(())` if the action is invalid.
+    pub fn step(table: &mut Table, action: Action) -> Result<StepResult, ()> {
+        let result = action.execute(table);
+        if result.is_err() {
+            return Err(());
+        }
 
         if Controller::is_game_over(table) {
-            StepResult {
+            Ok(StepResult {
                 judge_result: Some(Controller::judge(table)),
-                puttable_positions: None,
-            }
+                puttable_positions: vec![],
+            })
         } else {
-            StepResult {
+            Ok(StepResult {
                 judge_result: None,
-                puttable_positions: Some(get_puttable_positions(table.board(), table.turn())),
-            }
+                puttable_positions: get_puttable_positions(table.board(), table.turn()),
+            })
         }
     }
 
@@ -56,7 +55,7 @@ impl Controller {
         // Nobody can put a disk
         [DiskColor::Dark, DiskColor::Light]
             .iter()
-            .all(|color| get_puttable_positions(table.board(), color).len() == 0)
+            .all(|color| get_puttable_positions(table.board(), color).is_empty())
     }
 
     /// Judge the winner of the game. Assumes that the game is over.
@@ -109,7 +108,7 @@ mod tests {
         // Initial state
         {
             let table = Table::new();
-            assert_eq!(Controller::is_game_over(&table), false);
+            assert!(!Controller::is_game_over(&table));
         }
 
         // Continuable game
@@ -119,7 +118,7 @@ mod tests {
             board.set_disk(position!(Row::Four, Column::C), DiskColor::Dark);
             board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
             table.set_turn(DiskColor::Light);
-            assert_eq!(Controller::is_game_over(&table), false);
+            assert!(!Controller::is_game_over(&table));
         }
 
         // No more empty square
@@ -138,7 +137,7 @@ mod tests {
                 }
             }
             table.set_turn(DiskColor::Light);
-            assert_eq!(Controller::is_game_over(&table), true);
+            assert!(Controller::is_game_over(&table));
         }
 
         // There are empty squares but nobody can put
@@ -159,7 +158,7 @@ mod tests {
             board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
             board.set_disk(position!(Row::Six, Column::D), DiskColor::Dark);
             table.set_turn(DiskColor::Light);
-            assert_eq!(Controller::is_game_over(&table), true);
+            assert!(Controller::is_game_over(&table));
         }
     }
 
