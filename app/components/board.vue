@@ -1,17 +1,19 @@
 <template>
 	<div class="board">
-		<div
-			v-for="(row, rowIndex) in board"
-			:key="'row-' + rowIndex"
-			class="row"
-		>
+		<div class="board-inner">
 			<div
-				v-for="(cell, colIndex) in row"
-				:key="'cell-' + rowIndex + '-' + colIndex"
-				class="cell"
-				:class="{ dot: isDotPosition(rowIndex, colIndex), dark: cell === 1, light: cell === 2}"
-				@click="placeStone(rowIndex, colIndex)"
-			></div>
+				v-for="(row, rowIndex) in board"
+				:key="'row-' + rowIndex"
+				class="row"
+			>
+				<div
+					v-for="(cell, colIndex) in row"
+					:key="'cell-' + rowIndex + '-' + colIndex"
+					class="cell"
+					:class="{ dot: isDotPosition(rowIndex, colIndex), dark: cell === 1, light: cell === 2}"
+					@click="placeStone(rowIndex, colIndex)"
+				></div>
+			</div>
 		</div>
 	</div>
 </template>
@@ -55,9 +57,20 @@ const placeStone = (row: number, col: number) => {
 <style scoped>
 .board {
 	background-color: #4a3222;
+	padding: 30px;
+	border-radius: 15px;
+	box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.3);
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	width: 336px;	/* (1cell:40px + 2border:2px) * 8 */
+	height: 336px;	/* (1cell:40px + 2border:2px) * 8 */
+}
+
+.board-inner {
+	background-color:green;
 	padding: 10px;
 	border-radius: 10px;
-	box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.3);
 	display: grid;
 	grid-template-rows: repeat(8, 1fr);
 	width: 336px;	/* (1cell:40px + 2border:2px) * 8 */
@@ -70,7 +83,6 @@ const placeStone = (row: number, col: number) => {
 }
 
 .cell {
-	background-color: green;
 	width: 40px;
 	height: 40px;
 	display: flex;
