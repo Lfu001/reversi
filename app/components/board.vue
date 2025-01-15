@@ -65,6 +65,10 @@ const placeStone = (row: number, col: number) => {
 	align-items: center;
 	width: 336px;	/* (1cell:40px + 2border:2px) * 8 */
 	height: 336px;	/* (1cell:40px + 2border:2px) * 8 */
+	/* disable selection */
+	user-select: none;
+	-webkit-user-select: none;	/* Chrome, Safari */
+	-moz-user-select: none;		/* Firefox */
 }
 
 .board-inner {
