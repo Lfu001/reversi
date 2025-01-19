@@ -1,6 +1,6 @@
+use crate::app_state::AppState;
 use crate::authentication::{extract_bearer_token, validate_jwt};
-use crate::redis_client::GameTable;
-use crate::{app_state::AppState, redis_client::RedisClient};
+use crate::services::redis_client::{GameTable, RedisClient};
 use actix_web::{http::header, web, HttpRequest, HttpResponse, Responder};
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use serde::{Deserialize, Serialize};
@@ -119,12 +119,12 @@ fn add_player_to_table(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::redis_client::test::MockRedisClient;
+    use crate::services::redis_client::test::MockRedisClient;
     use serial_test::serial;
 
     mod endpoint_test {
         use super::*;
-        use crate::authentication::PlayerClaims;
+        use crate::{authentication::PlayerClaims, websocket::server::GameSessionManager};
         use actix_web::{http, test, App};
         use jwt_simple::prelude::*;
 
@@ -132,7 +132,8 @@ mod tests {
         #[serial]
         async fn test_join() {
             let mock_redis_client = MockRedisClient::default();
-            let app_state = AppState::new(Box::new(mock_redis_client));
+            let (_, server_handle) = GameSessionManager::new();
+            let app_state = AppState::new(Box::new(mock_redis_client), server_handle.clone());
             let jwt_key = app_state.jwt_key().to_owned();
             let app = test::init_service(
                 App::new()

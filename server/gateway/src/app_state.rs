@@ -1,4 +1,5 @@
-use crate::redis_client::RedisClient;
+use crate::services::redis_client::RedisClient;
+use crate::websocket::server::GameSessionManagerHandle;
 use jwt_simple::{
     prelude::HS256Key,
     reexports::rand::{thread_rng, RngCore},
@@ -12,6 +13,8 @@ pub struct AppState {
     jwt_key: HS256Key,
     /// A salt for password hashing.
     salt: u32,
+    /// Game server handle.
+    game_server: GameSessionManagerHandle,
 }
 
 impl AppState {
@@ -20,13 +23,14 @@ impl AppState {
     /// # Arguments
     ///
     /// * `redis_client` - A Redis client instance.
-    pub fn new(redis_client: Box<dyn RedisClient>) -> Self {
+    pub fn new(redis_client: Box<dyn RedisClient>, game_server: GameSessionManagerHandle) -> Self {
         let jwt_key = HS256Key::generate();
         let salt = thread_rng().next_u32();
         AppState {
             redis_client,
             jwt_key,
             salt,
+            game_server,
         }
     }
 
@@ -43,5 +47,10 @@ impl AppState {
     /// Returns the salt for password hashing.
     pub fn salt(&self) -> u32 {
         self.salt
+    }
+
+    /// Returns a reference to the game server handle.
+    pub fn game_server(&self) -> &GameSessionManagerHandle {
+        &self.game_server
     }
 }

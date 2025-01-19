@@ -64,6 +64,19 @@ pub trait RedisClient {
     /// * `value` - A value to append.
     fn json_arr_append(&self, key: &str, path: &str, value: &str) -> Result<(), RedisError>;
 
+    // /// Search for the first occurrence of a JSON value in an array in Redis.
+    // ///
+    // /// # Arguments
+    // ///
+    // /// * `key` - A key to search in.
+    // /// * `path` - A JSON path to search in.
+    // /// * `value` - A value to search for.
+    // ///
+    // /// # Returns
+    // ///
+    // /// The index of the first occurrence of the value in the array. -1 if not found.
+    // fn json_arr_index(&self, key: &str, path: &str, value: &str) -> Result<i32, RedisError>;
+
     /// Checks if a key exists in Redis.
     ///
     /// # Arguments
@@ -121,6 +134,12 @@ impl RedisClient for RealRedisClient {
         Ok(())
     }
 
+    // fn json_arr_index(&self, key: &str, path: &str, value: &str) -> Result<i32, RedisError> {
+    //     let mut conn = self.client.get_connection()?;
+    //     let index: i32 = conn.json_arr_index(key, path, &value)?;
+    //     Ok(index)
+    // }
+
     fn exists(&self, key: &str) -> Result<bool, RedisError> {
         let mut conn = self.client.get_connection()?;
         let exists: bool = conn.exists(key)?;
@@ -137,7 +156,7 @@ impl RedisClient for RealRedisClient {
 #[cfg(test)]
 pub mod test {
     use super::*;
-    use crate::redis_client::GameTable;
+    use crate::services::redis_client::GameTable;
     use redis_test::{MockCmd, MockRedisConnection};
     use serde_json::Value;
 
@@ -147,6 +166,7 @@ pub mod test {
         pub json_get_result: String,
         pub json_set_result: String,
         pub json_arr_append_result: String,
+        // pub json_arr_index_result: String,
         pub exists_result: String,
         pub expire_result: String,
     }
@@ -162,6 +182,7 @@ pub mod test {
                 .unwrap(),
                 json_set_result: String::from("1"),
                 json_arr_append_result: String::from("1"),
+                // json_arr_index_result: String::from("-1"),
                 exists_result: String::from("0"),
                 expire_result: String::from("1"),
             }
@@ -210,6 +231,18 @@ pub mod test {
             let _: () = mock_conn.json_arr_append(key, path, &value)?;
             Ok(())
         }
+
+        // fn json_arr_index(&self, key: &str, path: &str, value: &str) -> Result<i32, RedisError> {
+        //     let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
+        //         redis::cmd("JSON.ARRINDEX")
+        //             .arg(key)
+        //             .arg(path)
+        //             .arg(serde_json::to_string(value)?),
+        //         Ok(self.json_arr_index_result.to_owned()),
+        //     )]);
+        //     let index: i32 = mock_conn.json_arr_index(key, path, &value)?;
+        //     Ok(index)
+        // }
 
         fn exists(&self, key: &str) -> Result<bool, RedisError> {
             let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(

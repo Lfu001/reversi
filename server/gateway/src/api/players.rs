@@ -1,5 +1,5 @@
 use crate::authentication::EXPIRE_TIME_SECONDS;
-use crate::redis_client::RedisClient;
+use crate::services::redis_client::RedisClient;
 use crate::{app_state::AppState, authentication::generate_jwt};
 use actix_web::{web, HttpResponse, Responder};
 use redis::RedisError;
@@ -80,11 +80,11 @@ fn write_player_id_name(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::redis_client::test::MockRedisClient;
+    use crate::services::redis_client::test::MockRedisClient;
 
     mod endpoint_test {
         use super::*;
-        use crate::authentication::PlayerClaims;
+        use crate::{authentication::PlayerClaims, websocket::server::GameSessionManager};
         use actix_web::{http::StatusCode, test, web, App};
         use jwt_simple::prelude::*;
 
@@ -95,8 +95,11 @@ mod tests {
             // Mock Redis setup
             let mock_redis_client = MockRedisClient::default();
 
+            // GameServer setup
+            let (_, server_handle) = GameSessionManager::new();
+
             // AppState setup
-            let app_state = AppState::new(Box::new(mock_redis_client));
+            let app_state = AppState::new(Box::new(mock_redis_client), server_handle.clone());
             let jwt_key = app_state.jwt_key().to_owned();
 
             // Test app

@@ -1,28 +1,40 @@
+mod api;
 mod app_state;
 mod authentication;
-mod join;
-mod players;
-mod redis_client;
 mod routes;
+mod services;
+mod websocket;
 
+use crate::{
+    app_state::AppState, routes::config, services::redis_client::RealRedisClient,
+    websocket::server::GameSessionManager,
+};
 use actix_web::{middleware, web, App, HttpServer};
-use app_state::AppState;
 use env_logger::Env;
-use redis_client::RealRedisClient;
-use routes::config;
+use tokio::{spawn, try_join};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(Env::default().default_filter_or("info"));
-    HttpServer::new(|| {
+
+    let (game_server, server_handle) = GameSessionManager::new();
+    let game_server = spawn(game_server.run());
+
+    let http_server = HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(AppState::new(Box::new(
-                RealRedisClient::new(redis::Client::open("redis://127.0.0.1:6379").unwrap()),
-            ))))
+            .app_data(web::Data::new(AppState::new(
+                Box::new(RealRedisClient::new(
+                    redis::Client::open("redis://127.0.0.1:6379").unwrap(),
+                )),
+                server_handle.clone(),
+            )))
             .configure(config)
             .wrap(middleware::Logger::default())
     })
     .bind(("127.0.0.1", 8081))?
-    .run()
-    .await
+    .run();
+
+    try_join!(http_server, async move { game_server.await.unwrap() })?;
+
+    Ok(())
 }
