@@ -46,7 +46,8 @@ pub async fn join_table(
     let table_id = convert_password_to_table_id(&form.password, app_state.salt());
 
     // Add the player to the table.
-    let res = add_player_to_table(app_state.redis_client_mut(), &player_id, &table_id);
+    let res =
+        add_player_to_table(&mut *app_state.redis_client().await, &player_id, &table_id).await;
     if let Err(err) = res {
         log::error!("{}", err);
         return HttpResponse::InternalServerError().finish();
@@ -86,31 +87,34 @@ fn convert_password_to_table_id(password: &str, salt: u32) -> String {
 /// * `client` - A Redis client.
 /// * `player_id` - A player ID.
 /// * `table_id` - A table ID.
-fn add_player_to_table(
-    client: &dyn RedisClient,
+async fn add_player_to_table(
+    client: &mut (impl RedisClient + ?Sized),
     player_id: &str,
     table_id: &str,
 ) -> Result<(), String> {
     let key = format!("table:{}", table_id);
-    let exists = client.exists(&key);
+    let exists = client.exists(&key).await;
     if let Err(err) = exists {
         return Err(err.to_string());
     }
     let exists = exists.unwrap();
     if exists {
-        let game_table = client.json_get(&key, "$").unwrap();
+        let game_table = client.json_get(&key, "$").await.unwrap();
         if game_table.players().len() >= 2 {
             return Err(format!("Table {} is full.", table_id));
         }
-        if let Err(err) = client.json_arr_append(table_id, "$.players", player_id) {
+        if let Err(err) = client
+            .json_arr_append(table_id, "$.players", player_id)
+            .await
+        {
             return Err(err.to_string());
         }
     } else {
         let url = env::var(NEW_GAME_URL_ENV_VAR).unwrap_or("http://127.0.0.1:8080/new".to_string());
         let response = ureq::get(&url).call().unwrap().into_string().unwrap();
         let json = serde_json::json!(&GameTable::new(vec![player_id.to_string()], response));
-        let _: () = client.json_set(table_id, "$", &json).unwrap();
-        let _: () = client.expire(table_id, 1800).unwrap();
+        let _: () = client.json_set(table_id, "$", &json).await.unwrap();
+        let _: () = client.expire(table_id, 1800).await.unwrap();
     }
 
     Ok(())
@@ -132,8 +136,8 @@ mod tests {
         #[serial]
         async fn test_join() {
             let mock_redis_client = MockRedisClient::default();
-            let (_, server_handle) = GameSessionManager::new();
-            let app_state = AppState::new(Box::new(mock_redis_client), server_handle.clone());
+            let (_, server_handle) = GameSessionManager::new(mock_redis_client.clone());
+            let app_state = AppState::new(mock_redis_client, server_handle.clone());
             let jwt_key = app_state.jwt_key().to_owned();
             let app = test::init_service(
                 App::new()
@@ -175,41 +179,41 @@ mod tests {
         assert_eq!(table_id, "GkElquPDNXk6sA==");
     }
 
-    #[test]
+    #[tokio::test]
     #[serial]
-    fn test_add_player_to_table_create_new() {
-        let client = MockRedisClient {
+    async fn test_add_player_to_table_create_new() {
+        let mut client = MockRedisClient {
             exists_result: String::from("0"),
             ..MockRedisClient::default()
         };
         let player_id = "player1";
         let table_id = "table1";
-        let mut server = mockito::Server::new();
-        let mock = setup_mock(&mut server);
+        let mut server = mockito::Server::new_async().await;
+        let mock = setup_mock_async(&mut server).await;
 
-        let result = add_player_to_table(&client, player_id, table_id);
+        let result = add_player_to_table(&mut client, player_id, table_id).await;
         assert!(result.is_ok());
         mock.assert();
     }
 
-    #[test]
-    fn test_add_player_to_table_existing() {
+    #[tokio::test]
+    async fn test_add_player_to_table_existing() {
         let table_id = "table1";
         // 1 player already joining the table.
         {
-            let client = MockRedisClient {
+            let mut client = MockRedisClient {
                 exists_result: String::from("1"),
                 json_get_result: String::from("{\"players\":[\"player1\"], \"game_state\": \"\"}"),
                 ..MockRedisClient::default()
             };
             let player_id = "player2";
 
-            let result = add_player_to_table(&client, player_id, table_id);
+            let result = add_player_to_table(&mut client, player_id, table_id).await;
             assert!(result.is_ok());
         }
         // 2 player already joining the table.
         {
-            let client = MockRedisClient {
+            let mut client = MockRedisClient {
                 exists_result: String::from("1"),
                 json_get_result: String::from(
                     "{\"players\":[\"player1\", \"player2\"], \"game_state\": \"\"}",
@@ -218,25 +222,19 @@ mod tests {
             };
             let player_id = "player3";
 
-            let result = add_player_to_table(&client, player_id, table_id);
+            let result = add_player_to_table(&mut client, player_id, table_id).await;
             assert!(result.is_err());
         }
     }
 
-    fn _setup_mock(server: &mut mockito::Server) -> mockito::Mock {
+    async fn setup_mock_async(server: &mut mockito::ServerGuard) -> mockito::Mock {
         env::set_var(NEW_GAME_URL_ENV_VAR, format!("{}/new", server.url()));
         server
-        .mock("GET", "/new")
-        .with_status(200)
-        .with_header("content-type", "application/json")
-        .with_body("{\"table\":{\"board\":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\"Light\",\"Dark\",null,null,null,null,null,null,\"Dark\",\"Light\",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],\"turn\":\"Dark\",\"history\":[]},\"puttable_positions\":[{\"row\":\"Three\",\"column\":\"D\"},{\"row\":\"Four\",\"column\":\"C\"},{\"row\":\"Five\",\"column\":\"F\"},{\"row\":\"Six\",\"column\":\"E\"}]}}")
-    }
-
-    fn setup_mock(server: &mut mockito::Server) -> mockito::Mock {
-        _setup_mock(server).create()
-    }
-
-    async fn setup_mock_async(server: &mut mockito::ServerGuard) -> mockito::Mock {
-        _setup_mock(server).create_async().await
+            .mock("GET", "/new")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body("{\"table\":{\"board\":[null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,\"Light\",\"Dark\",null,null,null,null,null,null,\"Dark\",\"Light\",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],\"turn\":\"Dark\",\"history\":[]},\"puttable_positions\":[{\"row\":\"Three\",\"column\":\"D\"},{\"row\":\"Four\",\"column\":\"C\"},{\"row\":\"Five\",\"column\":\"F\"},{\"row\":\"Six\",\"column\":\"E\"}]}}")
+            .create_async()
+            .await
     }
 }

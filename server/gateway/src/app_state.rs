@@ -4,11 +4,13 @@ use jwt_simple::{
     prelude::HS256Key,
     reexports::rand::{thread_rng, RngCore},
 };
+use std::sync::Arc;
+use tokio::sync::{Mutex, MutexGuard};
 
 /// Application state holding shared resources.
 pub struct AppState {
     /// Redis client for database interactions.
-    redis_client: Box<dyn RedisClient>,
+    redis_client: Arc<Mutex<dyn RedisClient>>,
     /// Key for signing JWTs.
     jwt_key: HS256Key,
     /// A salt for password hashing.
@@ -23,11 +25,15 @@ impl AppState {
     /// # Arguments
     ///
     /// * `redis_client` - A Redis client instance.
-    pub fn new(redis_client: Box<dyn RedisClient>, game_server: GameSessionManagerHandle) -> Self {
+    /// * `game_server` - A game server handle.
+    pub fn new(
+        redis_client: impl RedisClient + 'static,
+        game_server: GameSessionManagerHandle,
+    ) -> Self {
         let jwt_key = HS256Key::generate();
         let salt = thread_rng().next_u32();
         AppState {
-            redis_client,
+            redis_client: Arc::new(Mutex::new(redis_client)),
             jwt_key,
             salt,
             game_server,
@@ -35,8 +41,8 @@ impl AppState {
     }
 
     /// Returns a reference to the Redis client.
-    pub fn redis_client_mut(&self) -> &dyn RedisClient {
-        self.redis_client.as_ref()
+    pub async fn redis_client(&self) -> MutexGuard<'_, dyn RedisClient> {
+        self.redis_client.lock().await
     }
 
     /// Returns a reference to the JWT signing key.

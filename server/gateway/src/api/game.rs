@@ -43,7 +43,7 @@ pub async fn game_ws(
     let player_id = player_id.unwrap();
 
     //  Check if the table exists.
-    match is_table_exist(app_state.redis_client_mut(), &info.table_id) {
+    match is_table_exist(&mut *app_state.redis_client().await, &info.table_id).await {
         Ok(exists) => {
             if !exists {
                 log::error!("Table \"{}\" does not exist.", info.table_id);
@@ -75,8 +75,11 @@ pub async fn game_ws(
 ///
 /// * `client` - The Redis client.
 /// * `table_id` - The table ID.
-fn is_table_exist(client: &dyn RedisClient, table_id: &str) -> Result<bool, String> {
-    match client.exists(table_id) {
+async fn is_table_exist(
+    client: &mut (impl RedisClient + ?Sized),
+    table_id: &str,
+) -> Result<bool, String> {
+    match client.exists(table_id).await {
         Ok(exists) => Ok(exists),
         Err(err) => Err(err.to_string()),
     }

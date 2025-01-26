@@ -1,9 +1,11 @@
 use super::message::{WsMessage, WsMessageType};
+use crate::services::redis_client::RedisClient;
 use std::{
     collections::{HashMap, HashSet},
     io,
+    sync::Arc,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use uuid::Uuid;
 
 pub type ConnectionId = Uuid;
@@ -43,17 +45,20 @@ pub struct GameSessionManager {
     tables: HashMap<TableId, HashSet<ConnectionId>>,
     /// A command receiver.
     command_rx: mpsc::UnboundedReceiver<Command>,
+    /// A Redis client.
+    redis_client: Arc<Mutex<dyn RedisClient>>,
 }
 
 impl GameSessionManager {
     /// Creates a new game session manager and its handle.
-    pub fn new() -> (Self, GameSessionManagerHandle) {
+    pub fn new(redis_client: impl RedisClient + 'static) -> (Self, GameSessionManagerHandle) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         (
             Self {
                 sessions: HashMap::new(),
                 tables: HashMap::new(),
                 command_rx,
+                redis_client: Arc::new(Mutex::new(redis_client)),
             },
             GameSessionManagerHandle { command_tx },
         )

@@ -41,7 +41,7 @@ pub async fn register_player(
 
     // Write player ID and name to redis.
     let player_id = Uuid::new_v4().to_string();
-    let res = write_player_id_name(app_state.redis_client_mut(), &player_id, name);
+    let res = write_player_id_name(&mut *app_state.redis_client().await, &player_id, name).await;
     if let Err(err) = res {
         log::error!("Failed to write player ID and name to redis: {}", err);
         return HttpResponse::InternalServerError().finish();
@@ -65,14 +65,14 @@ pub async fn register_player(
 /// * `client` - A Redis client.
 /// * `player_id` - A player ID.
 /// * `name` - A name of the player.
-fn write_player_id_name(
-    client: &dyn RedisClient,
+async fn write_player_id_name(
+    client: &mut (impl RedisClient + ?Sized),
     player_id: &str,
     name: &str,
 ) -> Result<(), RedisError> {
     let key = format!("player:{}", player_id);
-    client.set(&key, name)?;
-    client.expire(&key, EXPIRE_TIME_SECONDS as i64)?;
+    client.set(&key, name).await?;
+    client.expire(&key, EXPIRE_TIME_SECONDS as i64).await?;
 
     Ok(())
 }
@@ -96,10 +96,10 @@ mod tests {
             let mock_redis_client = MockRedisClient::default();
 
             // GameServer setup
-            let (_, server_handle) = GameSessionManager::new();
+            let (_, server_handle) = GameSessionManager::new(mock_redis_client.clone());
 
             // AppState setup
-            let app_state = AppState::new(Box::new(mock_redis_client), server_handle.clone());
+            let app_state = AppState::new(mock_redis_client, server_handle.clone());
             let jwt_key = app_state.jwt_key().to_owned();
 
             // Test app
@@ -130,12 +130,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_write_player_id_name() {
+    #[tokio::test]
+    async fn test_write_player_id_name() {
         let player_id = Uuid::new_v4().to_string();
         let name = "foo";
-        let client = MockRedisClient::default();
-        let res = write_player_id_name(&client, &player_id, name);
+        let mut client = MockRedisClient::default();
+        let res = write_player_id_name(&mut client, &player_id, name).await;
         assert!(res.is_ok());
     }
 }

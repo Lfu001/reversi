@@ -17,15 +17,16 @@ use tokio::{spawn, try_join};
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(Env::default().default_filter_or("info"));
 
-    let (game_server, server_handle) = GameSessionManager::new();
+    let client = redis::Client::open("redis://127.0.0.1:6379").unwrap();
+    let client = RealRedisClient::new(client).await;
+
+    let (game_server, server_handle) = GameSessionManager::new(client.clone());
     let game_server = spawn(game_server.run());
 
     let http_server = HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(AppState::new(
-                Box::new(RealRedisClient::new(
-                    redis::Client::open("redis://127.0.0.1:6379").unwrap(),
-                )),
+                client.clone(),
                 server_handle.clone(),
             )))
             .configure(config)
