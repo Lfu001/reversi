@@ -1,5 +1,6 @@
-use crate::game_logic::state::{JudgeResult, Position, Table};
+use crate::game_logic::state::JudgeResult;
 use actix_web::{body::BoxBody, http::header::ContentType, HttpRequest, HttpResponse, Responder};
+use common::{Position, Table};
 use serde::{Deserialize, Serialize};
 
 /// A response message from the game endpoint.

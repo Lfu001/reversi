@@ -1,50 +1,9 @@
-use super::state::{Board, DiskColor, Position, Table};
-use crate::position;
+use super::state::{BoardExt, DiskColorExt};
+use common::{position, Action, Board, DiskColor, Position, Table};
 use num_traits::FromPrimitive;
-use serde::{Deserialize, Serialize};
 
-/// A configuration of the put action.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct PutConfig {
-    /// A color of the disk.
-    color: DiskColor,
-    /// A position of the square in the board.
-    position: Position,
-}
-
-impl PutConfig {
-    /// Creates a new put config.
-    ///     
-    /// # Arguments
-    ///
-    /// * `color` - A color of the disk.
-    /// * `position` - A position of the square in the board.
-    #[cfg(test)]
-    pub fn new(color: DiskColor, position: Position) -> Self {
-        Self { color, position }
-    }
-
-    /// Returns a read-only reference to the color of the disk.
-    pub fn color(&self) -> &DiskColor {
-        &self.color
-    }
-
-    /// Returns a read-only reference to the position.
-    pub fn position(&self) -> &Position {
-        &self.position
-    }
-}
-
-/// Reversi actions.
-#[derive(Clone, Serialize, Deserialize)]
-pub enum Action {
-    /// Put a disk to the square.
-    PutDisk(PutConfig),
-    /// Pass the turn.
-    PassTurn(DiskColor),
-}
-
-impl Action {
+/// A trait which provides an extension method for the [`Action`].
+pub trait ActionExt {
     /// Executes the action.
     ///
     /// # Arguments
@@ -54,34 +13,7 @@ impl Action {
     /// # Returns
     ///
     /// `Ok(())` if the action is executed successfully, `Err(())` if the action is invalid.
-    pub fn execute(&self, table: &mut Table) -> Result<(), ()> {
-        if !self.check_inputs(table) {
-            return Err(());
-        }
-        // Update the board
-        match self {
-            Action::PutDisk(config) => {
-                let flip_positions =
-                    get_flip_positions(table.board(), table.turn(), &config.position);
-                let board = table.board_mut();
-                board.set_disk(config.position, *config.color());
-                for position in flip_positions {
-                    board.set_disk(position, *config.color());
-                }
-            }
-            Action::PassTurn(_) => (),
-        }
-
-        // Update the history
-        let history = table.history_mut();
-        history.push(self.clone());
-
-        // Update the turn
-        table.set_turn(table.turn().opposite());
-
-        Ok(())
-    }
-
+    fn execute(&self, table: &mut Table) -> Result<(), ()>;
     /// Checks if the action can be executed.
     ///
     /// # Arguments
@@ -91,6 +23,37 @@ impl Action {
     /// # Returns
     ///
     /// `true` if the action can be executed, otherwise `false`.
+    fn check_inputs(&self, table: &Table) -> bool;
+}
+
+impl ActionExt for Action {
+    fn execute(&self, table: &mut Table) -> Result<(), ()> {
+        if !self.check_inputs(table) {
+            return Err(());
+        }
+        // Update the board
+        match self {
+            Action::PutDisk(config) => {
+                let flip_positions =
+                    get_flip_positions(table.board(), table.turn(), config.position());
+                let board = table.board_mut();
+                board.set_disk(*config.position(), config.color());
+                for position in flip_positions {
+                    board.set_disk(position, config.color());
+                }
+            }
+            Action::PassTurn(_) => (),
+        }
+
+        // Update the history
+        table.push_history(self.clone());
+
+        // Update the turn
+        table.set_turn(table.turn().opposite());
+
+        Ok(())
+    }
+
     fn check_inputs(&self, table: &Table) -> bool {
         match self {
             Action::PutDisk(config) => {
@@ -111,7 +74,7 @@ impl Action {
             }
             Action::PassTurn(color) => {
                 // Check the turn is correct.
-                if color != table.turn() {
+                if *color != table.turn() {
                     return false;
                 }
                 // Check whether the disk cannot be put.
@@ -135,7 +98,7 @@ impl Action {
 /// # Returns
 ///
 /// A list of positions that can be put.
-pub fn get_puttable_positions(board: &Board, turn: &DiskColor) -> Vec<Position> {
+pub fn get_puttable_positions(board: &Board, turn: DiskColor) -> Vec<Position> {
     let mut positions = vec![];
     for row in 0..8 {
         for column in 0..8 {
@@ -165,7 +128,7 @@ pub fn get_puttable_positions(board: &Board, turn: &DiskColor) -> Vec<Position> 
 /// # Returns
 ///
 /// A list of positions that can be flipped.
-fn get_flip_positions(board: &Board, turn: &DiskColor, position: &Position) -> Vec<Position> {
+fn get_flip_positions(board: &Board, turn: DiskColor, position: &Position) -> Vec<Position> {
     if board.get_disk(position).is_some() {
         return vec![];
     }
@@ -177,7 +140,7 @@ fn get_flip_positions(board: &Board, turn: &DiskColor, position: &Position) -> V
         for (square, pos) in ray {
             match square {
                 Some(color) => {
-                    if color == *turn {
+                    if color == turn {
                         positions.append(&mut local_positions);
                         break;
                     }
@@ -194,12 +157,12 @@ fn get_flip_positions(board: &Board, turn: &DiskColor, position: &Position) -> V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_logic::state::{Board, Column, Row};
+    use common::{Column, PutConfig, Row};
 
     #[test]
     fn test_get_puttable_positions() {
         // Check 1
-        let mut table = Table::new();
+        let mut table = Table::default();
         // Dark turn
         let puttable = get_puttable_positions(table.board(), table.turn());
         assert_eq!(
@@ -213,7 +176,7 @@ mod tests {
         );
 
         // Check 2
-        table = Table::new();
+        table = Table::default();
         table
             .board_mut()
             .set_disk(position!(Row::Five, Column::F), DiskColor::Dark);
@@ -236,7 +199,7 @@ mod tests {
     #[test]
     fn test_get_flip_positions() {
         // Check 1
-        let mut table = Table::new();
+        let mut table = Table::default();
         // Dark turn
         let flip = get_flip_positions(
             table.board(),
@@ -246,7 +209,7 @@ mod tests {
         assert_eq!(flip, vec![]);
 
         // Check 2
-        table = Table::new();
+        table = Table::default();
         table
             .board_mut()
             .set_disk(position!(Row::Five, Column::F), DiskColor::Dark);
@@ -281,28 +244,28 @@ mod tests {
         // Invalid position
         {
             // Not flipping any disk
-            let table = Table::new();
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Dark,
-                position: position!(Row::One, Column::A),
-            });
+            let table = Table::default();
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Dark,
+                position!(Row::One, Column::A),
+            ));
             assert!(!action.check_inputs(&table));
 
             // The square is not empty
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Dark,
-                position: position!(Row::Four, Column::E),
-            });
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Dark,
+                position!(Row::Four, Column::E),
+            ));
             assert!(!action.check_inputs(&table));
         }
         // Invalid turn
         {
             // Dark's turn but light try to put
-            let mut table = Table::new();
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Light,
-                position: position!(Row::Four, Column::F),
-            });
+            let mut table = Table::default();
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Light,
+                position!(Row::Four, Column::F),
+            ));
             assert!(!action.check_inputs(&table));
 
             // Light's turn but dark try to put
@@ -310,10 +273,10 @@ mod tests {
             board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
             board.set_disk(position!(Row::Five, Column::F), DiskColor::Dark);
             table.set_turn(DiskColor::Light);
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Dark,
-                position: position!(Row::Four, Column::C),
-            });
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Dark,
+                position!(Row::Four, Column::C),
+            ));
             assert!(!action.check_inputs(&table));
         }
 
@@ -321,7 +284,7 @@ mod tests {
         // Invalid turn
         {
             // Dark's turn but light try to pass
-            let mut table = Table::new();
+            let mut table = Table::default();
             let board = table.board_mut();
             board.set_disk(position!(Row::Three, Column::D), DiskColor::Light);
             board.set_disk(position!(Row::Three, Column::E), DiskColor::Light);
@@ -333,7 +296,7 @@ mod tests {
             assert!(!action.check_inputs(&table));
 
             // Light's turn but dark try to pass
-            let mut table = Table::new();
+            let mut table = Table::default();
             table.set_turn(DiskColor::Light);
             let board = table.board_mut();
             board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
@@ -348,12 +311,12 @@ mod tests {
         // Invalid pass
         {
             // Dark can put but try to pass
-            let table = Table::new();
+            let table = Table::default();
             let action = Action::PassTurn(DiskColor::Dark);
             assert!(!action.check_inputs(&table));
 
             // Light can put but try to pass
-            let mut table = Table::new();
+            let mut table = Table::default();
             table.set_turn(DiskColor::Light);
             let board = table.board_mut();
             board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
@@ -364,16 +327,16 @@ mod tests {
 
         // Valid put
         {
-            let table = Table::new();
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Dark,
-                position: position!(Row::Four, Column::C),
-            });
+            let table = Table::default();
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Dark,
+                position!(Row::Four, Column::C),
+            ));
             assert!(action.check_inputs(&table));
         }
         // Valid pass
         {
-            let mut table = Table::new();
+            let mut table = Table::default();
             table.set_turn(DiskColor::Light);
             let board = table.board_mut();
             board.set_disk(position!(Row::Three, Column::D), DiskColor::Light);
@@ -389,121 +352,121 @@ mod tests {
 
     #[test]
     fn test_execute() {
-        let mut table = Table::new();
-        let mut expected_board = Board::new();
+        let mut table = Table::default();
+        let mut expected_board = Board::default();
 
         // Dark put
         {
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Dark,
-                position: position!(Row::Four, Column::C),
-            });
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Dark,
+                position!(Row::Four, Column::C),
+            ));
             action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Four, Column::C), DiskColor::Dark);
             expected_board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
-            assert_eq!(board.raw_board(), expected_board.raw_board());
-            assert_eq!(table.turn(), &DiskColor::Light);
+            assert_eq!(board.board(), expected_board.board());
+            assert_eq!(table.turn(), DiskColor::Light);
         }
 
         // Light put
         {
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Light,
-                position: position!(Row::Three, Column::C),
-            });
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Light,
+                position!(Row::Three, Column::C),
+            ));
             action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Light);
             expected_board.set_disk(position!(Row::Four, Column::D), DiskColor::Light);
-            assert_eq!(board.raw_board(), expected_board.raw_board());
-            assert_eq!(table.turn(), &DiskColor::Dark);
+            assert_eq!(board.board(), expected_board.board());
+            assert_eq!(table.turn(), DiskColor::Dark);
         }
 
         // Dark put
         {
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Dark,
-                position: position!(Row::Two, Column::C),
-            });
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Dark,
+                position!(Row::Two, Column::C),
+            ));
             action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Two, Column::C), DiskColor::Dark);
             expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
-            assert_eq!(board.raw_board(), expected_board.raw_board());
-            assert_eq!(table.turn(), &DiskColor::Light);
+            assert_eq!(board.board(), expected_board.board());
+            assert_eq!(table.turn(), DiskColor::Light);
         }
 
         // Light put
         {
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Light,
-                position: position!(Row::Two, Column::B),
-            });
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Light,
+                position!(Row::Two, Column::B),
+            ));
             action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Two, Column::B), DiskColor::Light);
             expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Light);
-            assert_eq!(board.raw_board(), expected_board.raw_board());
-            assert_eq!(table.turn(), &DiskColor::Dark);
+            assert_eq!(board.board(), expected_board.board());
+            assert_eq!(table.turn(), DiskColor::Dark);
         }
 
         // Dark put
         {
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Dark,
-                position: position!(Row::Six, Column::E),
-            });
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Dark,
+                position!(Row::Six, Column::E),
+            ));
             action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Six, Column::E), DiskColor::Dark);
             expected_board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
-            assert_eq!(board.raw_board(), expected_board.raw_board());
-            assert_eq!(table.turn(), &DiskColor::Light);
+            assert_eq!(board.board(), expected_board.board());
+            assert_eq!(table.turn(), DiskColor::Light);
         }
 
         // Light put
         {
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Light,
-                position: position!(Row::One, Column::C),
-            });
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Light,
+                position!(Row::One, Column::C),
+            ));
             action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::One, Column::C), DiskColor::Light);
             expected_board.set_disk(position!(Row::Two, Column::C), DiskColor::Light);
-            assert_eq!(board.raw_board(), expected_board.raw_board());
-            assert_eq!(table.turn(), &DiskColor::Dark);
+            assert_eq!(board.board(), expected_board.board());
+            assert_eq!(table.turn(), DiskColor::Dark);
         }
 
         // Dark put
         {
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Dark,
-                position: position!(Row::One, Column::A),
-            });
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Dark,
+                position!(Row::One, Column::A),
+            ));
             action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::One, Column::A), DiskColor::Dark);
             expected_board.set_disk(position!(Row::Two, Column::B), DiskColor::Dark);
             expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
             expected_board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
-            assert_eq!(board.raw_board(), expected_board.raw_board());
-            assert_eq!(table.turn(), &DiskColor::Light);
+            assert_eq!(board.board(), expected_board.board());
+            assert_eq!(table.turn(), DiskColor::Light);
         }
 
         // Light put
         {
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Light,
-                position: position!(Row::Three, Column::A),
-            });
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Light,
+                position!(Row::Three, Column::A),
+            ));
             action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Three, Column::A), DiskColor::Light);
             expected_board.set_disk(position!(Row::Two, Column::B), DiskColor::Light);
-            assert_eq!(board.raw_board(), expected_board.raw_board());
-            assert_eq!(table.turn(), &DiskColor::Dark);
+            assert_eq!(board.board(), expected_board.board());
+            assert_eq!(table.turn(), DiskColor::Dark);
         }
 
         // Dark pass
@@ -511,23 +474,23 @@ mod tests {
             let action = Action::PassTurn(DiskColor::Dark);
             action.execute(&mut table).unwrap();
             let board = table.board();
-            assert_eq!(board.raw_board(), expected_board.raw_board());
-            assert_eq!(table.turn(), &DiskColor::Light);
+            assert_eq!(board.board(), expected_board.board());
+            assert_eq!(table.turn(), DiskColor::Light);
         }
 
         // Light put
         {
-            let action = Action::PutDisk(PutConfig {
-                color: DiskColor::Light,
-                position: position!(Row::Five, Column::C),
-            });
+            let action = Action::PutDisk(PutConfig::new(
+                DiskColor::Light,
+                position!(Row::Five, Column::C),
+            ));
             action.execute(&mut table).unwrap();
             let board = table.board();
             expected_board.set_disk(position!(Row::Five, Column::C), DiskColor::Light);
             expected_board.set_disk(position!(Row::Four, Column::C), DiskColor::Light);
             expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Light);
-            assert_eq!(board.raw_board(), expected_board.raw_board());
-            assert_eq!(table.turn(), &DiskColor::Dark);
+            assert_eq!(board.board(), expected_board.board());
+            assert_eq!(table.turn(), DiskColor::Dark);
         }
     }
 }

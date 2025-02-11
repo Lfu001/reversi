@@ -1,4 +1,4 @@
-use crate::game_logic::{action::Action, state::Table};
+use common::{Action, Table};
 use serde::{Deserialize, Serialize};
 
 /// A request message to the game endpoint.

@@ -30,14 +30,9 @@ pub async fn step_table(req: web::Json<RequestMessage>) -> Result<impl Responder
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        game_logic::{
-            action::{Action, PutConfig},
-            state::{Column, DiskColor, Row, Table},
-        },
-        position,
-    };
-    use actix_web::{http::StatusCode, test, web, App};
+    use crate::game_logic::state::BoardExt;
+    use actix_web::{http::StatusCode, test, App};
+    use common::{position, Action, Column, DiskColor, Position, PutConfig, Row, Table};
 
     /// Test for step table by valid action "PutDisk"
     #[actix_web::test]
@@ -46,7 +41,7 @@ mod tests {
         let req = test::TestRequest::post()
             .uri("/step")
             .set_json(&RequestMessage {
-                table: Table::new(),
+                table: Table::default(),
                 action: Action::PutDisk(PutConfig::new(
                     DiskColor::Dark,
                     position!(Row::Three, Column::D),
@@ -64,7 +59,7 @@ mod tests {
         let req = test::TestRequest::post()
             .uri("/step")
             .set_json(&RequestMessage {
-                table: Table::new(),
+                table: Table::default(),
                 action: Action::PutDisk(PutConfig::new(
                     DiskColor::Dark,
                     position!(Row::One, Column::A),
@@ -78,7 +73,7 @@ mod tests {
     /// Test for step table by valid action "PassTurn"
     #[actix_web::test]
     async fn test_step_table_pass() {
-        let mut table = Table::new();
+        let mut table = Table::default();
         let board = table.board_mut();
         board.set_disk(position!(Row::Four, Column::C), DiskColor::Dark);
         board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
@@ -115,7 +110,7 @@ mod tests {
         let req = test::TestRequest::post()
             .uri("/step")
             .set_json(&RequestMessage {
-                table: Table::new(),
+                table: Table::default(),
                 action: Action::PassTurn(DiskColor::Dark),
             })
             .to_request();

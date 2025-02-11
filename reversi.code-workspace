@@ -1,27 +1,23 @@
 {
-	"folders": [
-		{
-			"path": "."
-		},
-		{
-			"path": "app"
-		},
-		{
-			"path": "server/game"
-		},
-		{
-			"path": "server/gateway"
-		}
-	],
-	"settings": {
-		"conventionalCommits.scopes": [
-			"app",
-			"game",
-			"gateway",
-			"ml"
-		],
-		"cSpell.words": [
-			"Reversi"
-		]
-	}
+    "folders": [
+        {
+            "path": "."
+        },
+        {
+            "path": "app"
+        },
+        {
+            "path": "server/common"
+        },
+        {
+            "path": "server/game"
+        },
+        {
+            "path": "server/gateway"
+        }
+    ],
+    "settings": {
+        "conventionalCommits.scopes": ["app", "game", "gateway", "ml"],
+        "cSpell.words": ["Reversi"]
+    }
 }

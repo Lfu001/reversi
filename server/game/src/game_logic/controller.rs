@@ -1,5 +1,8 @@
-use super::action::{get_puttable_positions, Action};
-use super::state::{DiskColor, JudgeResult, Position, Table, Winner};
+use super::{
+    action::{get_puttable_positions, ActionExt},
+    state::{JudgeResult, Winner},
+};
+use common::{Action, DiskColor, Position, Table};
 use std::cmp::Ordering;
 
 /// The result of the action execution.
@@ -55,7 +58,7 @@ impl Controller {
         // Nobody can put a disk
         [DiskColor::Dark, DiskColor::Light]
             .iter()
-            .all(|color| get_puttable_positions(table.board(), color).is_empty())
+            .all(|color| get_puttable_positions(table.board(), *color).is_empty())
     }
 
     /// Judge the winner of the game. Assumes that the game is over.
@@ -74,16 +77,18 @@ impl Controller {
     fn judge(table: &Table) -> JudgeResult {
         debug_assert!(Controller::is_game_over(table));
 
-        let (dark_count, light_count) = table.board().raw_board().iter().fold(
-            (0, 0),
-            |(acc_dark, acc_light), disk| match disk {
-                Some(color) => match color {
-                    DiskColor::Dark => (acc_dark + 1, acc_light),
-                    DiskColor::Light => (acc_dark, acc_light + 1),
-                },
-                None => (acc_dark, acc_light),
-            },
-        );
+        let (dark_count, light_count) =
+            table
+                .board()
+                .board()
+                .iter()
+                .fold((0, 0), |(acc_dark, acc_light), disk| match disk {
+                    Some(color) => match color {
+                        DiskColor::Dark => (acc_dark + 1, acc_light),
+                        DiskColor::Light => (acc_dark, acc_light + 1),
+                    },
+                    None => (acc_dark, acc_light),
+                });
 
         let winner = match dark_count.cmp(&light_count) {
             Ordering::Less => Winner::Win(DiskColor::Light),
@@ -98,22 +103,21 @@ impl Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_logic::state::Table;
-    use crate::game_logic::state::{Column, Row};
-    use crate::position;
+    use crate::game_logic::state::BoardExt;
+    use common::{position, Column, Row};
     use num_traits::FromPrimitive;
 
     #[test]
     fn test_is_game_over() {
         // Initial state
         {
-            let table = Table::new();
+            let table = Table::default();
             assert!(!Controller::is_game_over(&table));
         }
 
         // Continuable game
         {
-            let mut table = Table::new();
+            let mut table = Table::default();
             let board = table.board_mut();
             board.set_disk(position!(Row::Four, Column::C), DiskColor::Dark);
             board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
@@ -123,7 +127,7 @@ mod tests {
 
         // No more empty square
         {
-            let mut table = Table::new();
+            let mut table = Table::default();
             let board = table.board_mut();
             for row in 0..8 {
                 for column in 0..8 {
@@ -142,7 +146,7 @@ mod tests {
 
         // There are empty squares but nobody can put
         {
-            let mut table = Table::new();
+            let mut table = Table::default();
             let board = table.board_mut();
             board.set_disk(position!(Row::Two, Column::D), DiskColor::Dark);
             board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
@@ -166,7 +170,7 @@ mod tests {
     fn test_judge() {
         // Dark wins
         {
-            let mut table = Table::new();
+            let mut table = Table::default();
             let board = table.board_mut();
             board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
             board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
@@ -193,7 +197,7 @@ mod tests {
 
         // Light wins
         {
-            let mut table = Table::new();
+            let mut table = Table::default();
             for row in 0..8 {
                 for column in 0..8 {
                     table.board_mut().set_disk(
@@ -212,7 +216,7 @@ mod tests {
 
         // Draw
         {
-            let mut table = Table::new();
+            let mut table = Table::default();
             let board = table.board_mut();
             board.set_disk(position!(Row::One, Column::A), DiskColor::Dark);
             board.set_disk(position!(Row::One, Column::F), DiskColor::Light);
