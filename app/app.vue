@@ -1,5 +1,5 @@
 <template>
   <div>
-    <Board />
+    <BoardContainer />
   </div>
 </template>
