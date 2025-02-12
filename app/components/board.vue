@@ -1,5 +1,5 @@
 <template>
-  <div class="board">
+  <div class="board-container">
     <div class="board-inner">
       <div
         v-for="(row, rowIndex) in board"
@@ -55,7 +55,7 @@ const placeStone = (row: number, col: number) => {
 </script>
 
 <style scoped>
-.board {
+.board-container {
   background-color: #4a3222;
   padding: 30px;
   border-radius: 15px;
