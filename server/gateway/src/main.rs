@@ -3,6 +3,7 @@ mod app_state;
 mod authentication;
 mod routes;
 mod services;
+mod types;
 mod websocket;
 
 use crate::{

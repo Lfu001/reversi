@@ -1,6 +1,9 @@
-use crate::websocket::{
-    message::{WsMessage, WsMessageType},
-    server::GameSessionManagerHandle,
+use crate::{
+    types::{ConnectionId, PlayerId, TableId},
+    websocket::{
+        message::{WsMessage, WsMessageType},
+        server::GameSessionManagerHandle,
+    },
 };
 use actix_ws::AggregatedMessage;
 use futures_util::StreamExt as _;
@@ -9,7 +12,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{sync::mpsc, time::interval};
-use uuid::Uuid;
 
 /// How often heartbeat pings are sent.
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
@@ -26,8 +28,8 @@ const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 /// * `session` - The WebSocket session.
 /// * `stream` - The WebSocket message stream.
 pub async fn game_ws(
-    player_id: String,
-    table_id: String,
+    player_id: PlayerId,
+    table_id: TableId,
     game_server: GameSessionManagerHandle,
     mut session: actix_ws::Session,
     stream: actix_ws::MessageStream,
@@ -66,7 +68,7 @@ pub async fn game_ws(
                     Some(Ok(AggregatedMessage::Text(text))) => {
                         // json from text
                         let message: WsMessage = serde_json::from_str(&text).unwrap();
-                        process_message(&game_server,&mut session, message,conn_id,&player_id, &table_id).await;
+                        process_message(&game_server, &mut session, message, &conn_id, &player_id, &table_id).await;
                     },
                     Some(Ok(AggregatedMessage::Binary(_))) => {
                         log::warn!("Unexpected binary message received from client.");
@@ -104,9 +106,9 @@ async fn process_message(
     game_server_handle: &GameSessionManagerHandle,
     session: &mut actix_ws::Session,
     message: WsMessage,
-    conn_id: Uuid,
-    player_id: &str,
-    table_id: &str,
+    conn_id: &ConnectionId,
+    player_id: &PlayerId,
+    table_id: &TableId,
 ) {
     match message.message_type() {
         WsMessageType::Step => {

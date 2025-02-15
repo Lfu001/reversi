@@ -1,6 +1,9 @@
-use crate::app_state::AppState;
-use crate::authentication::{extract_bearer_token, validate_jwt};
-use crate::services::redis_client::{GameTable, RedisClient};
+use crate::{
+    app_state::AppState,
+    authentication::{extract_bearer_token, validate_jwt},
+    services::redis_client::{GameTable, RedisClient},
+    types::{PlayerId, TableId},
+};
 use actix_web::{http::header, web, HttpRequest, HttpResponse, Responder};
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
 use serde::{Deserialize, Serialize};
@@ -54,7 +57,7 @@ pub async fn join_table(
     }
 
     HttpResponse::Created()
-        .insert_header((header::LOCATION, format!("/{}", table_id)))
+        .insert_header((header::LOCATION, format!("/{}", *table_id)))
         .finish()
 }
 
@@ -68,7 +71,7 @@ pub async fn join_table(
 /// # Returns
 ///
 /// A table ID.
-fn convert_password_to_table_id(password: &str, salt: u32) -> String {
+fn convert_password_to_table_id(password: &str, salt: u32) -> TableId {
     let data = format!("{}{}", password, salt);
 
     let mut hasher = Shake128::default();
@@ -77,7 +80,7 @@ fn convert_password_to_table_id(password: &str, salt: u32) -> String {
     let mut digest = [0u8; 10];
     reader.read(&mut digest);
 
-    URL_SAFE.encode(digest)
+    TableId::new(URL_SAFE.encode(digest))
 }
 
 /// Add a player to a table. If the table is not found, a new table is created.
@@ -89,22 +92,21 @@ fn convert_password_to_table_id(password: &str, salt: u32) -> String {
 /// * `table_id` - A table ID.
 async fn add_player_to_table(
     client: &mut (impl RedisClient + ?Sized),
-    player_id: &str,
-    table_id: &str,
+    player_id: &PlayerId,
+    table_id: &TableId,
 ) -> Result<(), String> {
-    let key = format!("table:{}", table_id);
-    let exists = client.exists(&key).await;
+    let exists = client.exists(table_id).await;
     if let Err(err) = exists {
         return Err(err.to_string());
     }
     let exists = exists.unwrap();
     if exists {
-        let game_table = client.json_get(&key, "$").await.unwrap();
+        let game_table = client.json_get(table_id, "$").await.unwrap();
         if game_table.players().len() >= 2 {
-            return Err(format!("Table {} is full.", table_id));
+            return Err(format!("Table {:?} is full.", table_id));
         }
         if let Err(err) = client
-            .json_arr_append(table_id, "$.players", player_id)
+            .json_arr_append(table_id, "$.players", &player_id.to_string())
             .await
         {
             return Err(err.to_string());
@@ -146,7 +148,7 @@ mod tests {
             )
             .await;
 
-            let custom_claims = PlayerClaims::new(String::from("foo"));
+            let custom_claims = PlayerClaims::new(PlayerId::new());
             let claims = Claims::with_custom_claims(custom_claims, Duration::from_secs(60));
             let jwt = jwt_key.authenticate(claims).unwrap();
 
@@ -171,12 +173,12 @@ mod tests {
         let password = "password";
         let salt = 12345;
         let table_id = convert_password_to_table_id(password, salt);
-        assert_eq!(table_id, "03NHKRfdHqCrvw==");
+        assert_eq!(*table_id, "03NHKRfdHqCrvw==");
 
         let password = "foo";
         let salt = 98765;
         let table_id = convert_password_to_table_id(password, salt);
-        assert_eq!(table_id, "GkElquPDNXk6sA==");
+        assert_eq!(*table_id, "GkElquPDNXk6sA==");
     }
 
     #[tokio::test]
@@ -186,43 +188,48 @@ mod tests {
             exists_result: String::from("0"),
             ..MockRedisClient::default()
         };
-        let player_id = "player1";
-        let table_id = "table1";
+        let player_id = PlayerId::new();
+        let table_id = TableId::new(String::from("table1"));
         let mut server = mockito::Server::new_async().await;
         let mock = setup_mock_async(&mut server).await;
 
-        let result = add_player_to_table(&mut client, player_id, table_id).await;
+        let result = add_player_to_table(&mut client, &player_id, &table_id).await;
         assert!(result.is_ok());
         mock.assert();
     }
 
     #[tokio::test]
     async fn test_add_player_to_table_existing() {
-        let table_id = "table1";
+        let table_id = TableId::new(String::from("table1"));
+        let player1 = PlayerId::new();
+        let player2 = PlayerId::new();
         // 1 player already joining the table.
         {
             let mut client = MockRedisClient {
                 exists_result: String::from("1"),
-                json_get_result: String::from("{\"players\":[\"player1\"], \"game_state\": \"\"}"),
+                json_get_result: format!(
+                    "{{\"players\":[\"{}\"], \"game_state\": \"\"}}",
+                    *player1
+                ),
                 ..MockRedisClient::default()
             };
-            let player_id = "player2";
 
-            let result = add_player_to_table(&mut client, player_id, table_id).await;
+            let result = add_player_to_table(&mut client, &player2, &table_id).await;
             assert!(result.is_ok());
         }
         // 2 player already joining the table.
         {
             let mut client = MockRedisClient {
                 exists_result: String::from("1"),
-                json_get_result: String::from(
-                    "{\"players\":[\"player1\", \"player2\"], \"game_state\": \"\"}",
+                json_get_result: format!(
+                    "{{\"players\":[\"{}\", \"{}\"], \"game_state\": \"\"}}",
+                    *player1, *player2
                 ),
                 ..MockRedisClient::default()
             };
-            let player_id = "player3";
+            let player3 = PlayerId::new();
 
-            let result = add_player_to_table(&mut client, player_id, table_id).await;
+            let result = add_player_to_table(&mut client, &player3, &table_id).await;
             assert!(result.is_err());
         }
     }

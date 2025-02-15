@@ -1,15 +1,14 @@
 use super::message::{WsMessage, WsMessageType};
-use crate::services::redis_client::RedisClient;
+use crate::{
+    services::redis_client::RedisClient,
+    types::{ConnectionId, TableId},
+};
 use std::{
     collections::{HashMap, HashSet},
     io,
     sync::Arc,
 };
 use tokio::sync::{mpsc, oneshot, Mutex};
-use uuid::Uuid;
-
-pub type ConnectionId = Uuid;
-pub type TableId = String;
 
 /// A command received by the game session manager.
 pub enum Command {
@@ -46,12 +45,14 @@ pub struct GameSessionManager {
     /// A command receiver.
     command_rx: mpsc::UnboundedReceiver<Command>,
     /// A Redis client.
-    redis_client: Arc<Mutex<dyn RedisClient>>,
+    redis_client: Arc<Mutex<dyn RedisClient + Send>>,
 }
 
 impl GameSessionManager {
     /// Creates a new game session manager and its handle.
-    pub fn new(redis_client: impl RedisClient + 'static) -> (Self, GameSessionManagerHandle) {
+    pub fn new(
+        redis_client: impl RedisClient + Send + 'static,
+    ) -> (Self, GameSessionManagerHandle) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         (
             Self {
@@ -70,12 +71,12 @@ impl GameSessionManager {
         tx: mpsc::UnboundedSender<WsMessage>,
         table_id: &TableId,
     ) -> ConnectionId {
-        let id = Uuid::new_v4();
-        self.sessions.insert(id, tx);
+        let id = ConnectionId::new();
+        self.sessions.insert(id.clone(), tx);
         self.tables
             .entry(table_id.to_owned())
             .or_default()
-            .insert(id);
+            .insert(id.clone());
         id
     }
 
@@ -119,7 +120,7 @@ impl GameSessionManager {
     }
 
     /// Step game state and return the new one.
-    async fn step(&mut self, table_id: &str, conn_id: &ConnectionId, data: &str) -> String {
+    async fn step(&mut self, table_id: &TableId, conn_id: &ConnectionId, data: &str) -> String {
         // Fetch current game state from Redis.
         todo!();
 
@@ -194,7 +195,7 @@ impl GameSessionManagerHandle {
     pub async fn connect(
         &self,
         conn_tx: mpsc::UnboundedSender<WsMessage>,
-        table_id: &str,
+        table_id: &TableId,
     ) -> ConnectionId {
         let (res_tx, res_rx) = oneshot::channel();
 
@@ -215,13 +216,13 @@ impl GameSessionManagerHandle {
     }
 
     /// Broadcast a message to all clients in the table.
-    pub async fn broadcast_message(&self, conn_id: ConnectionId, message: WsMessage) {
+    pub async fn broadcast_message(&self, conn_id: &ConnectionId, message: WsMessage) {
         let (res_tx, res_rx) = oneshot::channel();
 
         self.command_tx
             .send(Command::Message {
                 message,
-                connection_id: conn_id,
+                connection_id: conn_id.to_owned(),
                 response_tx: res_tx,
             })
             .unwrap();
@@ -230,13 +231,13 @@ impl GameSessionManagerHandle {
     }
 
     /// Step game state.
-    pub async fn step(&self, table_id: &str, conn_id: ConnectionId, data: &str) -> String {
+    pub async fn step(&self, table_id: &TableId, conn_id: &ConnectionId, data: &str) -> String {
         let (res_tx, res_rx) = oneshot::channel();
 
         self.command_tx
             .send(Command::Step {
                 table_id: table_id.to_owned(),
-                connection_id: conn_id,
+                connection_id: conn_id.to_owned(),
                 data: data.to_owned(),
                 response_tx: res_tx,
             })

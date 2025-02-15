@@ -1,3 +1,4 @@
+use crate::types::PlayerId;
 use actix_web::{http::header, HttpRequest};
 use jwt_simple::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -10,17 +11,17 @@ pub const EXPIRE_TIME_SECONDS: u64 = 3 * 60 * 60;
 #[derive(Serialize, Deserialize)]
 pub struct PlayerClaims {
     /// A player ID
-    player_id: String,
+    player_id: PlayerId,
 }
 
 impl PlayerClaims {
-    /// Creates a new player claim.
-    pub fn new(player_id: String) -> Self {
+    /// Creates a new [`PlayerClaims`].
+    pub fn new(player_id: PlayerId) -> Self {
         PlayerClaims { player_id }
     }
 
-    /// Returns a reference to the player ID.
-    pub fn player_id(&self) -> &str {
+    /// Returns a reference to the player id of this [`PlayerClaims`].
+    pub fn player_id(&self) -> &PlayerId {
         &self.player_id
     }
 }
@@ -31,7 +32,7 @@ impl PlayerClaims {
 ///
 /// * `key` - A JWT secret key.
 /// * `player_id` - A player ID.
-pub fn generate_jwt(key: &HS256Key, player_id: &str) -> Result<String, jwt_simple::Error> {
+pub fn generate_jwt(key: &HS256Key, player_id: &PlayerId) -> Result<String, jwt_simple::Error> {
     let custom_claims = PlayerClaims::new(player_id.to_owned());
     let claims =
         Claims::with_custom_claims(custom_claims, Duration::from_secs(EXPIRE_TIME_SECONDS));
@@ -67,7 +68,7 @@ pub fn extract_bearer_token(req: &HttpRequest) -> Result<String, String> {
 /// # Returns
 ///
 /// A player ID if the JWT is valid, or an error message otherwise.
-pub fn validate_jwt(key: &HS256Key, jwt: &str) -> Result<String, String> {
+pub fn validate_jwt(key: &HS256Key, jwt: &str) -> Result<PlayerId, String> {
     match key.verify_token::<PlayerClaims>(jwt, None) {
         Ok(claims) => Ok(claims.custom.player_id().to_owned()),
         Err(err) => Err(format!("JWT validation failed: {}", err)),
@@ -109,7 +110,7 @@ mod tests {
     #[test]
     fn test_generate_jwt() {
         let key = HS256Key::generate();
-        let player_id = String::from("foo");
+        let player_id = PlayerId::new();
         let jwt = generate_jwt(&key, &player_id).unwrap();
 
         let claims = key.verify_token::<PlayerClaims>(&jwt, None).unwrap();
@@ -120,7 +121,7 @@ mod tests {
     fn test_validate_jwt() {
         // Prepare test JWT.
         let key = HS256Key::generate();
-        let player_id = "player1";
+        let player_id = PlayerId::new();
 
         let claims = Claims::with_custom_claims(
             PlayerClaims::new(player_id.to_owned()),

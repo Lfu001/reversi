@@ -28,16 +28,22 @@ impl GameTable {
     }
 }
 
+/// A trait for converting a type to a Redis key.
+pub trait RedisKey {
+    /// Converts the type to a Redis key.
+    fn to_key(&self) -> String;
+}
+
 /// Redis client interface for easier mocking.
 #[async_trait::async_trait]
-pub trait RedisClient: Send {
+pub trait RedisClient {
     /// Sets a key-value pair in Redis.
     ///
     /// # Arguments
     ///
     /// * `key` - A key to set.
     /// * `value` - A value to set.
-    async fn set(&mut self, key: &str, value: &str) -> Result<(), RedisError>;
+    async fn set(&mut self, key: &(dyn RedisKey + Sync), value: &str) -> Result<(), RedisError>;
 
     /// Gets a JSON value from Redis.
     ///
@@ -45,7 +51,11 @@ pub trait RedisClient: Send {
     ///
     /// * `key` - A key to get.
     /// * `path` - A JSON path to get.
-    async fn json_get(&mut self, key: &str, path: &str) -> Result<GameTable, RedisError>;
+    async fn json_get(
+        &mut self,
+        key: &(dyn RedisKey + Sync),
+        path: &str,
+    ) -> Result<GameTable, RedisError>;
 
     /// Sets a JSON value in Redis.
     ///
@@ -54,7 +64,12 @@ pub trait RedisClient: Send {
     /// * `key` - A key to set.
     /// * `path` - A JSON path to set.
     /// * `value` - A value to set.
-    async fn json_set(&mut self, key: &str, path: &str, value: &Value) -> Result<(), RedisError>;
+    async fn json_set(
+        &mut self,
+        key: &(dyn RedisKey + Sync),
+        path: &str,
+        value: &Value,
+    ) -> Result<(), RedisError>;
 
     /// Appends a value to a JSON array in Redis.
     ///
@@ -65,30 +80,17 @@ pub trait RedisClient: Send {
     /// * `value` - A value to append.
     async fn json_arr_append(
         &mut self,
-        key: &str,
+        key: &(dyn RedisKey + Sync),
         path: &str,
         value: &str,
     ) -> Result<(), RedisError>;
-
-    // /// Search for the first occurrence of a JSON value in an array in Redis.
-    // ///
-    // /// # Arguments
-    // ///
-    // /// * `key` - A key to search in.
-    // /// * `path` - A JSON path to search in.
-    // /// * `value` - A value to search for.
-    // ///
-    // /// # Returns
-    // ///
-    // /// The index of the first occurrence of the value in the array. -1 if not found.
-    // fn json_arr_index(&self, key: &str, path: &str, value: &str) -> Result<i32, RedisError>;
 
     /// Checks if a key exists in Redis.
     ///
     /// # Arguments
     ///
     /// * `key` - A key to check.
-    async fn exists(&mut self, key: &str) -> Result<bool, RedisError>;
+    async fn exists(&mut self, key: &(dyn RedisKey + Sync)) -> Result<bool, RedisError>;
 
     /// Expires a key in Redis.
     ///
@@ -96,7 +98,8 @@ pub trait RedisClient: Send {
     ///
     /// * `key` - A key to expire.
     /// * `seconds` - An expiration time in seconds.
-    async fn expire(&mut self, key: &str, seconds: i64) -> Result<(), RedisError>;
+    async fn expire(&mut self, key: &(dyn RedisKey + Sync), seconds: i64)
+        -> Result<(), RedisError>;
 }
 
 /// Real Redis client implementation.
@@ -120,47 +123,60 @@ impl RealRedisClient {
 
 #[async_trait::async_trait]
 impl RedisClient for RealRedisClient {
-    async fn set(&mut self, key: &str, value: &str) -> Result<(), RedisError> {
-        let _: () = self.connection_manager.set(key, value).await?;
+    async fn set(&mut self, key: &(dyn RedisKey + Sync), value: &str) -> Result<(), RedisError> {
+        let _: () = self.connection_manager.set(key.to_key(), value).await?;
         Ok(())
     }
 
-    async fn json_get(&mut self, key: &str, path: &str) -> Result<GameTable, RedisError> {
-        let game_table: GameTable = self.connection_manager.json_get(key, path).await?;
+    async fn json_get(
+        &mut self,
+        key: &(dyn RedisKey + Sync),
+        path: &str,
+    ) -> Result<GameTable, RedisError> {
+        let game_table: GameTable = self.connection_manager.json_get(key.to_key(), path).await?;
         Ok(game_table)
     }
 
-    async fn json_set(&mut self, key: &str, path: &str, value: &Value) -> Result<(), RedisError> {
-        let _: () = self.connection_manager.json_set(key, path, value).await?;
+    async fn json_set(
+        &mut self,
+        key: &(dyn RedisKey + Sync),
+        path: &str,
+        value: &Value,
+    ) -> Result<(), RedisError> {
+        let _: () = self
+            .connection_manager
+            .json_set(key.to_key(), path, value)
+            .await?;
         Ok(())
     }
 
     async fn json_arr_append(
         &mut self,
-        key: &str,
+        key: &(dyn RedisKey + Sync),
         path: &str,
         value: &str,
     ) -> Result<(), RedisError> {
         let _: () = self
             .connection_manager
-            .json_arr_append(key, path, &value)
+            .json_arr_append(key.to_key(), path, &value)
             .await?;
         Ok(())
     }
 
-    // fn json_arr_index(&self, key: &str, path: &str, value: &str) -> Result<i32, RedisError> {
-    //     let mut conn = self.client.get_connection()?;
-    //     let index: i32 = conn.json_arr_index(key, path, &value)?;
-    //     Ok(index)
-    // }
-
-    async fn exists(&mut self, key: &str) -> Result<bool, RedisError> {
-        let exists: bool = self.connection_manager.exists(key).await?;
+    async fn exists(&mut self, key: &(dyn RedisKey + Sync)) -> Result<bool, RedisError> {
+        let exists: bool = self.connection_manager.exists(key.to_key()).await?;
         Ok(exists)
     }
 
-    async fn expire(&mut self, key: &str, seconds: i64) -> Result<(), RedisError> {
-        let _: () = self.connection_manager.expire(key, seconds).await?;
+    async fn expire(
+        &mut self,
+        key: &(dyn RedisKey + Sync),
+        seconds: i64,
+    ) -> Result<(), RedisError> {
+        let _: () = self
+            .connection_manager
+            .expire(key.to_key(), seconds)
+            .await?;
         Ok(())
     }
 }
@@ -202,85 +218,87 @@ pub mod test {
 
     #[async_trait::async_trait]
     impl RedisClient for MockRedisClient {
-        async fn set(&mut self, key: &str, value: &str) -> Result<(), RedisError> {
+        async fn set(
+            &mut self,
+            key: &(dyn RedisKey + Sync),
+            value: &str,
+        ) -> Result<(), RedisError> {
             let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
-                redis::cmd("SET").arg(key).arg(value),
+                redis::cmd("SET").arg(key.to_key()).arg(value),
                 Ok(self.set_result.to_owned()),
             )]);
-            let _: () = mock_conn.set(key, value).await?;
+            let _: () = mock_conn.set(key.to_key(), value).await?;
             Ok(())
         }
 
-        async fn json_get(&mut self, key: &str, path: &str) -> Result<GameTable, RedisError> {
+        async fn json_get(
+            &mut self,
+            key: &(dyn RedisKey + Sync),
+            path: &str,
+        ) -> Result<GameTable, RedisError> {
             let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
-                redis::cmd("JSON.GET").arg(key).arg(path),
+                redis::cmd("JSON.GET").arg(key.to_key()).arg(path),
                 Ok(self.json_get_result.to_owned()),
             )]);
-            let game_table: GameTable = mock_conn.json_get(key, path).await?;
+            let game_table: GameTable = mock_conn.json_get(key.to_key(), path).await?;
             Ok(game_table)
         }
 
         async fn json_set(
             &mut self,
-            key: &str,
+            key: &(dyn RedisKey + Sync),
             path: &str,
             value: &Value,
         ) -> Result<(), RedisError> {
             let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
                 redis::cmd("JSON.SET")
-                    .arg(key)
+                    .arg(key.to_key())
                     .arg(path)
                     .arg(serde_json::to_string(value)?),
                 Ok(self.json_set_result.to_owned()),
             )]);
-            let _: () = mock_conn.json_set(key, path, &value).await?;
+            let _: () = mock_conn.json_set(key.to_key(), path, &value).await?;
             Ok(())
         }
 
         async fn json_arr_append(
             &mut self,
-            key: &str,
+            key: &(dyn RedisKey + Sync),
             path: &str,
             value: &str,
         ) -> Result<(), RedisError> {
             let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
                 redis::cmd("JSON.ARRAPPEND")
-                    .arg(key)
+                    .arg(key.to_key())
                     .arg(path)
                     .arg(serde_json::to_string(value)?),
                 Ok(self.json_arr_append_result.to_owned()),
             )]);
-            let _: () = mock_conn.json_arr_append(key, path, &value).await?;
+            let _: () = mock_conn
+                .json_arr_append(key.to_key(), path, &value)
+                .await?;
             Ok(())
         }
 
-        // fn json_arr_index(&self, key: &str, path: &str, value: &str) -> Result<i32, RedisError> {
-        //     let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
-        //         redis::cmd("JSON.ARRINDEX")
-        //             .arg(key)
-        //             .arg(path)
-        //             .arg(serde_json::to_string(value)?),
-        //         Ok(self.json_arr_index_result.to_owned()),
-        //     )]);
-        //     let index: i32 = mock_conn.json_arr_index(key, path, &value)?;
-        //     Ok(index)
-        // }
-
-        async fn exists(&mut self, key: &str) -> Result<bool, RedisError> {
+        async fn exists(&mut self, key: &(dyn RedisKey + Sync)) -> Result<bool, RedisError> {
             let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
-                redis::cmd("EXISTS").arg(key),
+                redis::cmd("EXISTS").arg(key.to_key()),
                 Ok(self.exists_result.to_owned()),
             )]);
-            let exists: bool = mock_conn.exists(key).await?;
+            let exists: bool = mock_conn.exists(key.to_key()).await?;
             Ok(exists)
         }
 
-        async fn expire(&mut self, key: &str, seconds: i64) -> Result<(), RedisError> {
+        async fn expire(
+            &mut self,
+            key: &(dyn RedisKey + Sync),
+            seconds: i64,
+        ) -> Result<(), RedisError> {
             let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
-                redis::cmd("EXPIRE").arg(key).arg(seconds),
+                redis::cmd("EXPIRE").arg(key.to_key()).arg(seconds),
                 Ok(self.expire_result.to_owned()),
             )]);
-            let _: () = mock_conn.expire(key, seconds).await?;
+            let _: () = mock_conn.expire(key.to_key(), seconds).await?;
             Ok(())
         }
     }

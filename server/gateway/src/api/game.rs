@@ -2,6 +2,7 @@ use crate::{
     app_state::AppState,
     authentication::{extract_bearer_token, validate_jwt},
     services::redis_client::RedisClient,
+    types::TableId,
     websocket::handler,
 };
 use actix_web::{rt, web, Error, HttpRequest, HttpResponse};
@@ -43,10 +44,11 @@ pub async fn game_ws(
     let player_id = player_id.unwrap();
 
     //  Check if the table exists.
-    match is_table_exist(&mut *app_state.redis_client().await, &info.table_id).await {
+    let table_id = TableId::new(info.table_id.to_owned());
+    match is_table_exist(&mut *app_state.redis_client().await, &table_id).await {
         Ok(exists) => {
             if !exists {
-                log::error!("Table \"{}\" does not exist.", info.table_id);
+                log::error!("Table \"{}\" does not exist.", *table_id);
                 return Ok(HttpResponse::NotFound().finish());
             }
         }
@@ -60,7 +62,7 @@ pub async fn game_ws(
     let (res, session, stream) = actix_ws::handle(&req, stream)?;
     rt::spawn(handler::game_ws(
         player_id,
-        info.table_id.clone(),
+        table_id,
         (**app_state).game_server().clone(),
         session,
         stream,
@@ -77,7 +79,7 @@ pub async fn game_ws(
 /// * `table_id` - The table ID.
 async fn is_table_exist(
     client: &mut (impl RedisClient + ?Sized),
-    table_id: &str,
+    table_id: &TableId,
 ) -> Result<bool, String> {
     match client.exists(table_id).await {
         Ok(exists) => Ok(exists),
