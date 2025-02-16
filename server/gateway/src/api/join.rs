@@ -101,7 +101,8 @@ async fn add_player_to_table(
     }
     let exists = exists.unwrap();
     if exists {
-        let game_table = client.json_get(table_id, "$").await.unwrap();
+        let json = client.json_get(table_id, "$").await.unwrap();
+        let game_table: GameTable = serde_json::from_value(json).unwrap();
         if game_table.players().len() >= 2 {
             return Err(format!("Table {:?} is full.", table_id));
         }

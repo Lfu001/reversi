@@ -55,7 +55,7 @@ pub trait RedisClient {
         &mut self,
         key: &(dyn RedisKey + Sync),
         path: &str,
-    ) -> Result<GameTable, RedisError>;
+    ) -> Result<Value, RedisError>;
 
     /// Sets a JSON value in Redis.
     ///
@@ -132,9 +132,10 @@ impl RedisClient for RealRedisClient {
         &mut self,
         key: &(dyn RedisKey + Sync),
         path: &str,
-    ) -> Result<GameTable, RedisError> {
-        let game_table: GameTable = self.connection_manager.json_get(key.to_key(), path).await?;
-        Ok(game_table)
+    ) -> Result<Value, RedisError> {
+        let json: String = self.connection_manager.json_get(key.to_key(), path).await?;
+        let json = serde_json::from_str(&json).unwrap();
+        Ok(json)
     }
 
     async fn json_set(
@@ -235,13 +236,14 @@ pub mod test {
             &mut self,
             key: &(dyn RedisKey + Sync),
             path: &str,
-        ) -> Result<GameTable, RedisError> {
+        ) -> Result<Value, RedisError> {
             let mut mock_conn = MockRedisConnection::new(vec![MockCmd::new(
                 redis::cmd("JSON.GET").arg(key.to_key()).arg(path),
                 Ok(self.json_get_result.to_owned()),
             )]);
-            let game_table: GameTable = mock_conn.json_get(key.to_key(), path).await?;
-            Ok(game_table)
+            let json: String = mock_conn.json_get(key.to_key(), path).await?;
+            let json = serde_json::from_str(&json).unwrap();
+            Ok(json)
         }
 
         async fn json_set(
