@@ -91,7 +91,7 @@ macro_rules! position {
 
 /// A board of Reversi.
 /// TODO: implement Deref or Index trait
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Board {
     /// An 1D expression of the board.
     #[serde(with = "BigArray")]
@@ -145,7 +145,7 @@ impl IndexMut<usize> for Board {
 }
 
 /// A state of a game table.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Table {
     /// A board of Reversi.
     #[serde(flatten)]
@@ -231,6 +231,32 @@ pub enum Action {
     PutDisk(PutConfig),
     /// Pass the turn.
     PassTurn(DiskColor),
+}
+
+/// A request message to execute an action on the table.
+#[derive(Serialize, Deserialize)]
+pub struct StepRequestMessage {
+    /// A table of the game.
+    table: Table,
+    /// An action to execute.
+    action: Action,
+}
+
+impl StepRequestMessage {
+    /// Creates a new [`StepRequestMessage`].
+    pub fn new(table: Table, action: Action) -> Self {
+        Self { table, action }
+    }
+
+    /// Returns a reference to the table of this [`StepRequestMessage`].
+    pub fn table(&self) -> &Table {
+        &self.table
+    }
+
+    /// Returns a reference to the action of this [`StepRequestMessage`].
+    pub fn action(&self) -> &Action {
+        &self.action
+    }
 }
 
 #[cfg(test)]
