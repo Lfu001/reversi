@@ -10,28 +10,28 @@
           v-for="(cell, colIndex) in row"
           :key="'cell-' + rowIndex + '-' + colIndex"
           class="cell"
-          :class="{ dot: isDotPosition(rowIndex, colIndex), dark: cell === 1, light: cell === 2}"
+          :class="{ dot: isDotPosition(rowIndex, colIndex), dark: cell === 1, light: cell === 2 }"
           @click="placeStone(rowIndex, colIndex)"
-        ></div>
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { reactive } from 'vue'
 
 const board = reactive(
   Array(8)
-  .fill(null)
-  .map(() => Array(8).fill(null))
-);
+    .fill(null)
+    .map(() => Array(8).fill(null)),
+)
 
 // initial placement
-board[3][3] = 2;  // light
-board[3][4] = 1;  // dark
-board[4][3] = 1;  // dark
-board[4][4] = 2;  // light
+board[3][3] = 2 // light
+board[3][4] = 1 // dark
+board[4][3] = 1 // dark
+board[4][4] = 2 // light
 
 // dot position
 const isDotPosition = (row: number, col: number) => {
@@ -40,17 +40,17 @@ const isDotPosition = (row: number, col: number) => {
     [2, 6],
     [6, 2],
     [6, 6],
-  ];
-  return dotPositions.some(([dotRow, dotCol]) => dotRow === row && dotCol === col);
-};
+  ]
+  return dotPositions.some(([dotRow, dotCol]) => dotRow === row && dotCol === col)
+}
 
 const placeStone = (row: number, col: number) => {
   // filled cell
-  if (board[row][col] != 0) return;
+  if (board[row][col] != 0) return
 
   // TODO : apply logic
   // anyway put dark stone
-  board[row][col] = 1;
+  board[row][col] = 1
 }
 </script>
 
