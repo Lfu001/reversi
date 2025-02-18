@@ -1,18 +1,20 @@
 <template>
   <div class="board-container">
     <div class="board-inner">
-      <div
-        v-for="(row, rowIndex) in board"
-        :key="'row-' + rowIndex"
-        class="row"
-      >
+      <div class="board-grid">
         <div
-          v-for="(cell, colIndex) in row"
-          :key="'cell-' + rowIndex + '-' + colIndex"
-          class="cell"
-          :class="{ dot: isDotPosition(rowIndex, colIndex), dark: cell === 1, light: cell === 2 }"
-          @click="placeStone(rowIndex, colIndex)"
-        />
+          v-for="(row, rowIndex) in board"
+          :key="'row-' + rowIndex"
+          class="row"
+        >
+          <div
+            v-for="(cell, colIndex) in row"
+            :key="'cell-' + rowIndex + '-' + colIndex"
+            class="cell"
+            :class="{ dot: isDotPosition(rowIndex, colIndex), dark: cell === 1, light: cell === 2 }"
+            @click="placeStone(rowIndex, colIndex)"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -75,11 +77,14 @@ const placeStone = (row: number, col: number) => {
   background-color:green;
   padding: 10px;
   border-radius: 10px;
+}
+
+.board-grid {
+  border: 1px solid black;
   display: grid;
   grid-template-rows: repeat(8, 1fr);
   width: 336px;  /* (1cell:40px + 2border:2px) * 8 */
   height: 336px;  /* (1cell:40px + 2border:2px) * 8 */
-  box-shadow: inset 0 0 150px 30px rgba(0, 0, 0, 0.5);
 }
 
 .row {
