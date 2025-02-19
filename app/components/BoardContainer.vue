@@ -74,7 +74,7 @@ const placeStone = (row: number, col: number) => {
 }
 
 .board-inner {
-  background-color:green;
+  background: radial-gradient(#50aa50, #2d642d);
   padding: 10px;
   border-radius: 10px;
 }
