@@ -120,12 +120,12 @@ impl GameSessionManager {
     ///
     /// * `conn_id` - The connection ID of the sender.
     /// * `message` - The message to broadcast.
-    async fn broadcast_message(&self, conn_id: ConnectionId, message: WsMessage) {
+    async fn broadcast_message(&self, conn_id: &ConnectionId, message: WsMessage) {
         // Find table where the connection ID participates in.
         if let Some((_, conn_ids)) = self
             .tables
             .iter()
-            .find(|(_, participants)| participants.contains(&conn_id))
+            .find(|(_, participants)| participants.contains(conn_id))
         {
             for conn in conn_ids {
                 if let Some(tx) = self.sessions.get(conn) {
@@ -233,7 +233,7 @@ impl GameSessionManager {
                     // Broadcast to other players in the table that a new player has joined.
                     let player_name = self.fetch_player_name(&player_id).await;
                     let message = WsMessage::Connected(player_name);
-                    self.broadcast_message(conn_id.to_owned(), message).await;
+                    self.broadcast_message(&conn_id, message).await;
 
                     let _ = response_tx.send(conn_id);
                 }
@@ -244,14 +244,14 @@ impl GameSessionManager {
                     let player_id = self.connection_player_map.get(&conn_id).unwrap();
                     let player_name = self.fetch_player_name(player_id).await;
                     let message = WsMessage::Disconnected(format!("{} has left", player_name));
-                    self.broadcast_message(conn_id, message).await;
+                    self.broadcast_message(&conn_id, message).await;
                 }
                 Command::Message {
                     message,
                     connection_id,
                     response_tx,
                 } => {
-                    self.broadcast_message(connection_id, message).await;
+                    self.broadcast_message(&connection_id, message).await;
                     let _ = response_tx.send(());
                 }
                 Command::Step {
