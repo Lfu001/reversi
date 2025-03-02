@@ -1,6 +1,5 @@
 use common::{position, Board, DiskColor, Position};
 use num_traits::FromPrimitive;
-use serde::{Deserialize, Serialize};
 
 /// A trait which provides an extension method for the [`DiskColor`].
 pub trait DiskColorExt {
@@ -14,40 +13,6 @@ impl DiskColorExt for DiskColor {
             DiskColor::Light => DiskColor::Dark,
             DiskColor::Dark => DiskColor::Light,
         }
-    }
-}
-
-/// A judge of the game.
-#[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize)]
-pub enum Winner {
-    /// A winner.
-    Win(DiskColor),
-    /// Draw result.
-    Draw,
-}
-
-/// A result of the game.
-#[derive(Copy, Clone, PartialEq, Debug, Serialize, Deserialize)]
-pub struct JudgeResult {
-    dark_count: u8,
-    light_count: u8,
-    winner: Winner,
-}
-
-impl JudgeResult {
-    /// Initializes a judge result.
-    pub fn new(dark_count: u8, light_count: u8, winner: Winner) -> Self {
-        Self {
-            dark_count,
-            light_count,
-            winner,
-        }
-    }
-
-    /// Returns the read-only reference to the winner of the game.
-    #[cfg(test)]
-    pub fn winner(&self) -> Winner {
-        self.winner
     }
 }
 

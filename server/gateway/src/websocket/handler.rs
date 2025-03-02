@@ -1,9 +1,6 @@
 use crate::{
     types::{ConnectionId, PlayerId, TableId},
-    websocket::{
-        message::{WsMessage, WsMessageType},
-        server::GameSessionManagerHandle,
-    },
+    websocket::{message::WsMessage, server::GameSessionManagerHandle},
 };
 use actix_ws::AggregatedMessage;
 use futures_util::StreamExt as _;
@@ -38,7 +35,7 @@ pub async fn game_ws(
     let mut interval = interval(HEARTBEAT_INTERVAL);
 
     let (conn_tx, mut conn_rx) = mpsc::unbounded_channel();
-    let conn_id = game_server.connect(conn_tx, &table_id).await;
+    let conn_id = game_server.connect(conn_tx, &table_id, &player_id).await;
     let mut stream = pin!(stream.aggregate_continuations());
 
     let close_reason = loop {
@@ -66,7 +63,6 @@ pub async fn game_ws(
                         last_heartbeat = Instant::now();
                     },
                     Some(Ok(AggregatedMessage::Text(text))) => {
-                        // json from text
                         let message: WsMessage = serde_json::from_str(&text).unwrap();
                         process_message(&game_server, &mut session, message, &conn_id, &player_id, &table_id).await;
                     },
@@ -92,8 +88,22 @@ pub async fn game_ws(
 
             // Message from server.
             Some(msg) = msg_rx => {
-                let json = serde_json::json!(msg);
-                session.text(json.to_string()).await.unwrap();
+                match msg {
+                    WsMessage::Connected(msg) => {
+                        session.text(serde_json::json!({ "Connected": msg }).to_string()).await.unwrap();
+                    },
+                    WsMessage::Disconnected(msg) => {
+                        session.text(serde_json::json!({ "Disconnected": msg }).to_string()).await.unwrap();
+                    },
+                    WsMessage::Step(_) => log::error!("Unexpected message received from server."),
+                    WsMessage::GameState(state_response_message) => {
+                        let json = serde_json::json!(state_response_message);
+                        session.text(json.to_string()).await.unwrap();
+                    },
+                    WsMessage::InternalServerError => {
+                        session.text(serde_json::json!({ "error": "Internal Server Error" }).to_string()).await.unwrap();
+                    },
+                };
             }
         }
     };
@@ -110,28 +120,28 @@ async fn process_message(
     player_id: &PlayerId,
     table_id: &TableId,
 ) {
-    match message.message_type() {
-        WsMessageType::Step => {
-            let new_game_state = game_server_handle
-                .step(table_id, conn_id, message.data())
-                .await;
-            game_server_handle
-                .broadcast_message(
-                    conn_id,
-                    WsMessage::new(WsMessageType::GameState, new_game_state),
-                )
-                .await;
+    match message {
+        WsMessage::Step(action) => {
+            let new_game_state = game_server_handle.step(table_id, conn_id, &action).await;
+            match new_game_state {
+                Ok(new_game_state) => {
+                    game_server_handle
+                        .broadcast_message(conn_id, WsMessage::GameState(new_game_state))
+                        .await;
+                }
+                Err(_) => {
+                    game_server_handle
+                        .broadcast_message(conn_id, WsMessage::InternalServerError)
+                        .await;
+                }
+            }
         }
         _ => {
-            log::warn!(
-                "Unexpected message type received: {:?}",
-                message.message_type()
-            );
+            log::warn!("Unexpected message type received.");
             session
-                .text(format!(
-                    "Unexpected message type: {:?}",
-                    message.message_type()
-                ))
+                .text(
+                    serde_json::json!({ "error": "Unexpected message type received." }).to_string(),
+                )
                 .await
                 .unwrap();
         }

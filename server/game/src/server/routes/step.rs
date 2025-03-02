@@ -1,4 +1,6 @@
-use crate::{game_logic::controller::Controller, server::messages::response::ResponseMessage};
+use crate::{
+    game_logic::controller::Controller, server::messages::response::StateResponseMessageExt,
+};
 use actix_web::{error, web, Responder, Result};
 use common::StepRequestMessage;
 
@@ -17,11 +19,11 @@ pub async fn step_table(req: web::Json<StepRequestMessage>) -> Result<impl Respo
     let step_result = Controller::step(&mut table, message.action().to_owned());
 
     match step_result {
-        Ok(step_result) => Ok(ResponseMessage {
+        Ok(step_result) => Ok(StateResponseMessageExt::new(
             table,
-            puttable_positions: step_result.puttable_positions,
-            judge_result: step_result.judge_result,
-        }),
+            step_result.puttable_positions,
+            step_result.judge_result,
+        )),
         Err(()) => Err(error::ErrorBadRequest("Invalid action.")),
     }
 }

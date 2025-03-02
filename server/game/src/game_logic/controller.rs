@@ -1,8 +1,5 @@
-use super::{
-    action::{get_puttable_positions, ActionExt},
-    state::{JudgeResult, Winner},
-};
-use common::{Action, DiskColor, Position, Table};
+use super::action::{get_puttable_positions, ActionExt};
+use common::{Action, DiskColor, JudgeResult, Position, Table, Winner};
 use std::cmp::Ordering;
 
 /// The result of the action execution.
@@ -19,7 +16,7 @@ impl Controller {
     ///
     /// # Arguments
     ///
-    /// * `table` - A table of the game.
+    /// * `table` - A table of the game. This table will be modified by the action.
     /// * `action` - An action to execute.
     ///
     /// # Returns
