@@ -12,6 +12,7 @@ use crate::{
 };
 use actix_web::{middleware, web, App, HttpServer};
 use env_logger::Env;
+use jwt_simple::{prelude::HS256Key, reexports::rand::prelude::*};
 use tokio::{spawn, try_join};
 
 #[actix_web::main]
@@ -20,7 +21,8 @@ async fn main() -> std::io::Result<()> {
 
     let client = redis::Client::open("redis://127.0.0.1:6379").unwrap();
     let client = RealRedisClient::new(client).await;
-
+    let jwt_key = HS256Key::generate();
+    let salt = thread_rng().next_u32();
     let (game_server, server_handle) = GameSessionManager::new(client.clone());
     let game_server = spawn(game_server.run());
 
@@ -28,6 +30,8 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(AppState::new(
                 client.clone(),
+                jwt_key.clone(),
+                salt,
                 server_handle.clone(),
             )))
             .configure(config)

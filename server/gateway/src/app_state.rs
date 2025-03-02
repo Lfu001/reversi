@@ -1,9 +1,6 @@
 use crate::services::redis_client::RedisClient;
 use crate::websocket::server::GameSessionManagerHandle;
-use jwt_simple::{
-    prelude::HS256Key,
-    reexports::rand::{thread_rng, RngCore},
-};
+use jwt_simple::prelude::HS256Key;
 use std::sync::Arc;
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -25,13 +22,15 @@ impl AppState {
     /// # Arguments
     ///
     /// * `redis_client` - A Redis client instance.
+    /// * `jwt_key` - Key for signing JWTs.
+    /// * `salt` - A salt for password hashing.
     /// * `game_server` - A game server handle.
     pub fn new(
         redis_client: impl RedisClient + 'static,
+        jwt_key: HS256Key,
+        salt: u32,
         game_server: GameSessionManagerHandle,
     ) -> Self {
-        let jwt_key = HS256Key::generate();
-        let salt = thread_rng().next_u32();
         AppState {
             redis_client: Arc::new(Mutex::new(redis_client)),
             jwt_key,

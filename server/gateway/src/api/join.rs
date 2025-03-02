@@ -120,14 +120,16 @@ mod tests {
             authentication::PlayerClaims, types::PlayerId, websocket::server::GameSessionManager,
         };
         use actix_web::{http, test, App};
-        use jwt_simple::prelude::*;
+        use jwt_simple::{prelude::*, reexports::rand::prelude::*};
 
         #[actix_web::test]
         #[serial]
         async fn test_join() {
             let mock_redis_client = MockRedisClient::default();
+            let jwt_key = HS256Key::generate();
+            let salt = thread_rng().next_u32();
             let (_, server_handle) = GameSessionManager::new(mock_redis_client.clone());
-            let app_state = AppState::new(mock_redis_client, server_handle.clone());
+            let app_state = AppState::new(mock_redis_client, jwt_key, salt, server_handle.clone());
             let jwt_key = app_state.jwt_key().to_owned();
             let app = test::init_service(
                 App::new()
