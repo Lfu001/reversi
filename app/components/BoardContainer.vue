@@ -3,16 +3,14 @@
     <div class="board-inner">
       <div class="board-grid">
         <div
-          v-for="(row, rowIndex) in board"
-          :key="'row-' + rowIndex"
-          class="row"
+          v-for="(c, index) in board"
+          :key="index"
+          class="square"
+          :class="{ dot: isDotPosition(index) }"
         >
-          <div
-            v-for="(cell, colIndex) in row"
-            :key="'cell-' + rowIndex + '-' + colIndex"
-            class="cell"
-            :class="{ dot: isDotPosition(rowIndex, colIndex), dark: cell === 1, light: cell === 2 }"
-            @click="placeStone(rowIndex, colIndex)"
+          <SquareComponent
+            :color="c"
+            @click="placeStone(index)"
           />
         </div>
       </div>
@@ -21,38 +19,36 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { DiskColor } from '~/types/DiskColor'
 
-const board = reactive(
-  Array(8)
-    .fill(null)
-    .map(() => Array(8).fill(null)),
+const board: Ref<Array<DiskColor | null>> = ref(
+  Array(64).fill(null),
 )
 
 // initial placement
-board[3][3] = 2 // light
-board[3][4] = 1 // dark
-board[4][3] = 1 // dark
-board[4][4] = 2 // light
+board.value[27] = DiskColor.Light
+board.value[28] = DiskColor.Dark
+board.value[35] = DiskColor.Dark
+board.value[36] = DiskColor.Light
 
-// dot position
-const isDotPosition = (row: number, col: number) => {
+const isDotPosition = (index: number) => {
   const dotPositions = [
-    [2, 2],
-    [2, 6],
-    [6, 2],
-    [6, 6],
+    18,
+    22,
+    50,
+    54,
   ]
-  return dotPositions.some(([dotRow, dotCol]) => dotRow === row && dotCol === col)
+  return dotPositions.some(i => i === index)
 }
 
-const placeStone = (row: number, col: number) => {
+// put down disc
+const placeStone = (index: number) => {
   // filled cell
-  if (board[row][col] != 0) return
+  if (board.value[index] != null) return
 
   // TODO : apply logic
   // anyway put dark stone
-  board[row][col] = 1
+  board.value[index] = 'Dark'
 }
 </script>
 
@@ -83,16 +79,12 @@ const placeStone = (row: number, col: number) => {
   border: 1px solid black;
   display: grid;
   grid-template-rows: repeat(8, 1fr);
+  grid-template-columns: repeat(8, 1fr);
   width: 336px;  /* (1cell:40px + 2border:2px) * 8 */
   height: 336px;  /* (1cell:40px + 2border:2px) * 8 */
 }
 
-.row {
-  display: grid;
-  grid-template-columns: repeat(8, 1fr);
-}
-
-.cell {
+.square {
   width: 40px;
   height: 40px;
   display: flex;
@@ -102,7 +94,7 @@ const placeStone = (row: number, col: number) => {
   border: 1px solid black;
 }
 
-.cell::before {
+.square.dot::before {
   content: '';
   position: absolute;
   width: 6px;
@@ -112,27 +104,6 @@ const placeStone = (row: number, col: number) => {
   top: -1px;
   left: -1px;
   transform: translate(-50%, -50%);
-  opacity: 0;  /* invisible by default */
-}
-
-.cell.dot::before {
-  opacity: 1;  /* visible */
-}
-
-.cell.dark::before,
-.cell.light::before {
-  content: '';
-  width: 80%;
-  height: 80%;
-  border-radius: 50%;
-  position: absolute;
-}
-
-.cell.dark::before {
-  background-color: black;
-}
-
-.cell.light::before {
-  background-color: white;
+  opacity: 1;
 }
 </style>
