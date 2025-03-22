@@ -21,7 +21,10 @@
                 class="mb-4"
                 placeholder="ゲスト名"
               />
-              <Button label="次へ →" />
+              <Button
+                label="次へ →"
+                :disabled="!isGuestNameValid"
+              />
             </div>
           </div>
         </div>
@@ -50,6 +53,14 @@ onUnmounted(() => {
     clearInterval(intervalId.value)
   }
 })
+
+/**
+ * A computed property that checks if the guest name is valid.
+ * The name is considered valid if its length is between 1 and 20 characters.
+ *
+ * @returns {boolean} True if the guest name is valid, false otherwise.
+ */
+const isGuestNameValid = computed(() => 0 < guestName.value.length && guestName.value.length <= 20)
 
 /**
  * An array of points that are used to create water drops.
