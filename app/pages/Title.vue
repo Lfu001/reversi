@@ -24,6 +24,7 @@
               <Button
                 label="次へ →"
                 :disabled="!isGuestNameValid"
+                @click="registerPlayer"
               />
             </div>
           </div>
@@ -61,6 +62,30 @@ onUnmounted(() => {
  * @returns {boolean} True if the guest name is valid, false otherwise.
  */
 const isGuestNameValid = computed(() => 0 < guestName.value.length && guestName.value.length <= 20)
+
+/**
+ * Registers the player by sending a POST request with the guest name.
+ * If successful, stores the returned JWT and links to the next scene.
+ * If unsuccessful, alerts the user with the error message.
+ */
+const registerPlayer = async () => {
+  const res = await fetch('/players', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({ name: guestName.value }),
+  })
+
+  if (res.ok) {
+    // TODO: store the returned JWT
+    // TODO: link to next scene
+  }
+  else {
+    const responseMessage = await res.text()
+    alert(`Failed to register: ${responseMessage}`)
+  }
+}
 
 /**
  * An array of points that are used to create water drops.
