@@ -69,22 +69,24 @@ const isGuestNameValid = computed(() => 0 < guestName.value.length && guestName.
  * If unsuccessful, alerts the user with the error message.
  */
 const registerPlayer = async () => {
-  const res = await fetch('/players', {
+  await useFetch('/players', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
     body: new URLSearchParams({ name: guestName.value }),
-  })
+    async onRequest({ options }) {
+      options.headers.set('Content-Type', 'application/x-www-form-urlencoded')
+      options.headers.set('Accept', 'application/json')
+    },
+    async onResponse({ response }) {
+      const authStore = useAuthStore()
+      authStore.jwt = response._data.token
 
-  if (res.ok) {
-    // TODO: store the returned JWT
-    // TODO: link to next scene
-  }
-  else {
-    const responseMessage = await res.text()
-    alert(`Failed to register: ${responseMessage}`)
-  }
+      // TODO: link to next scene
+    },
+    async onResponseError({ response }) {
+      const responseMessage = await response.text()
+      alert(`Failed to register: ${responseMessage}`)
+    },
+  })
 }
 
 /**
