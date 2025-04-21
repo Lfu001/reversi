@@ -8,7 +8,7 @@
           class="square"
           :class="{ dot: isDotPosition(index) }"
         >
-          <SquareComponent
+          <DiskComponent
             :color="c"
             @click="placeStone(index)"
           />
@@ -61,8 +61,8 @@ const placeStone = (index: number) => {
   display: flex;
   justify-content: center;
   align-items: center;
-  width: 336px;  /* (1cell:40px + 2border:2px) * 8 */
-  height: 336px;  /* (1cell:40px + 2border:2px) * 8 */
+  width: 380px;  /* (1cell:40px + 2border:2px) * 8 */
+  height: 380px;  /* (1cell:40px + 2border:2px) * 8 */
   /* disable selection */
   user-select: none;
   -webkit-user-select: none;  /* Chrome, Safari */
@@ -80,8 +80,8 @@ const placeStone = (index: number) => {
   display: grid;
   grid-template-rows: repeat(8, 1fr);
   grid-template-columns: repeat(8, 1fr);
-  width: 336px;  /* (1cell:40px + 2border:2px) * 8 */
-  height: 336px;  /* (1cell:40px + 2border:2px) * 8 */
+  width: 320px;  /* (1cell:40px + 2border:2px) * 8 */
+  height: 320px;  /* (1cell:40px + 2border:2px) * 8 */
 }
 
 .square {
