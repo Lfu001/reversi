@@ -21,8 +21,12 @@
 <script setup lang="ts">
 import { DiskColor } from '~/types/DiskColor'
 
+const props = defineProps<{
+  cellStates: Array<DiskColor | null>
+}>()
+
 const board: Ref<Array<DiskColor | null>> = ref(
-  Array(64).fill(null),
+  Array(64).fill(props.cellStates),
 )
 
 // initial placement
