@@ -10,7 +10,7 @@ const meta: Meta<typeof DiskComponent> = {
 export default meta
 type Story = StoryObj<typeof DiskComponent>
 
-export const Primary: Story = {
+export const Empty: Story = {
   args: {
     color: null,
   },
