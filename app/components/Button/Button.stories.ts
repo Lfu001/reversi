@@ -8,9 +8,10 @@ const meta: Meta<typeof Button> = {
 export default meta
 type Story = StoryObj<typeof Button>
 
-export const Enabled: Story = {
+export const Fill: Story = {
   args: {
     label: 'Button',
+    variant: 'fill',
     disabled: false,
   },
   render: args => ({
@@ -18,22 +19,51 @@ export const Enabled: Story = {
     setup() {
       return { args }
     },
-    template: '<Button :label="args.label" :disabled="args.disabled"/>',
+    template: '<Button v-bind="args"/>',
   }),
 }
 
-export const Disabled: Story = {
+export const FillDisabled: Story = {
   args: {
     label: 'Button',
+    variant: 'fill',
     disabled: true,
   },
   render: args => ({
-    components: {
-      Button,
-    },
+    components: { Button },
     setup() {
       return { args }
     },
-    template: '<Button :label="args.label" :disabled="args.disabled"/>',
+    template: '<Button v-bind="args"/>',
+  }),
+}
+
+export const Outlined: Story = {
+  args: {
+    label: 'Button',
+    variant: 'outlined',
+    disabled: false,
+  },
+  render: args => ({
+    components: { Button },
+    setup() {
+      return { args }
+    },
+    template: '<Button v-bind="args"/>',
+  }),
+}
+
+export const OutlinedDisabled: Story = {
+  args: {
+    label: 'Button',
+    variant: 'outlined',
+    disabled: true,
+  },
+  render: args => ({
+    components: { Button },
+    setup() {
+      return { args }
+    },
+    template: '<Button v-bind="args"/>',
   }),
 }
