@@ -7,7 +7,7 @@
           'border-2',
           props.disabled
             ? 'border-gray-400 text-gray-400'
-            : 'border-indigo-500 text-indigo-500 hover:bg-indigo-50 active:bg-indigo-100',
+            : 'cursor-pointer border-indigo-500 text-indigo-500 hover:bg-indigo-50 active:bg-indigo-100',
         ]
         : [
           'text-white',
