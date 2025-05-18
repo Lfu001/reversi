@@ -1,31 +1,30 @@
 <template>
-  <div>
-    <BackgroundWaterDrop />
-    <PanelGlass>
-      <div class="flex flex-col items-center justify-center">
-        <h1
-          class="select-none mb-30 content-center text-5xl font-black text-black dark:text-white"
-        >
-          AIリバーシ
-        </h1>
-        <div class="flex flex-col items-center justify-center">
-          <TextField
-            v-model="guestName"
-            class="mb-4"
-            placeholder="ゲスト名"
-          />
-          <Button
-            label="次へ →"
-            :disabled="!isGuestNameValid"
-            @click="registerPlayer"
-          />
-        </div>
-      </div>
-    </PanelGlass>
+  <div class="flex flex-col items-center justify-center">
+    <h1
+      class="select-none mb-30 content-center text-5xl font-black text-black dark:text-white"
+    >
+      AIリバーシ
+    </h1>
+    <div class="flex flex-col items-center justify-center">
+      <TextField
+        v-model="guestName"
+        class="mb-4"
+        placeholder="ゲスト名"
+      />
+      <Button
+        label="次へ →"
+        :disabled="!isGuestNameValid"
+        @click="registerPlayer"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
+definePageMeta({
+  layout: 'entry-flow',
+})
+
 /**
  * The name of the guest who is currently using the app.
  */

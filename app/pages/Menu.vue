@@ -1,29 +1,37 @@
 <template>
-  <div>
-    <BackgroundWaterDrop />
-    <PanelGlass>
-      <div class="flex flex-col items-center justify-center space-y-4">
-        <div class="flex flex-col space-y-4">
-          <Button
-            label="コンピュータと対戦"
-            @click="startComputerGame"
-          />
-          <Button
-            label="誰かと対戦"
-            @click="openJoinModal"
-          />
-        </div>
+  <div class="h-full">
+    <div class="flex h-full flex-col items-center justify-center">
+      <div class="flex flex-col space-y-4">
+        <Button
+          label="コンピュータと対戦"
+          @click="startComputerGame"
+        />
+        <Button
+          label="誰かと対戦"
+          @click="openJoinModal"
+        />
       </div>
-    </PanelGlass>
-    <ModalJoin
-      v-if="isJoinModalOpen"
-      @close="closeJoinModal"
-      @join="joinTable"
-    />
+    </div>
+
+    <Teleport to="body">
+      <div
+        v-if="isJoinModalOpen"
+        class="fixed inset-0 z-[100]"
+      >
+        <ModalJoin
+          @close="closeJoinModal"
+          @join="joinTable"
+        />
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
+definePageMeta({
+  layout: 'entry-flow',
+})
+
 /**
  * Starts a game against the computer
  */
