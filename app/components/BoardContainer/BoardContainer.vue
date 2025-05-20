@@ -3,7 +3,7 @@
     <div class="board-inner">
       <div class="board-grid">
         <div
-          v-for="(c, index) in board"
+          v-for="(c, index) in props.board"
           :key="index"
           class="square"
           :class="{ dot: isDotPosition(index) }"
@@ -19,21 +19,11 @@
 </template>
 
 <script setup lang="ts">
-import { DiskColor } from '~/types/DiskColor'
+import type { DiskColor } from '~/types/DiskColor'
 
 const props = defineProps<{
-  cellStates: Array<DiskColor | null>
+  board: Array<DiskColor | null>
 }>()
-
-const board: Ref<Array<DiskColor | null>> = ref(
-  Array(64).fill(props.cellStates),
-)
-
-// initial placement
-board.value[27] = DiskColor.Light
-board.value[28] = DiskColor.Dark
-board.value[35] = DiskColor.Dark
-board.value[36] = DiskColor.Light
 
 const isDotPosition = (index: number) => {
   const dotPositions = [
@@ -48,11 +38,9 @@ const isDotPosition = (index: number) => {
 // put down disc
 const placeStone = (index: number) => {
   // filled cell
-  if (board.value[index] != null) return
+  if (props.board[index] != null) return
 
   // TODO : apply logic
-  // anyway put dark stone
-  board.value[index] = 'Dark'
 }
 </script>
 
