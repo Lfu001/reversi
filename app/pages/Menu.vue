@@ -1,0 +1,85 @@
+<template>
+  <div class="h-full">
+    <div class="flex h-full flex-col items-center justify-center">
+      <div class="flex flex-col space-y-4">
+        <Button
+          label="コンピュータと対戦"
+          @click="startComputerGame"
+        />
+        <Button
+          label="誰かと対戦"
+          @click="openJoinModal"
+        />
+      </div>
+    </div>
+
+    <Teleport to="body">
+      <div
+        v-if="isJoinModalOpen"
+        class="fixed inset-0 z-[100]"
+      >
+        <ModalJoin
+          @close="closeJoinModal"
+          @join="joinTable"
+        />
+      </div>
+    </Teleport>
+  </div>
+</template>
+
+<script setup lang="ts">
+definePageMeta({
+  layout: 'entry-flow',
+})
+
+/**
+ * Starts a game against the computer
+ */
+const startComputerGame = () => {
+  alert('TODO: Computer vs. player game')
+}
+
+/**
+ * Reactive variable to manage the visibility state of the join modal
+ */
+const isJoinModalOpen = ref(false)
+
+/**
+ * Opens the join modal
+ */
+const openJoinModal = () => {
+  isJoinModalOpen.value = true
+}
+
+/**
+ * Closes the join modal
+ */
+const closeJoinModal = () => {
+  isJoinModalOpen.value = false
+}
+
+/**
+ * Joins a table with the given password
+ * @param {string} password - The password of the table to join
+ * @returns {Promise<void>}
+ */
+const joinTable = async (password: string) => {
+  try {
+    const response = await $fetch.raw('/join', {
+      method: 'POST',
+      body: new URLSearchParams({ password }),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    })
+    const nextUrl = response.headers.get('location')
+    if (nextUrl) {
+      navigateTo(nextUrl)
+    }
+  }
+  catch (error) {
+    console.error('Join table error:', error)
+    alert('テーブルに参加できませんでした。もう一度お試しください。')
+  }
+}
+</script>
