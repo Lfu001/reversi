@@ -20,10 +20,10 @@ export const InitialState: Story = {
   args: {
     board: (() => {
       const board = Array(64).fill(null)
-      board[18] = 'Light'
-      board[22] = 'Dark'
-      board[50] = 'Light'
-      board[54] = 'Dark'
+      board[27] = 'Dark'
+      board[28] = 'Light'
+      board[35] = 'Light'
+      board[36] = 'Dark'
       return board
     })(),
   },
