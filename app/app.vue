@@ -1,9 +1,5 @@
 <template>
-  <div>
-    <BoardContainer :board="board" />
-  </div>
+  <NuxtLayout>
+    <NuxtPage />
+  </NuxtLayout>
 </template>
-
-<script setup lang="ts">
-const board = Array(64).fill(null)
-</script>
