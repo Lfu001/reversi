@@ -1,12 +1,12 @@
 <template>
-  <div class="board-container">
-    <div class="board-inner">
-      <div class="board-grid">
+  <div class="bg-[#4a3222] p-8 rounded-[15px] shadow-lg flex justify-center items-center w-[380px] h-[380px] select-none">
+    <div class="bg-[radial-gradient(#50aa50,#2d642d)] p-2.5 rounded-[10px]">
+      <div class="grid grid-cols-8 grid-rows-8 border border-black w-[320px] h-[320px]">
         <div
           v-for="(c, index) in board"
           :key="index"
-          class="square"
-          :class="{ dot: isDotPosition(index) }"
+          class="w-10 h-10 flex items-center justify-center relative border border-black"
+          :class="{ 'before:content-[\'\'] before:absolute before:w-[6px] before:h-[6px] before:rounded-full before:bg-black before:top-[-1px] before:left-[-1px] before:transform before:-translate-x-1/2 before:-translate-y-1/2 before:opacity-100': isDotPosition(index) }"
         >
           <DiskComponent
             :color="c"
@@ -45,59 +45,3 @@ const placeStone = (index: number) => {
   // TODO : apply logic
 }
 </script>
-
-<style scoped>
-.board-container {
-  background-color: #4a3222;
-  padding: 30px;
-  border-radius: 15px;
-  box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.3);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  width: 380px;  /* (1cell:40px + 2border:2px) * 8 */
-  height: 380px;  /* (1cell:40px + 2border:2px) * 8 */
-  /* disable selection */
-  user-select: none;
-  -webkit-user-select: none;  /* Chrome, Safari */
-  -moz-user-select: none;    /* Firefox */
-}
-
-.board-inner {
-  background: radial-gradient(#50aa50, #2d642d);
-  padding: 10px;
-  border-radius: 10px;
-}
-
-.board-grid {
-  border: 1px solid black;
-  display: grid;
-  grid-template-rows: repeat(8, 1fr);
-  grid-template-columns: repeat(8, 1fr);
-  width: 320px;  /* (1cell:40px + 2border:2px) * 8 */
-  height: 320px;  /* (1cell:40px + 2border:2px) * 8 */
-}
-
-.square {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  border: 1px solid black;
-}
-
-.square.dot::before {
-  content: '';
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background-color: black;
-  top: -1px;
-  left: -1px;
-  transform: translate(-50%, -50%);
-  opacity: 1;
-}
-</style>
