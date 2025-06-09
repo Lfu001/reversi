@@ -1,5 +1,10 @@
 <template>
-  <div :class="['disk', colorClass]" />
+  <div
+    :class="[
+      'w-[30px] h-[30px] rounded-full',
+      colorClass,
+    ]"
+  />
 </template>
 
 <script setup lang="ts">
@@ -10,27 +15,8 @@ const props = defineProps<{
 }>()
 
 const colorClass = computed(() => {
-  if (props.color === 'Dark') return 'dark-disk'
-  if (props.color === 'Light') return 'light-disk'
+  if (props.color === 'Dark') return 'bg-black border border-black'
+  if (props.color === 'Light') return 'bg-white border border-black'
   return ''
 })
 </script>
-
-<style scoped>
-.disk {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background-color: transparent;
-}
-
-.dark-disk {
-  background-color: black;
-  border: 1px solid #000;
-}
-
-.light-disk {
-  background-color: white;
-  border: 1px solid #000;
-}
-</style>
