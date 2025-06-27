@@ -13,9 +13,9 @@ export const Default: Story = {}
 
 export const CloseMatch: Story = {
   args: {
-    blackScore: 30,
-    blackName: 'くろだ',
-    whiteScore: 31,
-    whiteName: 'しらい',
+    darkScore: 30,
+    darkName: 'くろだ',
+    lightScore: 31,
+    lightName: 'しらい',
   },
 }
