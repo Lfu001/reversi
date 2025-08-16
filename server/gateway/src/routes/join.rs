@@ -1,5 +1,5 @@
-use crate::players::PlayerClaims;
 use crate::redis_client::GameTable;
+use crate::routes::players::PlayerClaims;
 use crate::{app_state::AppState, redis_client::RedisClient};
 use actix_web::{http::header, web, HttpRequest, HttpResponse, Responder};
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
