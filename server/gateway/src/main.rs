@@ -8,7 +8,7 @@ use app_state::AppState;
 use config::config;
 use env_logger::Env;
 use redis_client::RealRedisClient;
-use std::env;
+use std::{env, sync::Arc};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -21,11 +21,12 @@ async fn main() -> std::io::Result<()> {
         .expect("PORT must be a valid u16");
     let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
 
+    let redis_client = redis::Client::open(redis_url).expect("Failed to connect to Redis");
+    let app_state = web::Data::new(AppState::new(Arc::new(RealRedisClient::new(redis_client))));
+
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(AppState::new(Box::new(
-                RealRedisClient::new(redis::Client::open(redis_url.clone()).unwrap()),
-            ))))
+            .app_data(app_state.clone())
             .configure(config)
             .wrap(middleware::Logger::default())
     })
