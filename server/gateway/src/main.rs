@@ -21,10 +21,10 @@ async fn main() -> std::io::Result<()> {
         .expect("PORT must be a valid u16");
     let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
 
-    HttpServer::new(|| {
+    HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(AppState::new(Box::new(
-                RealRedisClient::new(redis::Client::open(redis_url).unwrap()),
+                RealRedisClient::new(redis::Client::open(redis_url.clone()).unwrap()),
             ))))
             .configure(config)
             .wrap(middleware::Logger::default())
