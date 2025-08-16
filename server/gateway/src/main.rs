@@ -8,6 +8,7 @@ use app_state::AppState;
 use config::config;
 use env_logger::Env;
 use redis_client::RealRedisClient;
+use std::env;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
