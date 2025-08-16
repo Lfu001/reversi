@@ -3,11 +3,12 @@ use jwt_simple::{
     prelude::HS256Key,
     reexports::rand::{thread_rng, RngCore},
 };
+use std::sync::Arc;
 
 /// Application state holding shared resources.
 pub struct AppState {
     /// Redis client for database interactions.
-    redis_client: Box<dyn RedisClient>,
+    redis_client: Arc<dyn RedisClient>,
     /// Key for signing JWTs.
     jwt_key: HS256Key,
     /// A salt for password hashing.
@@ -20,7 +21,7 @@ impl AppState {
     /// # Arguments
     ///
     /// * `redis_client` - A Redis client instance.
-    pub fn new(redis_client: Box<dyn RedisClient>) -> Self {
+    pub fn new(redis_client: Arc<dyn RedisClient>) -> Self {
         let jwt_key = HS256Key::generate();
         let salt = thread_rng().next_u32();
         AppState {

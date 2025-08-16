@@ -118,6 +118,7 @@ mod tests {
     mod endpoint_test {
         use super::*;
         use actix_web::{http::StatusCode, test, web, App};
+        use std::sync::Arc;
 
         #[actix_web::test]
         async fn test_register_player() {
@@ -127,7 +128,7 @@ mod tests {
             let mock_redis_client = MockRedisClient::default();
 
             // AppState setup
-            let app_state = AppState::new(Box::new(mock_redis_client));
+            let app_state = AppState::new(Arc::new(mock_redis_client));
             let jwt_key = app_state.jwt_key().to_owned();
 
             // Test app
