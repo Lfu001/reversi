@@ -1,9 +1,7 @@
 <template>
   <div
-    :class="[
-      'w-[30px] h-[30px] rounded-full',
-      colorClass,
-    ]"
+    class="absolute inset-2 aspect-square max-w-16 rounded-full"
+    :class="colorClass"
   />
 </template>
 

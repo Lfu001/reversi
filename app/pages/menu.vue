@@ -59,9 +59,11 @@ const closeJoinModal = () => {
 }
 
 /**
- * Joins a table with the given password
- * @param {string} password - The password of the table to join
- * @returns {Promise<void>}
+ * Joins a table
+ *
+ * After joining the table, it will navigate to the table page.
+ *
+ * @param password The password of the table to join
  */
 const joinTable = async (password: string) => {
   try {
@@ -74,6 +76,8 @@ const joinTable = async (password: string) => {
     })
     const nextUrl = response.headers.get('location')
     if (nextUrl) {
+      const websocket = useWebsocket()
+      websocket.connect(nextUrl)
       navigateTo(nextUrl)
     }
   }
