@@ -16,10 +16,9 @@
 </template>
 
 <script setup lang="ts">
+import type { Turn } from '~/types/Turn'
+
 defineProps<{
-  turns: {
-    player: string
-    move: string
-  }[]
+  turns: Turn[]
 }>()
 </script>

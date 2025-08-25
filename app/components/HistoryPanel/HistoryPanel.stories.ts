@@ -20,6 +20,12 @@ const sampleTurns = [
   { player: 'たかはし', move: 'F4' },
 ]
 
+export const empty: Story = {
+  args: {
+    turns: [],
+  },
+}
+
 export const SomeTurns: Story = {
   args: {
     turns: sampleTurns,
