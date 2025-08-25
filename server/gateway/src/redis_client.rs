@@ -29,7 +29,7 @@ impl GameTable {
 }
 
 /// Redis client interface for easier mocking.
-pub trait RedisClient {
+pub trait RedisClient: Send + Sync + 'static {
     /// Sets a key-value pair in Redis.
     ///
     /// # Arguments

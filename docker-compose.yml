@@ -1,0 +1,66 @@
+services:
+  redis:
+    image: redis/redis-stack:7.4.0-v6
+    container_name: reversi-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - server_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  game:
+    build:
+      context: ./server/game
+      dockerfile: Dockerfile
+    container_name: reversi-game
+    ports:
+      - "8080:8080"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+    networks:
+      - server_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  gateway:
+    build:
+      context: ./server/gateway
+      dockerfile: Dockerfile
+    container_name: reversi-gateway
+    ports:
+      - "8081:8081"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8081
+      - REDIS_URL=redis://redis:6379
+      - NEW_GAME_API_URL=http://game:8080/new
+    networks:
+      - server_network
+    depends_on:
+      redis:
+        condition: service_healthy
+      game:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+networks:
+  server_network:
+    driver: bridge

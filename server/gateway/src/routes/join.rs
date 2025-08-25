@@ -1,5 +1,5 @@
-use crate::players::PlayerClaims;
 use crate::redis_client::GameTable;
+use crate::routes::players::PlayerClaims;
 use crate::{app_state::AppState, redis_client::RedisClient};
 use actix_web::{http::header, web, HttpRequest, HttpResponse, Responder};
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
@@ -170,12 +170,13 @@ mod tests {
             http::{self, header},
             test, App,
         };
+        use std::sync::Arc;
 
         #[actix_web::test]
         #[serial]
         async fn test_join() {
             let mock_redis_client = MockRedisClient::default();
-            let app_state = AppState::new(Box::new(mock_redis_client));
+            let app_state = AppState::new(Arc::new(mock_redis_client));
             let jwt_key = app_state.jwt_key().to_owned();
             let app = test::init_service(
                 App::new()
