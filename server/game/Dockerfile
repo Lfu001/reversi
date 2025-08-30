@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Use the official Rust image as a parent image
-FROM rust:1.89.0-trixie as builder
+FROM rust:1.89.0-trixie AS builder
 
 # Set the working directory
 WORKDIR /usr/src/reversi-game
@@ -11,20 +11,20 @@ RUN apt-get update && \
     apt-get install -y cmake pkg-config libclang-dev libssl-dev
 
 # Copy the manifests
-COPY Cargo.toml Cargo.lock ./
+COPY game/Cargo.toml game/Cargo.lock ./
 
 # Create a dummy source file to build dependencies
 RUN mkdir -p src && \
     echo "fn main() {}" > src/main.rs
 
 # Copy the dependency crate
-COPY ../common/ ../common/
+COPY common/ ../common/
 
 # Build the dependencies (this step is cached as long as Cargo.toml, Cargo.lock, and `common` crate don't change)
 RUN cargo build --release
 
 # Now copy the actual source code
-COPY src/ src/
+COPY game/src/ src/
 
 # Build the application
 RUN cargo install --path . --root /usr/local

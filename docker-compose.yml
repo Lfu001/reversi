@@ -15,8 +15,8 @@ services:
 
   game:
     build:
-      context: ./server/game
-      dockerfile: Dockerfile
+      context: ./server
+      dockerfile: game/Dockerfile
     container_name: reversi-game
     ports:
       - "8080:8080"
@@ -37,8 +37,8 @@ services:
 
   gateway:
     build:
-      context: ./server/gateway
-      dockerfile: Dockerfile
+      context: ./server
+      dockerfile: gateway/Dockerfile
     container_name: reversi-gateway
     ports:
       - "8081:8081"
