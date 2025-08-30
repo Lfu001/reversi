@@ -59,9 +59,7 @@ impl GameSessionManager {
     /// # Arguments
     ///
     /// * `redis_client` - A Redis client instance.
-    pub fn new(
-        redis_client: impl RedisClient + Send + 'static,
-    ) -> (Self, GameSessionManagerHandle) {
+    pub fn new(redis_client: impl RedisClient + 'static) -> (Self, GameSessionManagerHandle) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         (
             Self {
