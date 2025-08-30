@@ -17,7 +17,10 @@ COPY Cargo.toml Cargo.lock ./
 RUN mkdir -p src && \
     echo "fn main() {}" > src/main.rs
 
-# Build the dependencies (this step is cached as long as Cargo.toml and Cargo.lock don't change)
+# Copy the dependency crate
+COPY ../common/ ../common/
+
+# Build the dependencies (this step is cached as long as Cargo.toml, Cargo.lock, and `common` crate don't change)
 RUN cargo build --release
 
 # Now copy the actual source code
