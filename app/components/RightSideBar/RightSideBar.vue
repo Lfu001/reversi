@@ -11,8 +11,6 @@
 </template>
 
 <script setup lang="ts">
-import ScoreBoard from '../ScoreBoard/ScoreBoard.vue'
-import HistoryBoard from '../HistoryPanel/HistoryPanel.vue'
 import type { Turn } from '~/types/Turn'
 
 const props = defineProps<{
