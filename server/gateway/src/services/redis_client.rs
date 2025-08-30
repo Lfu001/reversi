@@ -9,7 +9,7 @@ pub trait RedisKey {
 
 /// Redis client interface for easier mocking.
 #[async_trait::async_trait]
-pub trait RedisClient {
+pub trait RedisClient: Send + Sync + 'static {
     /// Gets a value from Redis.
     ///
     /// # Arguments
