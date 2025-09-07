@@ -101,6 +101,18 @@ export const useBoardStore = defineStore('board', () => {
   })
 
   /**
+   * Resets the state of the board to its initial state.
+   */
+  function reset() {
+    board.value = Array(64).fill(null)
+    currentPlayer.value = DiskColor.Dark
+    puttablePositions.value = []
+    winner.value = null
+    players.value = []
+    hasGameStarted.value = false
+  }
+
+  /**
    * Updates the state of the board with the state received from the server.
    *
    * @param serverState - The state of the game on the server.
@@ -178,6 +190,7 @@ export const useBoardStore = defineStore('board', () => {
     players,
     scores,
     hasGameStarted,
+    reset,
     setStateFromServer,
     handleWebsocketMessage,
   }

@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/vue3'
 
-import { DiskColor } from '~/types/DiskColor'
 import DiskComponent from './DiskComponent.vue'
+import { DiskColor } from '~/types/DiskColor'
 
 const meta: Meta<typeof DiskComponent> = {
   title: 'DiskComponent',

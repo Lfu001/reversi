@@ -14,7 +14,7 @@
 </template>
 
 <script setup lang="ts">
-import { DiskColor } from '~/types/DiskColor';
+import { DiskColor } from '~/types/DiskColor'
 
 /**
  * Props for the DiskComponent component.

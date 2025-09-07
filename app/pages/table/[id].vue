@@ -1,6 +1,11 @@
 <template>
-  <div class="flex min-h-screen flex-col bg-[#e9c983] p-4">
+  <div class="relative flex min-h-screen flex-col bg-[#e9c983] dark:bg-[#28231C] p-4">
     <div class="container mx-auto flex flex-1 flex-col gap-8 md:flex-row">
+      <IconButton
+        :icon="HomeIcon"
+        class="absolute top-4 left-4"
+        @click="handleBackToMenuClick"
+      />
       <!-- Left side - Board -->
       <div class="flex flex-1 items-center justify-center">
         <BoardContainer
@@ -22,6 +27,7 @@
 </template>
 
 <script setup lang="ts">
+import { HomeIcon } from '@heroicons/vue/24/solid'
 import { Position } from '~/types/Position'
 
 const boardStore = useBoardStore()
@@ -46,5 +52,14 @@ const onSquareClick = (index: number) => {
     },
   })
   webSocketStore.send(json)
+}
+
+/**
+ * Closes the WebSocket connection, resets the board store, and navigates to the menu page.
+ */
+const handleBackToMenuClick = () => {
+  webSocketStore.close()
+  boardStore.reset()
+  navigateTo('/menu')
 }
 </script>
