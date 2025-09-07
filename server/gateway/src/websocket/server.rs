@@ -251,13 +251,13 @@ impl GameSessionManager {
                     let _ = response_tx.send(conn_id);
                 }
                 Command::Disconnect(conn_id) => {
-                    self.disconnect(&conn_id).await;
-
                     // Broadcast to other players in the table that a player has left.
                     let player_id = self.connection_player_map.get(&conn_id).unwrap();
                     let player_name = self.fetch_player_name(player_id).await;
                     let message = WsMessage::Disconnected(format!("{} has left", player_name));
                     self.broadcast_message(&conn_id, message).await;
+
+                    self.disconnect(&conn_id).await;
                 }
                 Command::Message {
                     message,
