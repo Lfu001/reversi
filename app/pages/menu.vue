@@ -67,11 +67,14 @@ const closeJoinModal = () => {
  */
 const joinTable = async (password: string) => {
   try {
+    const authStore = useAuthStore()
+    const jwt = authStore.jwt
     const response = await $fetch.raw('http://127.0.0.1:8081/join', {
       method: 'POST',
       body: new URLSearchParams({ password }),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Bearer ${jwt}`,
       },
     })
     const nextUrl = response.headers.get('location')
