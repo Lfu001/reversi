@@ -13,6 +13,7 @@
         >
           <DiskComponent
             :color="c"
+            :guide-color="isPuttablePosition(index) ? props.positionGuideColor : null"
             @click="onSquareClick(index)"
           />
         </div>
@@ -23,15 +24,21 @@
 
 <script setup lang="ts">
 import type { DiskColor } from '~/types/DiskColor'
+import { Position } from '~/types/Position'
 
 /**
  * Props for BoardContainer component.
- * @property An array of 64 disk colors.
+ *
+ * @param board An array of 64 disk colors.
  * The index of the array corresponds to the position on the board.
  * A value of `null` indicates an empty square.
+ * @param puttablePositions An array of positions where a disk can be placed.
+ * @param positionGuideColor The color of the puttable position guide.
  */
 interface Props {
   board: Array<DiskColor | null>
+  puttablePositions: Array<Position>
+  positionGuideColor: DiskColor
 }
 
 const props = defineProps<Props>()
@@ -48,6 +55,15 @@ const emit = defineEmits<{
 const isDotPosition = (index: number): boolean => {
   const dotPositions = [18, 22, 50, 54]
   return dotPositions.some(i => i === index)
+}
+
+/**
+ * Checks if a given index is a position where a disk can be placed.
+ * @param index A number from 0 to 63.
+ * @returns Whether the position is a puttable position.
+ */
+const isPuttablePosition = (index: number): boolean => {
+  return props.puttablePositions.some(p => p.equals(Position.fromIndex(index)))
 }
 
 /**

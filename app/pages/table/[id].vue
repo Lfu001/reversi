@@ -5,6 +5,8 @@
       <div class="flex flex-1 items-center justify-center">
         <BoardContainer
           :board="boardStore.board"
+          :puttable-positions="boardStore.puttablePositions"
+          :position-guide-color="boardStore.currentPlayer"
           @on-square-click="onSquareClick"
         />
       </div>
