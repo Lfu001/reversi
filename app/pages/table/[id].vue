@@ -23,71 +23,26 @@
 import { Position } from '~/types/Position'
 
 const boardStore = useBoardStore()
-const websocket = useWebsocket()
-
-websocket.setOnMessageHandler((event: MessageEvent) => {
-  const data = JSON.parse(event.data)
-  const keys = Object.keys(data)
-  const rootKey = keys[0]
-
-  if (rootKey === 'Connected') { // If someone joins the table
-    const connected = data[rootKey]
-    console.log('Connected:', connected)
-  }
-  else if (rootKey === 'Disconnected') { // If someone leaves the table
-    const disconnected = data[rootKey]
-    console.log('Disconnected:', disconnected)
-  }
-  else if (rootKey === 'GameState') { // If the game state is updated
-    const gameState = data[rootKey]
-    console.log('GameState:', gameState)
-    boardStore.setStateFromServer(gameState)
-
-    if (gameState.judge_result) { // If the game is over
-      console.log('Game over:', gameState.judge_result)
-      return
-    }
-
-    if (gameState.puttable_positions.length === 0) { // If the current player has no puttable positions
-      websocket.send(
-        JSON.stringify({
-          Step: {
-            action: {
-              PassTurn: {
-                color: boardStore.currentPlayer,
-              },
-            },
-          },
-        }),
-      )
-    }
-  }
-  else if (rootKey === 'InternalServerError') { // If the server returns an error
-    const internalServerError = data[rootKey]
-    console.error('InternalServerError:', internalServerError)
-  }
-})
+const webSocketStore = useWebSocketStore()
 
 /**
- * Sends a "step" message to the websocket with the current player and the given board index.
+ * Sends a "step" message to the WebSocket with the current player and the given board index.
  * @param index - The index of the square on the board.
  */
 const onSquareClick = (index: number) => {
-  if (!boardStore.puttablePositions.includes(Position.fromIndex(index))) {
+  const position = Position.fromIndex(index)
+  if (!boardStore.puttablePositions.some(p => p.equals(position))) {
     // If the position is not puttable, do nothing
     return
   }
-  websocket.send(
-    JSON.stringify({
-      Step: {
-        action: {
-          PutDisk: {
-            color: boardStore.currentPlayer,
-            position: Position.fromIndex(index),
-          },
-        },
+  const json = JSON.stringify({
+    Step: {
+      PutDisk: {
+        color: boardStore.currentPlayer,
+        position: position.toJson(),
       },
-    }),
-  )
+    },
+  })
+  webSocketStore.send(json)
 }
 </script>

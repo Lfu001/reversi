@@ -79,9 +79,11 @@ const joinTable = async (password: string) => {
     })
     const nextUrl = response.headers.get('location')
     if (nextUrl) {
-      const websocket = useWebsocket()
-      websocket.connect(nextUrl)
-      navigateTo(nextUrl)
+      authStore.roomPassword = password
+      const webSocketStore = useWebSocketStore()
+      webSocketStore.connect(`http://127.0.0.1:8081${nextUrl}?token=${jwt}`)
+      webSocketStore.setOnMessageHandler(useBoardStore().handleWebsocketMessage)
+      navigateTo(`matchmaking${nextUrl}`)
     }
   }
   catch (error) {

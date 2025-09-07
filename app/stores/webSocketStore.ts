@@ -1,12 +1,12 @@
 /**
- * Create a reactive websocket connection.
+ * Create a reactive WebSocket connection.
  *
  * If the connection is already established, it will be reused.
  * Otherwise, a new connection will be created.
  */
-export const useWebsocket = () => {
+export const useWebSocketStore = defineStore('websocket', () => {
   /**
-   * The websocket connection.
+   * The WebSocket connection.
    *
    * Will be `null` until the connection is established.
    * Once the connection is closed, the value will be `null` again.
@@ -14,7 +14,7 @@ export const useWebsocket = () => {
   const socket = ref<WebSocket | null>(null)
 
   /**
-   * Whether the websocket connection is currently open.
+   * Whether the WebSocket connection is currently open.
    * Computed from the socket's readyState.
    */
   const isConnected = computed(
@@ -22,12 +22,12 @@ export const useWebsocket = () => {
   )
 
   /**
-   * Connect to the specified websocket URL.
+   * Connect to the specified WebSocket URL.
    *
    * If the connection is already established to the same URL, this is a no-op.
    * Otherwise, a new connection will be established.
    *
-   * @param url - The URL of the websocket to connect to.
+   * @param url - The URL of the WebSocket to connect to.
    */
   const connect = (url: string) => {
     if (socket.value?.url === url && isConnected.value) { // if the connection is already established
@@ -41,7 +41,7 @@ export const useWebsocket = () => {
   }
 
   /**
-   * Send a message to the websocket.
+   * Send a message to the WebSocket.
    *
    * If the connection is open, the message will be sent immediately.
    * Otherwise, the message will be discarded.
@@ -58,7 +58,7 @@ export const useWebsocket = () => {
   }
 
   /**
-   * Close the websocket connection.
+   * Close the WebSocket connection.
    *
    * If the connection is open, this will initiate the closing handshake.
    * Otherwise, this is a no-op.
@@ -70,7 +70,18 @@ export const useWebsocket = () => {
   }
 
   /**
-   * Set the onmessage handler for the websocket connection.
+   * Set the onopen handler for the WebSocket connection.
+   *
+   * @param handler - The handler to set.
+   */
+  const setOnOpenHandler = (handler: (event: Event) => void) => {
+    if (socket.value) {
+      socket.value.onopen = handler
+    }
+  }
+
+  /**
+   * Set the onmessage handler for the WebSocket connection.
    *
    * @param handler - The handler to set.
    */
@@ -83,18 +94,13 @@ export const useWebsocket = () => {
     }
   }
 
-  onUnmounted(() => {
-    if (isConnected.value) { // if the connection is open
-      socket.value?.close()
-    }
-  })
-
   return {
     socket,
     isConnected,
     connect,
     send,
     close,
+    setOnOpenHandler,
     setOnMessageHandler,
   }
-}
+})
