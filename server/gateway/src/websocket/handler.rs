@@ -98,11 +98,11 @@ pub async fn game_ws(
                     },
                     WsMessage::Step(_) => log::error!("Unexpected message received from server."),
                     WsMessage::GameState(state_response_message) => {
-                        let json = serde_json::json!(state_response_message);
+                        let json = serde_json::json!({"GameState": state_response_message});
                         session.text(json.to_string()).await.unwrap();
                     },
-                    WsMessage::InternalServerError => {
-                        session.text(serde_json::json!({ "error": "Internal Server Error" }).to_string()).await.unwrap();
+                    WsMessage::InternalServerError(err) => {
+                        session.text(serde_json::json!({ "InternalServerError": err }).to_string()).await.unwrap();
                     },
                 };
             }
@@ -123,16 +123,16 @@ async fn process_message(
 ) {
     match message {
         WsMessage::Step(action) => {
-            let new_game_state = game_server_handle.step(table_id, conn_id, &action).await;
+            let new_game_state = game_server_handle.step(table_id, player_id, &action).await;
             match new_game_state {
                 Ok(new_game_state) => {
                     game_server_handle
                         .broadcast_message(conn_id, WsMessage::GameState(new_game_state))
                         .await;
                 }
-                Err(_) => {
+                Err(err) => {
                     game_server_handle
-                        .broadcast_message(conn_id, WsMessage::InternalServerError)
+                        .broadcast_message(conn_id, WsMessage::InternalServerError(err))
                         .await;
                 }
             }

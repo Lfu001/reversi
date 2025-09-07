@@ -1,10 +1,11 @@
 use crate::services::redis_client::RedisKey;
+use common::{DiskColor, JudgeResult, Position, Table};
 use serde::{Deserialize, Serialize};
-use std::ops::Deref;
+use std::{collections::HashMap, ops::Deref};
 use uuid::Uuid;
 
 /// A player ID, represented as a UUID.
-#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct PlayerId {
     /// The UUID of the player ID.
     pub id: Uuid,
@@ -14,6 +15,26 @@ impl PlayerId {
     /// Creates a new [`PlayerId`].
     pub fn new() -> Self {
         Self { id: Uuid::new_v4() }
+    }
+}
+
+impl Serialize for PlayerId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.id.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for PlayerId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let id = Uuid::parse_str(&s).map_err(serde::de::Error::custom)?;
+        Ok(PlayerId { id })
     }
 }
 
@@ -70,6 +91,42 @@ impl ConnectionId {
     /// Creates a new [`ConnectionId`].
     pub fn new() -> Self {
         Self { id: Uuid::new_v4() }
+    }
+}
+
+/// A table state, represented as a JSON object.
+#[derive(Serialize, Deserialize)]
+pub struct TableState {
+    /// The table.
+    table: Table,
+    /// The player roles.
+    roles: HashMap<PlayerId, DiskColor>,
+    /// The puttable positions.
+    puttable_positions: Vec<Position>,
+    /// The judge result.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    judge_result: Option<JudgeResult>,
+}
+
+impl TableState {
+    /// Creates a new [`TableState`].
+    pub fn new(
+        table: Table,
+        roles: HashMap<PlayerId, DiskColor>,
+        puttable_positions: Vec<Position>,
+        judge_result: Option<JudgeResult>,
+    ) -> Self {
+        Self {
+            table,
+            roles,
+            puttable_positions,
+            judge_result,
+        }
+    }
+
+    /// Returns a reference to the table of this [`TableState`].
+    pub fn table(&self) -> &Table {
+        &self.table
     }
 }
 

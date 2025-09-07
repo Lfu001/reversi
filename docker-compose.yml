@@ -47,6 +47,7 @@ services:
       - PORT=8081
       - REDIS_URL=redis://redis:6379
       - NEW_GAME_API_URL=http://game:8080/new
+      - STEP_GAME_API_URL=http://game:8080/step
     networks:
       - server_network
     depends_on:

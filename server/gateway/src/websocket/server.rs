@@ -1,19 +1,18 @@
 use super::message::WsMessage;
 use crate::{
     services::redis_client::RedisClient,
-    types::{ConnectionId, PlayerId, TableId},
+    types::{ConnectionId, PlayerId, TableId, TableState},
 };
-use actix_web::http::StatusCode;
-use common::{Action, StateResponseMessage, StepRequestMessage, Table};
+use common::{Action, DiskColor, PutConfig, StateResponseMessage, StepRequestMessage};
 use std::{
     collections::{HashMap, HashSet},
-    io,
+    env, io,
     sync::Arc,
 };
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 /// A command received by the game session manager.
-pub enum Command {
+enum Command {
     /// Establish a new connection.
     Connect {
         connection_tx: mpsc::UnboundedSender<WsMessage>,
@@ -32,9 +31,9 @@ pub enum Command {
     /// Step game state.
     Step {
         table_id: TableId,
-        connection_id: ConnectionId,
+        player_id: PlayerId,
         action: Action,
-        response_tx: oneshot::Sender<Result<StateResponseMessage, ()>>,
+        response_tx: oneshot::Sender<Result<StateResponseMessage, String>>,
     },
 }
 
@@ -138,40 +137,56 @@ impl GameSessionManager {
     /// # Arguments
     ///
     /// * `table_id` - An ID of the table to step.
-    /// * `conn_id` - A connection ID of the sender.
+    /// * `player_id` - A player ID of the sender.
     /// * `action` - An action to step.
     async fn step(
         &mut self,
         table_id: &TableId,
-        conn_id: &ConnectionId,
+        player_id: &PlayerId,
         action: &Action,
-    ) -> Result<StateResponseMessage, ()> {
+    ) -> Result<StateResponseMessage, String> {
         // Fetch current game state from Redis.
-        let table: Table = self.fetch_game_state(table_id).await;
+        let table_state = self.fetch_game_state(table_id).await;
+
+        // Override the disk color of the player who sent the action with the one stored in Redis.
+        let roles = self
+            .redis_client
+            .lock()
+            .await
+            .json_get(table_id, ".roles")
+            .await
+            .unwrap();
+        let roles: HashMap<PlayerId, DiskColor> = serde_json::from_value(roles).unwrap();
+        let color = roles.get(player_id).unwrap();
+        let action = match action {
+            Action::PutDisk(config) => Action::PutDisk(PutConfig::new(*color, *config.position())),
+            Action::PassTurn(_) => Action::PassTurn(*color),
+        };
 
         // Call game API and get the new game state.
-        // TODO: use environment variable for API URL
-        let param = StepRequestMessage::new(table, action.to_owned());
-        let res = match ureq::post("http://localhost:8000/step").send_json(&param) {
+        let param = StepRequestMessage::new(table_state.table().clone(), action.to_owned());
+        let url =
+            env::var("STEP_GAME_API_URL").unwrap_or(String::from("http://localhost:8080/step"));
+        let res = match ureq::post(&url).send_json(&param) {
             Ok(res) => res,
-            Err(err) => {
-                log::error!("{}", err);
-                return Err(());
+            Err(ureq::Error::Status(_, response)) => {
+                return Err(response.into_string().unwrap_or(String::from("")));
+            }
+            Err(ureq::Error::Transport(transport)) => {
+                return Err(String::from(transport.message().unwrap_or("")));
             }
         };
-        if !StatusCode::from_u16(res.status()).unwrap().is_success() {
-            log::error!(
-                "Failed to step game state: HTTP status code {}",
-                res.status()
-            );
-            return Err(());
-        }
         let new_game_state = res.into_string().unwrap();
         let new_game_state: StateResponseMessage = serde_json::from_str(&new_game_state).unwrap();
 
         // Update game state in Redis.
-        self.update_game_state(table_id, new_game_state.table())
-            .await;
+        let table_state = TableState::new(
+            new_game_state.table().clone(),
+            roles,
+            new_game_state.puttable_positions().clone(),
+            *new_game_state.judge_result(),
+        );
+        self.update_game_state(table_id, &table_state).await;
 
         Ok(new_game_state)
     }
@@ -181,12 +196,12 @@ impl GameSessionManager {
     /// # Arguments
     ///
     /// * `table_id` - An ID of the table to fetch.
-    async fn fetch_game_state(&self, table_id: &TableId) -> Table {
+    async fn fetch_game_state(&self, table_id: &TableId) -> TableState {
         let json = self
             .redis_client
             .lock()
             .await
-            .json_get(table_id, "$")
+            .json_get(table_id, ".")
             .await
             .unwrap();
         serde_json::from_value(json).unwrap()
@@ -197,12 +212,12 @@ impl GameSessionManager {
     /// # Arguments
     ///
     /// * `table_id` - An ID of the table to update.
-    /// * `table` - A new game state.
-    async fn update_game_state(&self, table_id: &TableId, table: &Table) {
+    /// * `table_state` - A new game state.
+    async fn update_game_state(&self, table_id: &TableId, table_state: &TableState) {
         self.redis_client
             .lock()
             .await
-            .json_set(table_id, "$", &serde_json::json!(table))
+            .json_set(table_id, ".", &serde_json::json!(table_state))
             .await
             .unwrap();
     }
@@ -254,11 +269,11 @@ impl GameSessionManager {
                 }
                 Command::Step {
                     table_id,
-                    connection_id,
+                    player_id,
                     action,
                     response_tx,
                 } => {
-                    let new_game_state = self.step(&table_id, &connection_id, &action).await;
+                    let new_game_state = self.step(&table_id, &player_id, &action).await;
                     let _ = response_tx.send(new_game_state);
                 }
             }
@@ -336,15 +351,15 @@ impl GameSessionManagerHandle {
     pub async fn step(
         &self,
         table_id: &TableId,
-        conn_id: &ConnectionId,
+        player_id: &PlayerId,
         action: &Action,
-    ) -> Result<StateResponseMessage, ()> {
+    ) -> Result<StateResponseMessage, String> {
         let (res_tx, res_rx) = oneshot::channel();
 
         self.command_tx
             .send(Command::Step {
                 table_id: table_id.to_owned(),
-                connection_id: conn_id.to_owned(),
+                player_id: player_id.to_owned(),
                 action: action.to_owned(),
                 response_tx: res_tx,
             })

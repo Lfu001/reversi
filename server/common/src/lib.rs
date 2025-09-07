@@ -325,6 +325,16 @@ impl StateResponseMessage {
     pub fn table(&self) -> &Table {
         &self.table
     }
+
+    /// Returns a reference to the puttable positions of this [`StateResponseMessage`].
+    pub fn puttable_positions(&self) -> &Vec<Position> {
+        &self.puttable_positions
+    }
+
+    /// Returns a reference to the judge result of this [`StateResponseMessage`].
+    pub fn judge_result(&self) -> &Option<JudgeResult> {
+        &self.judge_result
+    }
 }
 
 #[cfg(test)]

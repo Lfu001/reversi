@@ -13,5 +13,5 @@ pub enum WsMessage {
     /// **(Client <= Server)** The game state is updated.
     GameState(StateResponseMessage),
     /// **(Client <= Server)** Internal server error occurred.
-    InternalServerError,
+    InternalServerError(String),
 }
