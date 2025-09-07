@@ -23,7 +23,7 @@
         <!-- Player List -->
         <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
           <List
-            :items="players"
+            :items="boardStore.players"
             title="参加プレイヤー"
             empty-message="プレイヤーがいません"
             :max-items="2"
@@ -34,6 +34,7 @@
       <!-- Start Game Button -->
       <Button
         v-if="canStartGame"
+        :disabled="!isStartButtonEnabled"
         label="ゲームを開始する"
         variant="fill"
         class="w-full py-3 px-4 shadow-md bg-green-600 hover:bg-green-700 transition-colors"
@@ -44,31 +45,32 @@
 </template>
 
 <script setup lang="ts">
-/**
- * Player interface
- */
-interface Player {
-  name: string
-}
-
-/**
- * Array of players
- */
-const players = ref<Player[]>([
-  { name: 'プレイヤー1' },
-  { name: 'プレイヤー2' },
-])
+const boardStore = useBoardStore()
+const route = useRoute()
 
 /**
  * Room code
  */
-const roomCode = ref('ABCD12')
+const roomCode = computed(() => useAuthStore().roomPassword ?? '')
 
 /**
  * Whether the game can be started
  */
 const canStartGame = computed(() => {
-  return players.value.length >= 2
+  return boardStore.players.length >= 2
+})
+
+/**
+ * Whether the start button is enabled
+ */
+const isStartButtonEnabled = ref(true)
+
+onMounted(() => {
+  watch(() => boardStore.hasGameStarted, (hasGameStarted) => {
+    if (hasGameStarted) {
+      navigateTo(`/table/${route.params.id}`)
+    }
+  })
 })
 
 /**
@@ -76,8 +78,9 @@ const canStartGame = computed(() => {
  */
 const startGame = () => {
   if (canStartGame.value) {
-    // TODO: Implement game start logic with WebSocket
-    console.log('Starting game...')
+    isStartButtonEnabled.value = false
+    useWebSocketStore().send('"Start"')
+    navigateTo(`/table/${route.params.id}`)
   }
 }
 </script>
