@@ -67,7 +67,7 @@ const closeJoinModal = () => {
  */
 const joinTable = async (password: string) => {
   try {
-    const response = await $fetch.raw('/join', {
+    const response = await $fetch.raw('http://127.0.0.1:8081/join', {
       method: 'POST',
       body: new URLSearchParams({ password }),
       headers: {

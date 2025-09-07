@@ -44,7 +44,7 @@ const isGuestNameValid = computed(() => 0 < guestName.value.length && guestName.
  * If unsuccessful, alerts the user with the error message.
  */
 const registerPlayer = async () => {
-  await useFetch('/players', {
+  await $fetch('http://127.0.0.1:8081/players', {
     method: 'POST',
     body: new URLSearchParams({ name: guestName.value }),
     async onRequest({ options }) {
