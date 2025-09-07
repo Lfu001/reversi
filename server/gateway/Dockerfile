@@ -10,24 +10,15 @@ WORKDIR /usr/src/reversi-gateway
 RUN apt-get update && \
     apt-get install -y cmake pkg-config libclang-dev libssl-dev
 
-# Copy the manifests
-COPY gateway/Cargo.toml gateway/Cargo.lock ./
-
-# Create a dummy source file to build dependencies
-RUN mkdir -p src && \
-    echo "fn main() {}" > src/main.rs
-
-# Copy the dependency crate
+# Copy the dependency crate, manifest, lockfile, and source code
 COPY common/ ../common/
-
-# Build the dependencies (this step is cached as long as Cargo.toml, Cargo.lock, and `common` crate don't change)
-RUN cargo build --release
-
-# Now copy the actual source code
+COPY gateway/Cargo.toml gateway/Cargo.lock ./
 COPY gateway/src/ src/
 
-# Build the application
-RUN cargo install --path . --root /usr/local
+# Build the application using mount cache
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/src/reversi-gateway/target \
+    cargo install --path . --root /usr/local
 
 # Use a smaller image for the final container
 FROM debian:trixie-20250811-slim
