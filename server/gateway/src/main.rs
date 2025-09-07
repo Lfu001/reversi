@@ -10,7 +10,11 @@ use crate::{
     app_state::AppState, config::config, services::redis_client::RealRedisClient,
     websocket::server::GameSessionManager,
 };
-use actix_web::{middleware, web, App, HttpServer};
+use actix_cors::Cors;
+use actix_web::{
+    http::{self, header},
+    middleware, web, App, HttpServer,
+};
 use env_logger::Env;
 use jwt_simple::{prelude::HS256Key, reexports::rand::prelude::*};
 use std::env;
@@ -39,6 +43,16 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(app_state.clone())
             .configure(config)
+            .wrap(
+                Cors::default()
+                    .allowed_origin_fn(|origin, _| {
+                        origin.as_bytes().starts_with(b"http://localhost")
+                            || origin.as_bytes().starts_with(b"http://127.0.0.1")
+                    })
+                    .allowed_methods([http::Method::GET, http::Method::POST])
+                    .allowed_headers([header::CONTENT_TYPE, header::ACCEPT, header::AUTHORIZATION])
+                    .max_age(3600),
+            )
             .wrap(middleware::Logger::default())
     })
     .bind((host, port))?
