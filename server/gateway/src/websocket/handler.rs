@@ -50,6 +50,7 @@ pub async fn game_ws(
                     log::info!("Client has not sent heartbeat in over {:?} seconds. Closing connection.", CLIENT_TIMEOUT);
                     break None;
                 }
+                let _ = session.ping(b"").await;
             }
 
             // Message from client.
