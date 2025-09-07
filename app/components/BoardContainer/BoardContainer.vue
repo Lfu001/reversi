@@ -3,7 +3,7 @@
     <div class="w-full rounded-[10px] bg-[radial-gradient(#50aa50,#2d642d)] p-2 sm:p-2.5">
       <div class="grid aspect-square w-full grid-cols-8 grid-rows-8 border-r-2 border-b-2 border-black">
         <div
-          v-for="(c, index) in board"
+          v-for="(c, index) in props.board"
           :key="index"
           class="relative h-0 w-full border-t-2 border-l-2 border-black pb-[100%]"
           :class="{
@@ -31,10 +31,10 @@ import type { DiskColor } from '~/types/DiskColor'
  * A value of `null` indicates an empty square.
  */
 interface Props {
-  board?: Array<DiskColor | null>
+  board: Array<DiskColor | null>
 }
 
-const { board = Array(64).fill(null) } = defineProps<Props>()
+const props = defineProps<Props>()
 
 const emit = defineEmits<{
   (e: 'onSquareClick', index: number): void
@@ -57,11 +57,11 @@ const isDotPosition = (index: number): boolean => {
  * Otherwise, it is supposed to apply the logic of placing a stone.
  */
 const onSquareClick = (index: number) => {
-  if (index < 0 || index >= board.length) { // If the index is invalid
+  if (index < 0 || index >= props.board.length) { // If the index is invalid
     console.error('Invalid index', index)
     return
   }
-  if (board[index] !== null) { // If the square is already filled
+  if (props.board[index] !== null) { // If the square is already filled
     return
   }
   emit('onSquareClick', index)
