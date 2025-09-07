@@ -57,6 +57,10 @@ pub async fn join_table(
 
     HttpResponse::Created()
         .insert_header((header::LOCATION, format!("/{}", *table_id)))
+        .insert_header((
+            header::ACCESS_CONTROL_EXPOSE_HEADERS,
+            header::LOCATION.to_string(),
+        ))
         .finish()
 }
 
