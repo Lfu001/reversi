@@ -8,6 +8,8 @@ pub enum WsMessage {
     Connected(String),
     /// **(Client <= Server)** Another player leaves the table.
     Disconnected(String),
+    /// **(Client => Server)** The player is ready to start the game.
+    Start,
     /// **(Client => Server)** The player makes some reversi action.
     Step(Action),
     /// **(Client <= Server)** The game state is updated.

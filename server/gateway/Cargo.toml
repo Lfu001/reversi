@@ -11,6 +11,7 @@ async-trait = "0.1.85"
 base64 = "0.22.1"
 common = { version = "0.1.0", path = "../common" }
 env_logger = "0.11.6"
+fastrand = "2.3.0"
 futures-util = "0.3.31"
 jwt-simple = "0.12.10"
 log = "0.4.22"

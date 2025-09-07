@@ -96,7 +96,6 @@ pub async fn game_ws(
                     WsMessage::Disconnected(msg) => {
                         session.text(serde_json::json!({ "Disconnected": msg }).to_string()).await.unwrap();
                     },
-                    WsMessage::Step(_) => log::error!("Unexpected message received from server."),
                     WsMessage::GameState(state_response_message) => {
                         let json = serde_json::json!({"GameState": state_response_message});
                         session.text(json.to_string()).await.unwrap();
@@ -104,6 +103,9 @@ pub async fn game_ws(
                     WsMessage::InternalServerError(err) => {
                         session.text(serde_json::json!({ "InternalServerError": err }).to_string()).await.unwrap();
                     },
+                    _ => {
+                        log::error!("Unexpected message received from server.");
+                    }
                 };
             }
         }
@@ -137,8 +139,23 @@ async fn process_message(
                 }
             }
         }
+        WsMessage::Start => {
+            let initial_game_state = game_server_handle.fetch_initial_state(table_id).await;
+            match initial_game_state {
+                Ok(initial_game_state) => {
+                    game_server_handle
+                        .broadcast_message(conn_id, WsMessage::GameState(initial_game_state))
+                        .await;
+                }
+                Err(err) => {
+                    game_server_handle
+                        .broadcast_message(conn_id, WsMessage::InternalServerError(err))
+                        .await;
+                }
+            }
+        }
         _ => {
-            log::warn!("Unexpected message type received.");
+            log::error!("Unexpected message type received.");
             session
                 .text(
                     serde_json::json!({ "error": "Unexpected message type received." }).to_string(),

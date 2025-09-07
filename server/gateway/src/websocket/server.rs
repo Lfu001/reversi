@@ -4,6 +4,7 @@ use crate::{
     types::{ConnectionId, PlayerId, TableId, TableState},
 };
 use common::{Action, DiskColor, PutConfig, StateResponseMessage, StepRequestMessage};
+use fastrand;
 use std::{
     collections::{HashMap, HashSet},
     env, io,
@@ -27,6 +28,11 @@ enum Command {
         message: WsMessage,
         connection_id: ConnectionId,
         response_tx: oneshot::Sender<()>,
+    },
+    /// Fetch the initial game state.
+    FetchInitialState {
+        table_id: TableId,
+        response_tx: oneshot::Sender<Result<StateResponseMessage, String>>,
     },
     /// Step game state.
     Step {
@@ -130,6 +136,48 @@ impl GameSessionManager {
                 }
             }
         }
+    }
+
+    /// Fetch the initial game state.
+    async fn fetch_initial_state(
+        &mut self,
+        table_id: &TableId,
+    ) -> Result<StateResponseMessage, String> {
+        // Fetch the initial game state from the game API.
+        let url = env::var("NEW_GAME_API_URL").unwrap_or("http://localhost:8080/new".to_string());
+        let res = match ureq::get(&url).call() {
+            Ok(res) => res,
+            Err(ureq::Error::Status(_, response)) => {
+                return Err(response.into_string().unwrap_or(String::from("")));
+            }
+            Err(ureq::Error::Transport(transport)) => {
+                return Err(String::from(transport.message().unwrap_or("")));
+            }
+        };
+        let new_game_state = res.into_string().unwrap();
+        let new_game_state: StateResponseMessage = serde_json::from_str(&new_game_state).unwrap();
+
+        // Assign disk colors to players.
+        let connection_ids = self.tables.get(table_id).unwrap();
+        let player_ids = connection_ids
+            .iter()
+            .map(|conn| self.connection_player_map.get(conn).unwrap().to_owned())
+            .collect::<Vec<PlayerId>>();
+        let mut rng = fastrand::Rng::new();
+        let mut colors = vec![DiskColor::Dark, DiskColor::Light];
+        rng.shuffle(&mut colors);
+        let roles = HashMap::from_iter(player_ids.into_iter().zip(colors));
+
+        // Update game state in Redis.
+        let table_state = TableState::new(
+            new_game_state.table().clone(),
+            roles,
+            new_game_state.puttable_positions().clone(),
+            *new_game_state.judge_result(),
+        );
+        self.update_game_state(table_id, &table_state).await;
+
+        Ok(new_game_state)
     }
 
     /// Step game state and return the new one.
@@ -267,6 +315,13 @@ impl GameSessionManager {
                     self.broadcast_message(&connection_id, message).await;
                     let _ = response_tx.send(());
                 }
+                Command::FetchInitialState {
+                    table_id,
+                    response_tx,
+                } => {
+                    let game_state = self.fetch_initial_state(&table_id).await;
+                    let _ = response_tx.send(game_state);
+                }
                 Command::Step {
                     table_id,
                     player_id,
@@ -345,6 +400,27 @@ impl GameSessionManagerHandle {
             .unwrap();
 
         res_rx.await.unwrap();
+    }
+
+    /// Fetch the initial game state.
+    ///
+    /// # Arguments
+    ///
+    /// * `table_id` - An ID of the table to fetch.
+    pub async fn fetch_initial_state(
+        &self,
+        table_id: &TableId,
+    ) -> Result<StateResponseMessage, String> {
+        let (res_tx, res_rx) = oneshot::channel();
+
+        self.command_tx
+            .send(Command::FetchInitialState {
+                table_id: table_id.to_owned(),
+                response_tx: res_tx,
+            })
+            .unwrap();
+
+        res_rx.await.unwrap()
     }
 
     /// Step game state.
