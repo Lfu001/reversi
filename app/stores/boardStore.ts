@@ -153,7 +153,7 @@ export const useBoardStore = defineStore('board', () => {
       console.log('Disconnected:', playerName)
     }
     else if (rootKey === 'GameState') { // If the game state is updated
-      const gameState = data[rootKey]
+      const gameState: ServerGameState = data[rootKey]
       console.log('GameState:', gameState)
       setStateFromServer(gameState)
       hasGameStarted.value = true
