@@ -581,7 +581,6 @@ dependencies = [
  "common",
  "env_logger",
  "log",
- "num-derive",
  "num-traits",
  "serde",
  "serde_json",
