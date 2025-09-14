@@ -4,7 +4,6 @@ use jwt_simple::prelude::*;
 use serde::{Deserialize, Serialize};
 
 /// An expiration time of a JWT and a player ID.
-/// TODO: Make this configurable via environment variables.
 pub const EXPIRE_TIME_SECONDS: u64 = 3 * 60 * 60;
 
 /// A claim about a player in a JWT.

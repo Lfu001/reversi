@@ -90,7 +90,6 @@ macro_rules! position {
 }
 
 /// A board of Reversi.
-/// TODO: implement Deref or Index trait
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Board {
     /// An 1D expression of the board.
