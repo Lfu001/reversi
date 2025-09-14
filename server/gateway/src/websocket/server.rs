@@ -1,15 +1,13 @@
 use super::message::WsMessage;
 use crate::{
+    authentication::validate_jwt,
     services::redis_client::RedisClient,
     types::{ConnectionId, PlayerId, TableId, TableState},
 };
 use common::{Action, DiskColor, PutConfig, StateResponseMessage, StepRequestMessage};
 use fastrand;
-use std::{
-    collections::{HashMap, HashSet},
-    env, io,
-    sync::Arc,
-};
+use jwt_simple::prelude::HS256Key;
+use std::{collections::HashMap, env, io, sync::Arc};
 use tokio::sync::{mpsc, oneshot, Mutex};
 
 /// A command received by the game session manager.
@@ -18,11 +16,29 @@ enum Command {
     Connect {
         connection_tx: mpsc::UnboundedSender<WsMessage>,
         response_tx: oneshot::Sender<ConnectionId>,
-        table_id: TableId,
-        player_id: PlayerId,
     },
     /// Disconnect a connection.
-    Disconnect(ConnectionId),
+    Disconnect {
+        connection_id: ConnectionId,
+        notify_table: bool,
+    },
+    /// Authenticate a player.
+    Authenticate {
+        token: String,
+        response_tx: oneshot::Sender<Result<PlayerId, String>>,
+    },
+    /// Check if a connection is authenticated.
+    CheckAuthenticated {
+        connection_id: ConnectionId,
+        response_tx: oneshot::Sender<bool>,
+    },
+    /// Join a table.
+    Join {
+        connection_id: ConnectionId,
+        table_id: TableId,
+        player_id: PlayerId,
+        response_tx: oneshot::Sender<()>,
+    },
     /// Send a message.
     Message {
         message: WsMessage,
@@ -36,8 +52,8 @@ enum Command {
     },
     /// Step game state.
     Step {
+        connection_id: ConnectionId,
         table_id: TableId,
-        player_id: PlayerId,
         action: Action,
         response_tx: oneshot::Sender<Result<StateResponseMessage, String>>,
     },
@@ -49,13 +65,15 @@ pub struct GameSessionManager {
     /// A map of WebSocket connections to their senders.
     sessions: HashMap<ConnectionId, mpsc::UnboundedSender<WsMessage>>,
     /// A map of tables to their connections.
-    tables: HashMap<TableId, HashSet<ConnectionId>>,
-    /// A map of connection ID to Player ID.
+    tables: HashMap<TableId, Vec<ConnectionId>>,
+    /// A map of connection ID to Player ID. Only authenticated connections are stored.
     connection_player_map: HashMap<ConnectionId, PlayerId>,
     /// A command receiver.
     command_rx: mpsc::UnboundedReceiver<Command>,
     /// A Redis client.
     redis_client: Arc<Mutex<dyn RedisClient + Send>>,
+    /// A JWT key.
+    jwt_key: HS256Key,
 }
 
 impl GameSessionManager {
@@ -64,7 +82,11 @@ impl GameSessionManager {
     /// # Arguments
     ///
     /// * `redis_client` - A Redis client instance.
-    pub fn new(redis_client: impl RedisClient + 'static) -> (Self, GameSessionManagerHandle) {
+    /// * `jwt_key` - A JWT key.
+    pub fn new(
+        redis_client: impl RedisClient + 'static,
+        jwt_key: HS256Key,
+    ) -> (Self, GameSessionManagerHandle) {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         (
             Self {
@@ -73,6 +95,7 @@ impl GameSessionManager {
                 connection_player_map: HashMap::new(),
                 command_rx,
                 redis_client: Arc::new(Mutex::new(redis_client)),
+                jwt_key,
             },
             GameSessionManagerHandle { command_tx },
         )
@@ -83,22 +106,9 @@ impl GameSessionManager {
     /// # Arguments
     ///
     /// * `tx` - A message sender.
-    /// * `table_id` - An ID of the table to join.
-    /// * `player_id` - A player ID.
-    async fn connect(
-        &mut self,
-        tx: mpsc::UnboundedSender<WsMessage>,
-        table_id: &TableId,
-        player_id: &PlayerId,
-    ) -> ConnectionId {
+    async fn connect(&mut self, tx: mpsc::UnboundedSender<WsMessage>) -> ConnectionId {
         let id = ConnectionId::new();
         self.sessions.insert(id.clone(), tx);
-        self.tables
-            .entry(table_id.to_owned())
-            .or_default()
-            .insert(id.clone());
-        self.connection_player_map
-            .insert(id.to_owned(), player_id.to_owned());
         id
     }
 
@@ -111,29 +121,72 @@ impl GameSessionManager {
         // Remove sender.
         if self.sessions.remove(conn_id).is_some() {
             for conn_ids in self.tables.values_mut() {
-                conn_ids.remove(conn_id);
+                conn_ids.retain(|id| id != conn_id);
             }
         }
         self.connection_player_map.remove(conn_id);
     }
 
-    /// Broadcast a message to all clients in the table except the given connection ID.
+    /// Authenticate a player.
     ///
     /// # Arguments
     ///
-    /// * `conn_id` - The connection ID of the sender.
+    /// * `token` - The JWT token.
+    async fn authenticate(&self, token: &str) -> Result<PlayerId, String> {
+        let player_id = match validate_jwt(&self.jwt_key, token) {
+            Ok(player_id) => player_id,
+            Err(err) => {
+                return Err(err.to_string());
+            }
+        };
+        Ok(player_id)
+    }
+
+    /// Check if a connection is authenticated.
+    ///
+    /// # Arguments
+    ///
+    /// * `conn_id` - The connection ID.
+    async fn is_authenticated(&self, conn_id: &ConnectionId) -> bool {
+        self.connection_player_map.contains_key(conn_id)
+    }
+
+    /// Join a table.
+    ///
+    /// # Arguments
+    ///
+    /// * `conn_id` - The connection ID of the player who is joining.
+    /// * `table_id` - The table ID of the table to join.
+    /// * `player_id` - The player ID of the player who is joining.
+    async fn join(&mut self, conn_id: &ConnectionId, table_id: &TableId, player_id: &PlayerId) {
+        self.tables
+            .entry(table_id.to_owned())
+            .or_default()
+            .push(conn_id.clone());
+        self.connection_player_map
+            .insert(conn_id.to_owned(), player_id.to_owned());
+    }
+
+    /// Broadcast a message to all clients in the table.
+    ///
+    /// # Arguments
+    ///
+    /// * `table_id` - The table ID of the sender.
     /// * `message` - The message to broadcast.
-    async fn broadcast_message(&self, conn_id: &ConnectionId, message: WsMessage) {
-        // Find table where the connection ID participates in.
-        if let Some((_, conn_ids)) = self
-            .tables
-            .iter()
-            .find(|(_, participants)| participants.contains(conn_id))
-        {
-            for conn in conn_ids {
-                if let Some(tx) = self.sessions.get(conn) {
-                    let _ = tx.send(message.clone());
+    async fn broadcast_message(&self, table_id: &TableId, message: WsMessage) {
+        match self.tables.get(table_id) {
+            Some(conn_ids) => {
+                for conn in conn_ids {
+                    if let Some(tx) = self.sessions.get(conn) {
+                        let _ = tx.send(message.clone());
+                    }
                 }
+            }
+            None => {
+                log::warn!(
+                    "Tried to broadcast message but the table {:?} does not exist.",
+                    table_id
+                );
             }
         }
     }
@@ -184,13 +237,13 @@ impl GameSessionManager {
     ///
     /// # Arguments
     ///
+    /// * `connection_id` - An ID of the connection to step.
     /// * `table_id` - An ID of the table to step.
-    /// * `player_id` - A player ID of the sender.
     /// * `action` - An action to step.
     async fn step(
         &mut self,
+        connection_id: &ConnectionId,
         table_id: &TableId,
-        player_id: &PlayerId,
         action: &Action,
     ) -> Result<StateResponseMessage, String> {
         // Fetch current game state from Redis.
@@ -205,6 +258,7 @@ impl GameSessionManager {
             .await
             .unwrap();
         let roles: HashMap<PlayerId, DiskColor> = serde_json::from_value(roles).unwrap();
+        let player_id = self.connection_player_map.get(connection_id).unwrap();
         let color = roles.get(player_id).unwrap();
         let action = match action {
             Action::PutDisk(config) => Action::PutDisk(PutConfig::new(*color, *config.position())),
@@ -270,13 +324,29 @@ impl GameSessionManager {
             .unwrap();
     }
 
-    /// Fetch the player name from Redis.
+    /// Read the player names from Redis.
     ///
     /// # Arguments
     ///
-    /// * `player_id` - An ID of the player to fetch
-    async fn fetch_player_name(&self, player_id: &PlayerId) -> String {
-        self.redis_client.lock().await.get(player_id).await.unwrap()
+    /// * `table_id` - An ID of the table to read.
+    async fn read_player_names(&self, table_id: &TableId) -> Vec<String> {
+        let table = self.tables.get(table_id).unwrap();
+        let player_ids = table
+            .iter()
+            .map(|conn| self.connection_player_map.get(conn).unwrap().to_owned())
+            .collect::<Vec<PlayerId>>();
+        let mut player_names = Vec::new();
+        for player_id in player_ids {
+            let name = self
+                .redis_client
+                .lock()
+                .await
+                .get(&player_id)
+                .await
+                .unwrap();
+            player_names.push(name);
+        }
+        player_names
     }
 
     /// Start the game session manager.
@@ -286,33 +356,85 @@ impl GameSessionManager {
                 Command::Connect {
                     connection_tx,
                     response_tx,
-                    table_id,
-                    player_id,
                 } => {
-                    let conn_id = self.connect(connection_tx, &table_id, &player_id).await;
-
-                    // Broadcast to other players in the table that a new player has joined.
-                    let player_name = self.fetch_player_name(&player_id).await;
-                    let message = WsMessage::Connected(player_name);
-                    self.broadcast_message(&conn_id, message).await;
-
+                    let conn_id = self.connect(connection_tx).await;
                     let _ = response_tx.send(conn_id);
                 }
-                Command::Disconnect(conn_id) => {
-                    // Broadcast to other players in the table that a player has left.
-                    let player_id = self.connection_player_map.get(&conn_id).unwrap();
-                    let player_name = self.fetch_player_name(player_id).await;
-                    let message = WsMessage::Disconnected(format!("{} has left", player_name));
-                    self.broadcast_message(&conn_id, message).await;
+                Command::Disconnect {
+                    connection_id,
+                    notify_table,
+                } => {
+                    if notify_table {
+                        // Broadcast to players in the table that the player has left.
+                        let table_id = self
+                            .tables
+                            .iter()
+                            .find(|(_, participants)| participants.contains(&connection_id))
+                            .map(|(table_id, _)| table_id.clone());
 
-                    self.disconnect(&conn_id).await;
+                        self.disconnect(&connection_id).await;
+
+                        match table_id {
+                            Some(table_id) => {
+                                let player_names = self.read_player_names(&table_id).await;
+                                let message = WsMessage::Players(player_names);
+                                self.broadcast_message(&table_id, message).await;
+                            }
+                            None => {
+                                log::warn!(
+                                    "Failed to broadcast message: connection is not in any table."
+                                );
+                            }
+                        }
+                    } else {
+                        self.disconnect(&connection_id).await;
+                    }
+                }
+                Command::Authenticate { token, response_tx } => {
+                    let player_id = self.authenticate(&token).await;
+                    let _ = response_tx.send(player_id);
+                }
+                Command::CheckAuthenticated {
+                    connection_id,
+                    response_tx,
+                } => {
+                    let is_authenticated = self.is_authenticated(&connection_id).await;
+                    let _ = response_tx.send(is_authenticated);
+                }
+                Command::Join {
+                    connection_id,
+                    table_id,
+                    player_id,
+                    response_tx,
+                } => {
+                    self.join(&connection_id, &table_id, &player_id).await;
+
+                    // Broadcast to players in the table that a new player has joined.
+                    let player_names = self.read_player_names(&table_id).await;
+                    let message = WsMessage::Players(player_names);
+                    self.broadcast_message(&table_id, message).await;
+
+                    let _ = response_tx.send(());
                 }
                 Command::Message {
                     message,
                     connection_id,
                     response_tx,
                 } => {
-                    self.broadcast_message(&connection_id, message).await;
+                    let table = self
+                        .tables
+                        .iter()
+                        .find(|(_, participants)| participants.contains(&connection_id));
+                    match table {
+                        Some((table_id, _)) => {
+                            self.broadcast_message(table_id, message).await;
+                        }
+                        None => {
+                            log::warn!(
+                                "Failed to broadcast message: connection is not in any table."
+                            );
+                        }
+                    }
                     let _ = response_tx.send(());
                 }
                 Command::FetchInitialState {
@@ -323,12 +445,12 @@ impl GameSessionManager {
                     let _ = response_tx.send(game_state);
                 }
                 Command::Step {
+                    connection_id,
                     table_id,
-                    player_id,
                     action,
                     response_tx,
                 } => {
-                    let new_game_state = self.step(&table_id, &player_id, &action).await;
+                    let new_game_state = self.step(&connection_id, &table_id, &action).await;
                     let _ = response_tx.send(new_game_state);
                 }
             }
@@ -351,35 +473,98 @@ impl GameSessionManagerHandle {
     /// # Arguments
     ///
     /// * `conn_tx` - A message sender.
-    /// * `table_id` - An ID of the table to join.
-    /// * `player_id` - A player ID.
-    pub async fn connect(
-        &self,
-        conn_tx: mpsc::UnboundedSender<WsMessage>,
-        table_id: &TableId,
-        player_id: &PlayerId,
-    ) -> ConnectionId {
+    pub async fn connect(&self, conn_tx: mpsc::UnboundedSender<WsMessage>) -> ConnectionId {
         let (res_tx, res_rx) = oneshot::channel();
 
         self.command_tx
             .send(Command::Connect {
                 connection_tx: conn_tx,
                 response_tx: res_tx,
-                table_id: table_id.to_owned(),
-                player_id: player_id.to_owned(),
             })
             .unwrap();
 
         res_rx.await.unwrap()
     }
 
-    /// Unregister message sender and broadcast disconnection message to current table.
+    /// Unregister message sender and optionally broadcast disconnection message to current table.
     ///
     /// # Arguments
     ///
     /// * `conn_id` - A connection ID to unregister
-    pub async fn disconnect(&self, conn_id: ConnectionId) {
-        self.command_tx.send(Command::Disconnect(conn_id)).unwrap();
+    /// * `notify_table` - Whether to notify the table of the player's disconnection
+    pub async fn disconnect(&self, conn_id: &ConnectionId, notify_table: bool) {
+        self.command_tx
+            .send(Command::Disconnect {
+                connection_id: conn_id.to_owned(),
+                notify_table,
+            })
+            .unwrap();
+    }
+
+    /// Authenticate a player.
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - A JWT token.
+    ///
+    /// # Returns
+    ///
+    /// A player ID if authentication is successful, or an error message otherwise.
+    pub async fn authenticate(&self, token: &str) -> Result<PlayerId, String> {
+        let (res_tx, res_rx) = oneshot::channel();
+
+        self.command_tx
+            .send(Command::Authenticate {
+                token: token.to_owned(),
+                response_tx: res_tx,
+            })
+            .unwrap();
+
+        res_rx.await.unwrap()
+    }
+
+    /// Checks if a connection is authenticated.
+    ///
+    /// # Arguments
+    ///
+    /// * `conn_id` - The connection ID to check.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the connection is authenticated, `false` otherwise.
+    pub async fn is_authenticated(&self, conn_id: &ConnectionId) -> bool {
+        let (res_tx, res_rx) = oneshot::channel();
+
+        self.command_tx
+            .send(Command::CheckAuthenticated {
+                connection_id: conn_id.to_owned(),
+                response_tx: res_tx,
+            })
+            .unwrap();
+
+        res_rx.await.unwrap()
+    }
+
+    /// Join a table.
+    ///
+    /// # Arguments
+    ///
+    /// * `conn_id` - The connection ID of the sender.
+    /// * `table_id` - The table ID.
+    /// * `player_id` - The player ID.
+    pub async fn join(&self, conn_id: &ConnectionId, table_id: &TableId, player_id: &PlayerId) {
+        let (res_tx, res_rx) = oneshot::channel();
+
+        self.command_tx
+            .send(Command::Join {
+                connection_id: conn_id.to_owned(),
+                table_id: table_id.to_owned(),
+                player_id: player_id.to_owned(),
+                response_tx: res_tx,
+            })
+            .unwrap();
+
+        res_rx.await.unwrap();
     }
 
     /// Broadcast a message to all clients in the table.
@@ -426,16 +611,16 @@ impl GameSessionManagerHandle {
     /// Step game state.
     pub async fn step(
         &self,
+        conn_id: &ConnectionId,
         table_id: &TableId,
-        player_id: &PlayerId,
         action: &Action,
     ) -> Result<StateResponseMessage, String> {
         let (res_tx, res_rx) = oneshot::channel();
 
         self.command_tx
             .send(Command::Step {
+                connection_id: conn_id.to_owned(),
                 table_id: table_id.to_owned(),
-                player_id: player_id.to_owned(),
                 action: action.to_owned(),
                 response_tx: res_tx,
             })

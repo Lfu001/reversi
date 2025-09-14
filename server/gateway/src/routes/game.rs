@@ -1,6 +1,5 @@
 use crate::{
-    app_state::AppState, authentication::validate_jwt, services::redis_client::RedisClient,
-    types::TableId, websocket::handler,
+    app_state::AppState, services::redis_client::RedisClient, types::TableId, websocket::handler,
 };
 use actix_web::{rt, web, Error, HttpRequest, HttpResponse};
 use serde::Deserialize;
@@ -10,11 +9,6 @@ use serde::Deserialize;
 pub struct Info {
     /// A table ID.
     table_id: String,
-}
-
-#[derive(Deserialize)]
-pub struct GameQuery {
-    token: String,
 }
 
 /// Handshake and start WebSocket handler with heartbeats.
@@ -29,27 +23,8 @@ pub async fn game_ws(
     req: HttpRequest,
     stream: web::Payload,
     info: web::Path<Info>,
-    query: web::Query<GameQuery>,
     app_state: web::Data<AppState>,
 ) -> Result<HttpResponse, Error> {
-    // Validate JWT and extract player ID.
-    // WARNING:
-    // Note that it is insecure to extract or send a token in the query parameter.
-    // It is impossible to send the token in the authorization header because this endpoint is a WebSocket handshake,
-    // and on the client WebSocket() JavaScript interface does not provide setting the authorization header.
-    // For development purposes, we allow the token to be sent as a query parameter as a workaround.
-    // However, in a production environment, it is crucial to implement secure logic to send the token
-    // in the first message after the WebSocket connection is established.
-    // This ensures that the token is transmitted securely and cannot be easily intercepted or tampered with.
-    // TODO: Implement secure logic to send the token in the first message after the WebSocket connection is established.
-    let jwt = &query.token;
-    let player_id = validate_jwt(app_state.jwt_key(), jwt);
-    if let Err(err) = player_id {
-        log::error!("{}", err);
-        return Ok(HttpResponse::Unauthorized().finish());
-    }
-    let player_id = player_id.unwrap();
-
     //  Check if the table exists.
     let table_id = TableId::new(info.table_id.to_owned());
     match is_table_exist(&mut *app_state.redis_client().await, &table_id).await {
@@ -68,7 +43,6 @@ pub async fn game_ws(
     // Spawn WebSocket handler.
     let (res, session, stream) = actix_ws::handle(&req, stream)?;
     rt::spawn(handler::game_ws(
-        player_id,
         table_id,
         (**app_state).game_server().clone(),
         session,

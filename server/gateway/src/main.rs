@@ -35,7 +35,8 @@ async fn main() -> std::io::Result<()> {
     let redis_client = RealRedisClient::new(redis_client).await;
     let jwt_key = HS256Key::generate();
     let salt = thread_rng().next_u32();
-    let (game_server, server_handle) = GameSessionManager::new(redis_client.clone());
+    let (game_server, server_handle) =
+        GameSessionManager::new(redis_client.clone(), jwt_key.clone());
     let game_server = spawn(game_server.run());
     let app_state = web::Data::new(AppState::new(redis_client, jwt_key, salt, server_handle));
 

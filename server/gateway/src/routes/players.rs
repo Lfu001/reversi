@@ -101,7 +101,8 @@ mod tests {
             let salt = thread_rng().next_u32();
 
             // GameServer setup
-            let (_, server_handle) = GameSessionManager::new(mock_redis_client.clone());
+            let (_, server_handle) =
+                GameSessionManager::new(mock_redis_client.clone(), jwt_key.clone());
 
             // AppState setup
             let app_state = AppState::new(mock_redis_client, jwt_key, salt, server_handle.clone());

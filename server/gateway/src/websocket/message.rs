@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 /// A message that is sent over the WebSocket connection.
 #[derive(Serialize, Deserialize, Clone)]
 pub enum WsMessage {
-    /// **(Client <= Server)** Another player joins the table.
-    Connected(String),
-    /// **(Client <= Server)** Another player leaves the table.
-    Disconnected(String),
+    /// **(Client <= Server)** The server sends the list of players in the table.
+    Players(Vec<String>),
+    /// **(Client => Server)** The player requests authentication.
+    Authenticate(String),
     /// **(Client => Server)** The player is ready to start the game.
     Start,
     /// **(Client => Server)** The player makes some reversi action.
