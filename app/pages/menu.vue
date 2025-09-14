@@ -74,14 +74,14 @@ const joinTable = async (password: string) => {
       body: new URLSearchParams({ password }),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Bearer ${jwt}`,
+        'Authorization': `Bearer ${jwt!}`,
       },
     })
     const nextUrl = response.headers.get('location')
     if (nextUrl) {
       authStore.roomPassword = password
       const webSocketStore = useWebSocketStore()
-      webSocketStore.connect(`http://127.0.0.1:8081${nextUrl}?token=${jwt}`)
+      webSocketStore.connect(`http://127.0.0.1:8081${nextUrl}`, jwt!)
       webSocketStore.setOnMessageHandler(useBoardStore().handleWebsocketMessage)
       navigateTo(`matchmaking${nextUrl}`)
     }

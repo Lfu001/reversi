@@ -142,15 +142,10 @@ export const useBoardStore = defineStore('board', () => {
     const keys = Object.keys(data)
     const rootKey = keys[0]
 
-    if (rootKey === 'Connected') { // If someone joins the table
-      const playerName = data[rootKey]
-      players.value.push({ name: playerName })
-      console.log('Connected:', playerName)
-    }
-    else if (rootKey === 'Disconnected') { // If someone leaves the table
-      const playerName = data[rootKey]
-      players.value.splice(players.value.indexOf({ name: playerName }), 1)
-      console.log('Disconnected:', playerName)
+    if (rootKey === 'Players') { // If someone joined or left the table
+      const playerNames: string[] = data[rootKey]
+      players.value = playerNames.map((name: string) => ({ name }))
+      console.log('Players:', players.value)
     }
     else if (rootKey === 'GameState') { // If the game state is updated
       const gameState: ServerGameState = data[rootKey]
