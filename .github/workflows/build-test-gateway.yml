@@ -3,6 +3,7 @@ on:
     branches: [main]
   pull_request:
     paths:
+      - "server/common/**"
       - "server/gateway/**"
 
 name: build and test (gateway)

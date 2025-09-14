@@ -1,9 +1,6 @@
 mod game_logic;
 mod server;
 
-#[macro_use]
-extern crate num_derive;
-
 use actix_web::{middleware, App, HttpServer};
 use env_logger::Env;
 use server::config::config;

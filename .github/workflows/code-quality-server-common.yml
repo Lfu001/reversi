@@ -4,9 +4,8 @@ on:
   pull_request:
     paths:
       - "server/common/**"
-      - "server/gateway/**"
 
-name: code quality (gateway)
+name: code quality (server common)
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,7 +20,7 @@ jobs:
       - name: Run rustfmt
         run: |
           cargo fmt --all --check
-        working-directory: ./server/gateway
+        working-directory: ./server/common
 
   lint:
     runs-on: ubuntu-latest
@@ -33,4 +32,4 @@ jobs:
           fetch-depth: 0
       - name: Run clippy
         run: cargo clippy --all-targets --all-features
-        working-directory: ./server/gateway
+        working-directory: ./server/common

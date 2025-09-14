@@ -1,8 +1,8 @@
 use crate::{
-    game_logic::controller::Controller,
-    server::messages::{request::RequestMessage, response::ResponseMessage},
+    game_logic::controller::Controller, server::messages::response::StateResponseMessageExt,
 };
 use actix_web::{error, web, Responder, Result};
+use common::StepRequestMessage;
 
 /// A handler for step table.
 ///
@@ -13,16 +13,17 @@ use actix_web::{error, web, Responder, Result};
 /// # Returns
 ///
 /// An updated table, puttable positions, and judge result if the game is over.
-pub async fn step_table(req: web::Json<RequestMessage>) -> Result<impl Responder> {
-    let RequestMessage { mut table, action } = req.into_inner();
-    let step_result = Controller::step(&mut table, action);
+pub async fn step_table(req: web::Json<StepRequestMessage>) -> Result<impl Responder> {
+    let message = req.into_inner();
+    let mut table = message.table().to_owned();
+    let step_result = Controller::step(&mut table, message.action().to_owned());
 
     match step_result {
-        Ok(step_result) => Ok(ResponseMessage {
+        Ok(step_result) => Ok(StateResponseMessageExt::new(
             table,
-            puttable_positions: step_result.puttable_positions,
-            judge_result: step_result.judge_result,
-        }),
+            step_result.puttable_positions,
+            step_result.judge_result,
+        )),
         Err(()) => Err(error::ErrorBadRequest("Invalid action.")),
     }
 }
@@ -30,14 +31,9 @@ pub async fn step_table(req: web::Json<RequestMessage>) -> Result<impl Responder
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        game_logic::{
-            action::{Action, PutConfig},
-            state::{Column, DiskColor, Row, Table},
-        },
-        position,
-    };
-    use actix_web::{http::StatusCode, test, web, App};
+    use crate::game_logic::state::BoardExt;
+    use actix_web::{http::StatusCode, test, App};
+    use common::{position, Action, Column, DiskColor, Position, PutConfig, Row, Table};
 
     /// Test for step table by valid action "PutDisk"
     #[actix_web::test]
@@ -45,13 +41,13 @@ mod tests {
         let app = test::init_service(App::new().route("/step", web::post().to(step_table))).await;
         let req = test::TestRequest::post()
             .uri("/step")
-            .set_json(&RequestMessage {
-                table: Table::new(),
-                action: Action::PutDisk(PutConfig::new(
+            .set_json(StepRequestMessage::new(
+                Table::default(),
+                Action::PutDisk(PutConfig::new(
                     DiskColor::Dark,
                     position!(Row::Three, Column::D),
                 )),
-            })
+            ))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
@@ -63,13 +59,13 @@ mod tests {
         let app = test::init_service(App::new().route("/step", web::post().to(step_table))).await;
         let req = test::TestRequest::post()
             .uri("/step")
-            .set_json(&RequestMessage {
-                table: Table::new(),
-                action: Action::PutDisk(PutConfig::new(
+            .set_json(StepRequestMessage::new(
+                Table::default(),
+                Action::PutDisk(PutConfig::new(
                     DiskColor::Dark,
                     position!(Row::One, Column::A),
                 )),
-            })
+            ))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_client_error());
@@ -78,7 +74,7 @@ mod tests {
     /// Test for step table by valid action "PassTurn"
     #[actix_web::test]
     async fn test_step_table_pass() {
-        let mut table = Table::new();
+        let mut table = Table::default();
         let board = table.board_mut();
         board.set_disk(position!(Row::Four, Column::C), DiskColor::Dark);
         board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
@@ -99,10 +95,10 @@ mod tests {
         let app = test::init_service(App::new().route("/step", web::post().to(step_table))).await;
         let req = test::TestRequest::post()
             .uri("/step")
-            .set_json(&RequestMessage {
+            .set_json(StepRequestMessage::new(
                 table,
-                action: Action::PassTurn(DiskColor::Dark),
-            })
+                Action::PassTurn(DiskColor::Dark),
+            ))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
@@ -114,10 +110,10 @@ mod tests {
         let app = test::init_service(App::new().route("/step", web::post().to(step_table))).await;
         let req = test::TestRequest::post()
             .uri("/step")
-            .set_json(&RequestMessage {
-                table: Table::new(),
-                action: Action::PassTurn(DiskColor::Dark),
-            })
+            .set_json(StepRequestMessage::new(
+                Table::default(),
+                Action::PassTurn(DiskColor::Dark),
+            ))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);

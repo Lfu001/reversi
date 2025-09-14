@@ -4,9 +4,8 @@ on:
   pull_request:
     paths:
       - "server/common/**"
-      - "server/game/**"
 
-name: build and test (game)
+name: build and test (server common)
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,8 +20,8 @@ jobs:
       - name: Run build
         run: |
           cargo build
-        working-directory: ./server/game
+        working-directory: ./server/common
       - name: Run test
         run: |
           cargo test
-        working-directory: ./server/game
+        working-directory: ./server/common
