@@ -28,17 +28,13 @@ export const useWebSocketStore = defineStore('websocket', () => {
    * Otherwise, a new connection will be established.
    *
    * @param url - The URL of the WebSocket to connect to.
-   * @param token - The JWT token to authenticate with.
    */
-  const connect = (url: string, token: string) => {
+  const connect = (url: string) => {
     if (socket.value?.url === url && isConnected.value) { // if the connection is already established
       return
     }
     socket.value = new WebSocket(url)
 
-    socket.value.onopen = () => {
-      send(JSON.stringify({ Authenticate: token }))
-    }
     socket.value.onerror = (event) => {
       console.error(event)
     }
@@ -81,6 +77,9 @@ export const useWebSocketStore = defineStore('websocket', () => {
   const setOnOpenHandler = (handler: (event: Event) => void) => {
     if (socket.value) {
       socket.value.onopen = handler
+    }
+    else {
+      console.warn('Cannot set onOpenHandler: WebSocket is not open')
     }
   }
 

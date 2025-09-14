@@ -81,7 +81,10 @@ const joinTable = async (password: string) => {
     if (nextUrl) {
       authStore.roomPassword = password
       const webSocketStore = useWebSocketStore()
-      webSocketStore.connect(`http://127.0.0.1:8081${nextUrl}`, jwt!)
+      webSocketStore.connect(`http://127.0.0.1:8081${nextUrl}`)
+      webSocketStore.setOnOpenHandler(() => {
+        webSocketStore.send(JSON.stringify({ Authenticate: jwt! }))
+      })
       webSocketStore.setOnMessageHandler(useBoardStore().handleWebsocketMessage)
       navigateTo(`matchmaking${nextUrl}`)
     }
