@@ -36,7 +36,7 @@ pub async fn join_table(
 
     // Validate JWT.
     match validate_jwt(app_state.jwt_key(), &jwt) {
-        Ok(player_id) => player_id,
+        Ok(_) => {}
         Err(err) => {
             log::error!("{}", err);
             return HttpResponse::Unauthorized().finish();
