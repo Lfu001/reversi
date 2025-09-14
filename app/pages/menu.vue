@@ -59,22 +59,34 @@ const closeJoinModal = () => {
 }
 
 /**
- * Joins a table with the given password
- * @param {string} password - The password of the table to join
- * @returns {Promise<void>}
+ * Joins a table
+ *
+ * After joining the table, it will navigate to the table page.
+ *
+ * @param password The password of the table to join
  */
 const joinTable = async (password: string) => {
   try {
-    const response = await $fetch.raw('/join', {
+    const authStore = useAuthStore()
+    const jwt = authStore.jwt
+    const response = await $fetch.raw('http://127.0.0.1:8081/join', {
       method: 'POST',
       body: new URLSearchParams({ password }),
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Bearer ${jwt!}`,
       },
     })
     const nextUrl = response.headers.get('location')
     if (nextUrl) {
-      navigateTo(nextUrl)
+      authStore.roomPassword = password
+      const webSocketStore = useWebSocketStore()
+      webSocketStore.connect(`http://127.0.0.1:8081${nextUrl}`)
+      webSocketStore.setOnOpenHandler(() => {
+        webSocketStore.send(JSON.stringify({ Authenticate: jwt! }))
+      })
+      webSocketStore.setOnMessageHandler(useBoardStore().handleWebsocketMessage)
+      navigateTo(`matchmaking${nextUrl}`)
     }
   }
   catch (error) {

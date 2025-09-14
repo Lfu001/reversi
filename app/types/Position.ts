@@ -34,6 +34,15 @@ class Position {
   }
 
   /**
+   * Check if the given Position is equal to this one.
+   * @param other - The other Position to compare with.
+   * @returns true if the given Position is equal to this one, false otherwise.
+   */
+  equals(other: Position): boolean {
+    return this.row === other.row && this.column === other.column
+  }
+
+  /**
    * Creates a Position from a 0-indexed number.
    * @param index - The index of the position. Must be in the range 0-63.
    * @returns The Position corresponding to the given index, or null if the index is out of bounds.
@@ -42,6 +51,54 @@ class Position {
     const row = Math.floor(index / 8)
     const column = index % 8
     return new Position(row as Row, column as Column)
+  }
+
+  /**
+   * Creates a Position from a letter-number pair.
+   * @param row - The letter of the row (One-Eight).
+   * @param column - The letter of the column (A-H).
+   * @returns The Position corresponding to the given row and column, or null if the row or column is out of bounds.
+   */
+  static fromString(row: string, column: string) {
+    let r: Row | null = null
+    let c: Column | null = null
+    for (const [key, value] of Object.entries(Row)) {
+      if (key === row) {
+        r = value as Row
+      }
+    }
+    for (const [key, value] of Object.entries(Column)) {
+      if (key === column) {
+        c = value as Column
+      }
+    }
+    if (r !== null && c !== null) {
+      return new Position(r, c)
+    }
+    return null
+  }
+
+  /**
+   * Converts this Position to a string.
+   * @returns A string of the form `{row:<Row>,column:<Column>}`, or null if the row or column is out of bounds.
+   */
+  toJson() {
+    let r: string | null = null
+    let c: string | null = null
+    for (const [key, value] of Object.entries(Row)) {
+      if (value === this.row) {
+        r = key
+      }
+    }
+    for (const [key, value] of Object.entries(Column)) {
+      if (value === this.column) {
+        c = key
+      }
+    }
+    if (r !== null && c !== null) {
+      return { row: r, column: c }
+    }
+    return null
   }
 }
 
