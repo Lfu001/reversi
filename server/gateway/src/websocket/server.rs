@@ -609,6 +609,16 @@ impl GameSessionManagerHandle {
     }
 
     /// Step game state.
+    ///
+    /// # Arguments
+    ///
+    /// * `conn_id` - The connection ID of the sender.
+    /// * `table_id` - The table ID.
+    /// * `action` - The action to step.
+    ///
+    /// # Returns
+    ///
+    /// The new game state if stepping is successful, an error message otherwise.
     pub async fn step(
         &self,
         conn_id: &ConnectionId,

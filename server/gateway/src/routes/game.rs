@@ -67,21 +67,3 @@ async fn is_table_exist(
         Err(err) => Err(err.to_string()),
     }
 }
-
-// /// Checks if the player is in the table.
-// ///
-// /// # Arguments
-// ///
-// /// * `client` - The Redis client.
-// /// * `player_id` - The player ID.
-// /// * `table_id` - The table ID.
-// fn is_player_in_table(
-//     client: &dyn RedisClient,
-//     player_id: &str,
-//     table_id: &str,
-// ) -> Result<bool, String> {
-//     match client.json_arr_index(table_id, "$.players", player_id) {
-//         Ok(index) => Ok(index >= 0),
-//         Err(err) => Err(err.to_string()),
-//     }
-// }

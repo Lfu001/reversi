@@ -54,6 +54,15 @@ impl ActionExt for Action {
         Ok(())
     }
 
+    /// Checks if the action can be executed.
+    ///
+    /// # Arguments
+    ///
+    /// * `table` - A table of the game.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the action can be executed, otherwise `false`.
     fn check_inputs(&self, table: &Table) -> bool {
         match self {
             Action::PutDisk(config) => {

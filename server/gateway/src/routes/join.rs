@@ -34,7 +34,7 @@ pub async fn join_table(
         }
     };
 
-    // Validate JWT and extract player ID.
+    // Validate JWT.
     match validate_jwt(app_state.jwt_key(), &jwt) {
         Ok(player_id) => player_id,
         Err(err) => {
@@ -46,7 +46,7 @@ pub async fn join_table(
     // Convert the password to table ID.
     let table_id = convert_password_to_table_id(&form.password, app_state.salt());
 
-    // Add the player to the table.
+    // Create the table.
     match create_table_if_not_exist(&mut *app_state.redis_client().await, &table_id).await {
         Ok(_) => {}
         Err(err) => {
@@ -91,7 +91,6 @@ fn convert_password_to_table_id(password: &str, salt: u32) -> TableId {
 /// # Arguments
 ///
 /// * `client` - A Redis client.
-/// * `player_id` - A player ID.
 /// * `table_id` - A table ID.
 async fn create_table_if_not_exist(
     client: &mut (impl RedisClient + ?Sized),
