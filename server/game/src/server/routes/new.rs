@@ -1,8 +1,8 @@
 use crate::{
-    game_logic::{action::get_puttable_positions, state::Table},
-    server::messages::response::ResponseMessage,
+    game_logic::action::get_puttable_positions, server::messages::response::StateResponseMessageExt,
 };
 use actix_web::Responder;
+use common::Table;
 
 /// A handler for creating new table.
 ///
@@ -10,14 +10,10 @@ use actix_web::Responder;
 ///
 /// A new table and puttable positions.
 pub async fn create_new_table() -> impl Responder {
-    let table = Table::new();
+    let table = Table::default();
     let puttable_positions = get_puttable_positions(table.board(), table.turn());
 
-    ResponseMessage {
-        table,
-        puttable_positions,
-        judge_result: None,
-    }
+    StateResponseMessageExt::new(table, puttable_positions, None)
 }
 
 #[cfg(test)]

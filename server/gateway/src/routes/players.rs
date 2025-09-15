@@ -1,14 +1,12 @@
-use crate::app_state::AppState;
-use crate::redis_client::RedisClient;
+use crate::{
+    app_state::AppState,
+    authentication::{generate_jwt, EXPIRE_TIME_SECONDS},
+    services::redis_client::RedisClient,
+    types::PlayerId,
+};
 use actix_web::{web, HttpResponse, Responder};
-use jwt_simple::prelude::*;
 use redis::RedisError;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-
-/// An expiration time of a JWT and a player ID.
-/// TODO: Make this configurable via environment variables.
-const EXPIRE_TIME_SECONDS: u64 = 3 * 60 * 60;
 
 /// A player registration request message.
 #[derive(Serialize, Deserialize)]
@@ -22,20 +20,6 @@ pub struct PlayerRegistrationRequest {
 pub struct PlayerRegistrationResponse {
     /// A JWT including the player's ID.
     token: String,
-}
-
-/// A claim about a player in a JWT.
-#[derive(Serialize, Deserialize)]
-pub struct PlayerClaims {
-    /// A player ID
-    player_id: String,
-}
-
-impl PlayerClaims {
-    /// Returns a reference to the player ID.
-    pub fn player_id(&self) -> &str {
-        &self.player_id
-    }
 }
 
 /// Registers a player and publishes a JWT.
@@ -58,8 +42,8 @@ pub async fn register_player(
     }
 
     // Write player ID and name to redis.
-    let player_id = Uuid::new_v4().to_string();
-    let res = write_player_id_name(app_state.redis_client_mut(), &player_id, name);
+    let player_id = PlayerId::new();
+    let res = write_player_id_name(&mut *app_state.redis_client().await, &player_id, name).await;
     if let Err(err) = res {
         log::error!("Failed to write player ID and name to redis: {}", err);
         return HttpResponse::InternalServerError().finish();
@@ -83,42 +67,27 @@ pub async fn register_player(
 /// * `client` - A Redis client.
 /// * `player_id` - A player ID.
 /// * `name` - A name of the player.
-fn write_player_id_name(
-    client: &dyn RedisClient,
-    player_id: &str,
+async fn write_player_id_name(
+    client: &mut (impl RedisClient + ?Sized),
+    player_id: &PlayerId,
     name: &str,
 ) -> Result<(), RedisError> {
-    let key = format!("player:{}", player_id);
-    client.set(&key, name)?;
-    client.expire(&key, EXPIRE_TIME_SECONDS as i64)?;
+    client.set(player_id, name).await?;
+    client.expire(player_id, EXPIRE_TIME_SECONDS as i64).await?;
 
     Ok(())
-}
-
-/// Generates a JWT including a player ID.
-///
-/// # Arguments
-///
-/// * `key` - A JWT secret key.
-/// * `player_id` - A player ID.
-fn generate_jwt(key: &HS256Key, player_id: &str) -> Result<String, jwt_simple::Error> {
-    let custom_claims = PlayerClaims {
-        player_id: player_id.to_owned(),
-    };
-    let claims =
-        Claims::with_custom_claims(custom_claims, Duration::from_secs(EXPIRE_TIME_SECONDS));
-    key.authenticate(claims)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::redis_client::test::MockRedisClient;
+    use crate::services::redis_client::test::MockRedisClient;
 
     mod endpoint_test {
         use super::*;
+        use crate::{authentication::PlayerClaims, websocket::server::GameSessionManager};
         use actix_web::{http::StatusCode, test, web, App};
-        use std::sync::Arc;
+        use jwt_simple::{prelude::*, reexports::rand::prelude::*};
 
         #[actix_web::test]
         async fn test_register_player() {
@@ -127,8 +96,16 @@ mod tests {
             // Mock Redis setup
             let mock_redis_client = MockRedisClient::default();
 
+            // Auth setup
+            let jwt_key = HS256Key::generate();
+            let salt = thread_rng().next_u32();
+
+            // GameServer setup
+            let (_, server_handle) =
+                GameSessionManager::new(mock_redis_client.clone(), jwt_key.clone());
+
             // AppState setup
-            let app_state = AppState::new(Arc::new(mock_redis_client));
+            let app_state = AppState::new(mock_redis_client, jwt_key, salt, server_handle.clone());
             let jwt_key = app_state.jwt_key().to_owned();
 
             // Test app
@@ -152,29 +129,18 @@ mod tests {
 
             // Validate token
             let body: PlayerRegistrationResponse = test::read_body_json(resp).await;
-            let claims = jwt_key
+            jwt_key
                 .verify_token::<PlayerClaims>(&body.token, None)
                 .unwrap();
-            assert_eq!(claims.custom.player_id.len(), 36); // UUID length
         }
     }
 
-    #[test]
-    fn test_write_player_id_name() {
-        let player_id = Uuid::new_v4().to_string();
+    #[tokio::test]
+    async fn test_write_player_id_name() {
+        let player_id = PlayerId::new();
         let name = "foo";
-        let client = MockRedisClient::default();
-        let res = write_player_id_name(&client, &player_id, name);
+        let mut client = MockRedisClient::default();
+        let res = write_player_id_name(&mut client, &player_id, name).await;
         assert!(res.is_ok());
-    }
-
-    #[test]
-    fn test_generate_jwt() {
-        let key = HS256Key::generate();
-        let player_id = String::from("foo");
-        let jwt = generate_jwt(&key, &player_id).unwrap();
-
-        let claims = key.verify_token::<PlayerClaims>(&jwt, None).unwrap();
-        assert_eq!(claims.custom.player_id, player_id);
     }
 }

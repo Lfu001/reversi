@@ -2,8 +2,6 @@ services:
   redis:
     image: redis/redis-stack:7.4.0-v6
     container_name: reversi-redis
-    ports:
-      - "6379:6379"
     networks:
       - server_network
     restart: unless-stopped
@@ -15,11 +13,9 @@ services:
 
   game:
     build:
-      context: ./server/game
-      dockerfile: Dockerfile
+      context: ./server
+      dockerfile: game/Dockerfile
     container_name: reversi-game
-    ports:
-      - "8080:8080"
     environment:
       - HOST=0.0.0.0
       - PORT=8080
@@ -37,8 +33,8 @@ services:
 
   gateway:
     build:
-      context: ./server/gateway
-      dockerfile: Dockerfile
+      context: ./server
+      dockerfile: gateway/Dockerfile
     container_name: reversi-gateway
     ports:
       - "8081:8081"
@@ -47,6 +43,7 @@ services:
       - PORT=8081
       - REDIS_URL=redis://redis:6379
       - NEW_GAME_API_URL=http://game:8080/new
+      - STEP_GAME_API_URL=http://game:8080/step
     networks:
       - server_network
     depends_on:

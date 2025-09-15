@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Use the official Rust image as a parent image
-FROM rust:1.89.0-trixie as builder
+FROM rust:1.89.0-trixie AS builder
 
 # Set the working directory
 WORKDIR /usr/src/reversi-gateway
@@ -10,21 +10,15 @@ WORKDIR /usr/src/reversi-gateway
 RUN apt-get update && \
     apt-get install -y cmake pkg-config libclang-dev libssl-dev
 
-# Copy the manifests
-COPY Cargo.toml Cargo.lock ./
+# Copy the dependency crate, manifest, lockfile, and source code
+COPY common/ ../common/
+COPY gateway/Cargo.toml gateway/Cargo.lock ./
+COPY gateway/src/ src/
 
-# Create a dummy source file to build dependencies
-RUN mkdir -p src && \
-    echo "fn main() {}" > src/main.rs
-
-# Build the dependencies (this step is cached as long as Cargo.toml and Cargo.lock don't change)
-RUN cargo build --release
-
-# Now copy the actual source code
-COPY src/ src/
-
-# Build the application
-RUN cargo install --path . --root /usr/local
+# Build the application using mount cache
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/src/reversi-gateway/target \
+    cargo install --path . --root /usr/local
 
 # Use a smaller image for the final container
 FROM debian:trixie-20250811-slim
@@ -41,6 +35,8 @@ COPY --from=builder /usr/local/bin/gateway /usr/local/bin/gateway
 ENV HOST=0.0.0.0
 ENV PORT=8081
 ENV REDIS_URL=redis://redis:6379
+ENV NEW_GAME_API_URL=http://game:8080/new
+ENV STEP_GAME_API_URL=http://game:8080/step
 
 # Expose the port the app runs on
 EXPOSE 8081
