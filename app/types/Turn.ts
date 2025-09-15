@@ -1,4 +1,6 @@
+import type { Position } from './Position'
+
 export type Turn = {
   player: string
-  move: string
+  position: Position | null
 }

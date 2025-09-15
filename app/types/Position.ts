@@ -34,6 +34,16 @@ class Position {
   }
 
   /**
+   * Converts this position to string
+   * @returns a string representation of the position
+   */
+  toString(): string {
+    const colKey = Object.keys(Column).find(k => Column[k as keyof typeof Column] === this.column)
+    const rowNumber = this.row + 1
+    return `${colKey}${rowNumber}`
+  }
+
+  /**
    * Creates a Position from a 0-indexed number.
    * @param index - The index of the position. Must be in the range 0-63.
    * @returns The Position corresponding to the given index, or null if the index is out of bounds.

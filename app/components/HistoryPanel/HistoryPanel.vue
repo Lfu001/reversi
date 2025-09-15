@@ -9,7 +9,7 @@
         <div class="font-bold">
           ターン {{ index + 1 }}
         </div>
-        <div>{{ turn.player }} は {{ turn.move }} に置いた</div>
+        <div>{{ turn.player }} は {{ turn.position ? turn.position.toString() : 'パス' }} に置いた</div>
       </div>
     </div>
   </div>
