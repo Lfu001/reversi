@@ -42,7 +42,7 @@ class Position {
     const rowNumber = this.row + 1
     return `${colKey}${rowNumber}`
   }
-  
+
   /**
    * Check if the given Position is equal to this one.
    * @param other - The other Position to compare with.
