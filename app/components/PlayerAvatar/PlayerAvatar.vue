@@ -10,10 +10,13 @@
       {{ props.name }}
     </div>
 
+    <span
+      v-if="props.isMyTurn"
+      class="animate-ping-gentle absolute inline-flex h-full w-full rounded-full bg-white opacity-75"
+    />
     <NuxtImg
       :src="props.src"
-      class="h-full w-full rounded-full border-2 border-white object-cover shadow-sm"
-      :class="{ 'animate-pulse-glow': props.isMyTurn }"
+      class="relative h-full w-full rounded-full border-2 border-white object-cover shadow-sm"
       format="webp"
     />
 
