@@ -17,5 +17,12 @@ const config: StorybookConfig = {
   docs: {
     autodocs: 'tag',
   },
+  viteFinal: async (config) => {
+    config.server = config.server || {}
+    config.server.proxy = {
+      '/_ipx': 'http://localhost:3000',
+    }
+    return config
+  },
 }
 export default config
