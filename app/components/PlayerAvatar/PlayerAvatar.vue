@@ -2,7 +2,6 @@
   <div
     class="relative transition-transform duration-300"
     :class="{ 'scale-110': props.isMyTurn }"
-    :style="{ width: `${props.size}px`, height: `${props.size}px` }"
   >
     <div
       v-if="props.name"
@@ -13,21 +12,15 @@
 
     <NuxtImg
       :src="props.src"
-      :width="props.size"
-      :height="props.size"
-      class="rounded-full border-2 border-white object-cover shadow-sm"
+      class="h-full w-full rounded-full border-2 border-white object-cover shadow-sm"
       :class="{ 'animate-pulse-glow': props.isMyTurn }"
       format="webp"
     />
 
     <div
       v-if="props.diskColor"
-      class="absolute right-0 bottom-0 z-10 rounded-full"
+      class="absolute right-0 bottom-0 z-10 h-1/3 w-1/3 rounded-full"
       :class="diskColorClass"
-      :style="{
-        width: `${props.size * 0.35}px`,
-        height: `${props.size * 0.35}px`,
-      }"
     />
   </div>
 </template>
@@ -61,7 +54,6 @@ const props = withDefaults(
     isMyTurn?: boolean
   }>(),
   {
-    size: 80,
     isMyTurn: false,
   },
 )
