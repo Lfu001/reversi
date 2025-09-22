@@ -40,8 +40,17 @@ interface ServerGameState {
  * Player interface
  */
 interface Player {
+  /**
+   * The name of the player.
+   */
   name: string
+  /**
+   * The avatar URL of the player.
+   */
   avatarUrl: string
+  /**
+   * The color of the player.
+   */
   color?: DiskColor
 }
 
