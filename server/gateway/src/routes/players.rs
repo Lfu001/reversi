@@ -34,7 +34,7 @@ pub async fn register_player(
         return HttpResponse::BadRequest().json(serde_json::json!({ "error": "Name exceeds maximum length of 10 characters.", "error_code": "NAME_TOO_LONG"}));
     }
 
-    // Write player ID and name to redis.
+    // Write player profile to redis.
     let player_id = PlayerId::new();
     let res = write_player_profile(
         &mut *app_state.redis_client().await,
@@ -43,7 +43,7 @@ pub async fn register_player(
     )
     .await;
     if let Err(err) = res {
-        log::error!("Failed to write player ID and name to redis: {}", err);
+        log::error!("Failed to write player profile to redis: {}", err);
         return HttpResponse::InternalServerError().finish();
     }
 
@@ -58,7 +58,7 @@ pub async fn register_player(
     HttpResponse::Created().json(serde_json::json!(PlayerRegistrationResponse { token }))
 }
 
-/// Writes a player ID and name to redis.
+/// Writes a player profile to redis.
 ///
 /// # Arguments
 ///
