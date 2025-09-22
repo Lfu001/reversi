@@ -148,7 +148,6 @@ const handleBackToMenuClick = () => {
 <style scoped>
 .game-container {
   display: grid;
-  /* gap: 1rem; */
   align-items: center;
 }
 
