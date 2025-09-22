@@ -1,5 +1,5 @@
 <template>
-  <div class="flex w-full max-w-[90vw] items-center justify-center rounded-[15px] bg-[#4a3222] p-4 shadow-lg select-none sm:max-w-[80vw] sm:p-6 md:max-w-[700px] md:p-8">
+  <div class="flex w-full items-center justify-center rounded-[15px] bg-[#4a3222] p-4 shadow-lg select-none sm:p-6 md:p-8">
     <div class="w-full rounded-[10px] bg-[radial-gradient(#50aa50,#2d642d)] p-2 sm:p-2.5">
       <div class="grid aspect-square w-full grid-cols-8 grid-rows-8 border-r-2 border-b-2 border-black">
         <div

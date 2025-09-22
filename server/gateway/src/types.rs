@@ -94,6 +94,15 @@ impl ConnectionId {
     }
 }
 
+/// A player profile, which includes the name and avatar of the player.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct PlayerProfile {
+    /// The name of the player.
+    pub name: String,
+    /// The avatar URL of the player.
+    pub avatar_url: String,
+}
+
 /// A table state, represented as a JSON object.
 #[derive(Serialize, Deserialize)]
 pub struct TableState {

@@ -1,1 +1,15 @@
 @import "tailwindcss";
+
+@keyframes ping-gentle {
+  75%,
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+
+@layer utilities {
+  .animate-ping-gentle {
+    animation: ping-gentle 2.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+}

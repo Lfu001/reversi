@@ -50,7 +50,7 @@ async fn main() -> std::io::Result<()> {
                         origin.as_bytes().starts_with(b"http://localhost")
                             || origin.as_bytes().starts_with(b"http://127.0.0.1")
                     })
-                    .allowed_methods([http::Method::GET, http::Method::POST])
+                    .allowed_methods([http::Method::GET, http::Method::POST, http::Method::PUT])
                     .allowed_headers([header::CONTENT_TYPE, header::ACCEPT, header::AUTHORIZATION])
                     .max_age(3600),
             )

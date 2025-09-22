@@ -23,6 +23,8 @@ interface ServerGameState {
   }
   /** The positions that the current player can put disks on. */
   puttable_positions: { row: string, column: string }[]
+  /** The roles of the players. */
+  player_colors?: Array<DiskColor>
   /** The result of the game if the game is over. */
   judge_result?: {
     /** The number of dark disks on the board. */
@@ -38,7 +40,18 @@ interface ServerGameState {
  * Player interface
  */
 interface Player {
+  /**
+   * The name of the player.
+   */
   name: string
+  /**
+   * The avatar URL of the player.
+   */
+  avatarUrl: string
+  /**
+   * The color of the player.
+   */
+  color?: DiskColor
 }
 
 /**
@@ -123,7 +136,11 @@ export const useBoardStore = defineStore('board', () => {
     puttablePositions.value = serverState.puttable_positions
       .map(({ row, column }) => Position.fromString(row, column))
       .filter(position => position !== null)
-
+    if (serverState.player_colors && players.value.length === serverState.player_colors.length) {
+      for (let i = 0; i < serverState.player_colors.length; i++) {
+        players.value[i].color = serverState.player_colors[i]
+      }
+    }
     if (serverState.judge_result) {
       winner.value = serverState.judge_result.winner
     }
@@ -143,8 +160,8 @@ export const useBoardStore = defineStore('board', () => {
     const rootKey = keys[0]
 
     if (rootKey === 'Players') { // If someone joined or left the table
-      const playerNames: string[] = data[rootKey]
-      players.value = playerNames.map((name: string) => ({ name }))
+      const playerNames: { name: string, avatar_url: string }[] = data[rootKey]
+      players.value = playerNames.map(({ name, avatar_url }) => ({ name, avatarUrl: avatar_url }))
       console.log('Players:', players.value)
     }
     else if (rootKey === 'GameState') { // If the game state is updated

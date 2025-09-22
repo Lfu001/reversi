@@ -44,14 +44,19 @@ const isGuestNameValid = computed(() => 0 < guestName.value.length && guestName.
  * If unsuccessful, alerts the user with the error message.
  */
 const registerPlayer = async () => {
+  const avatarUrl = useAuthStore().avatarUrl
   await $fetch('http://127.0.0.1:8081/players', {
     method: 'POST',
-    body: new URLSearchParams({ name: guestName.value }),
+    body: new URLSearchParams({ name: guestName.value, avatar_url: avatarUrl }),
     async onRequest({ options }) {
       options.headers.set('Content-Type', 'application/x-www-form-urlencoded')
       options.headers.set('Accept', 'application/json')
     },
     async onResponse({ response }) {
+      if (response.status != 201) {
+        console.error(`Failed to register: ${response._data}`)
+        return
+      }
       const authStore = useAuthStore()
       authStore.jwt = response._data.token
 
