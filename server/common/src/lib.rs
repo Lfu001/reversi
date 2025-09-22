@@ -301,6 +301,9 @@ pub struct StateResponseMessage {
     table: Table,
     /// Next puttable positions.
     puttable_positions: Vec<Position>,
+    /// A player colors.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    player_colors: Option<Vec<DiskColor>>,
     /// A result of the game.
     #[serde(skip_serializing_if = "Option::is_none")]
     judge_result: Option<JudgeResult>,
@@ -311,11 +314,13 @@ impl StateResponseMessage {
     pub fn new(
         table: Table,
         puttable_positions: Vec<Position>,
+        player_colors: Option<Vec<DiskColor>>,
         judge_result: Option<JudgeResult>,
     ) -> Self {
         Self {
             table,
             puttable_positions,
+            player_colors,
             judge_result,
         }
     }
@@ -333,6 +338,16 @@ impl StateResponseMessage {
     /// Returns a reference to the judge result of this [`StateResponseMessage`].
     pub fn judge_result(&self) -> &Option<JudgeResult> {
         &self.judge_result
+    }
+
+    /// Returns a reference to the player colors of this [`StateResponseMessage`].
+    pub fn player_colors(&self) -> &Option<Vec<DiskColor>> {
+        &self.player_colors
+    }
+
+    /// Sets the player colors of this [`StateResponseMessage`].
+    pub fn set_player_colors(&mut self, player_colors: Vec<DiskColor>) {
+        self.player_colors = Some(player_colors);
     }
 }
 

@@ -14,6 +14,7 @@ impl StateResponseMessageExt {
         Self(StateResponseMessage::new(
             table,
             puttable_positions,
+            None,
             judge_result,
         ))
     }

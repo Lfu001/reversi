@@ -208,7 +208,8 @@ impl GameSessionManager {
             }
         };
         let new_game_state = res.into_string().unwrap();
-        let new_game_state: StateResponseMessage = serde_json::from_str(&new_game_state).unwrap();
+        let mut new_game_state: StateResponseMessage =
+            serde_json::from_str(&new_game_state).unwrap();
 
         // Assign disk colors to players.
         let connection_ids = self.tables.get(table_id).unwrap();
@@ -219,6 +220,7 @@ impl GameSessionManager {
         let mut rng = fastrand::Rng::new();
         let mut colors = vec![DiskColor::Dark, DiskColor::Light];
         rng.shuffle(&mut colors);
+        new_game_state.set_player_colors(colors.clone());
         let roles = HashMap::from_iter(player_ids.into_iter().zip(colors));
 
         // Update game state in Redis.

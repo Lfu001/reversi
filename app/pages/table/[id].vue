@@ -16,8 +16,8 @@
           <PlayerAvatar
             :src="boardStore.players[0].avatarUrl"
             :name="boardStore.players[0].name"
-            :disk-color="DiskColor.Dark"
-            :is-my-turn="boardStore.currentPlayer === DiskColor.Dark"
+            :disk-color="boardStore.players[0].color"
+            :is-my-turn="boardStore.currentPlayer === boardStore.players[0].color"
             class="h-16 w-16 lg:h-24 lg:w-24"
           />
         </div>
@@ -33,8 +33,8 @@
           <PlayerAvatar
             :src="boardStore.players[1].avatarUrl"
             :name="boardStore.players[1].name"
-            :disk-color="DiskColor.Light"
-            :is-my-turn="boardStore.currentPlayer === DiskColor.Light"
+            :disk-color="boardStore.players[1].color"
+            :is-my-turn="boardStore.currentPlayer === boardStore.players[1].color"
             class="h-14 w-14 lg:h-20 lg:w-20"
           />
         </div>
@@ -52,7 +52,6 @@
 
 <script setup lang="ts">
 import { HomeIcon } from '@heroicons/vue/24/solid'
-import { DiskColor } from '~/types/DiskColor'
 import { Position } from '~/types/Position'
 
 const boardStore = useBoardStore()
