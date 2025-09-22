@@ -18,6 +18,7 @@
       :src="props.src"
       class="relative h-full w-full rounded-full border-2 border-white object-cover shadow-sm"
       format="webp"
+      placeholder
     />
 
     <div
