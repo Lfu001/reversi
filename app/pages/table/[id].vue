@@ -14,10 +14,10 @@
       <div class="game-container">
         <div class="player-a">
           <PlayerAvatar
-            :src="boardStore.players[0].avatarUrl"
-            :name="boardStore.players[0].name"
-            :disk-color="boardStore.players[0].color"
-            :is-my-turn="boardStore.currentPlayer === boardStore.players[0].color"
+            :src="getAvatarUrl(0)"
+            :name="getAvatarName(0)"
+            :disk-color="getAvatarColor(0)"
+            :is-my-turn="getIsMyTurn(0)"
             class="h-16 w-16 lg:h-24 lg:w-24"
           />
         </div>
@@ -31,10 +31,10 @@
         </div>
         <div class="player-b">
           <PlayerAvatar
-            :src="boardStore.players[1].avatarUrl"
-            :name="boardStore.players[1].name"
-            :disk-color="boardStore.players[1].color"
-            :is-my-turn="boardStore.currentPlayer === boardStore.players[1].color"
+            :src="getAvatarUrl(1)"
+            :name="getAvatarName(1)"
+            :disk-color="getAvatarColor(1)"
+            :is-my-turn="getIsMyTurn(1)"
             class="h-14 w-14 lg:h-20 lg:w-20"
           />
         </div>
@@ -52,10 +52,67 @@
 
 <script setup lang="ts">
 import { HomeIcon } from '@heroicons/vue/24/solid'
+import type { DiskColor } from '~/types/DiskColor'
 import { Position } from '~/types/Position'
 
 const boardStore = useBoardStore()
 const webSocketStore = useWebSocketStore()
+
+/**
+ * Returns the avatar URL of the player at the given index.
+ *
+ * If the index is out of bounds, an empty string is returned.
+ *
+ * @param index The index of the player.
+ */
+const getAvatarUrl = (index: number): string => {
+  if (0 <= index && index < boardStore.players.length) {
+    return boardStore.players[index].avatarUrl
+  }
+  return ''
+}
+
+/**
+ * Returns the name of the player at the given index.
+ *
+ * If the index is out of bounds, an empty string is returned.
+ *
+ * @param index The index of the player.
+ */
+const getAvatarName = (index: number): string => {
+  if (0 <= index && index < boardStore.players.length) {
+    return boardStore.players[index].name
+  }
+  return ''
+}
+
+/**
+ * Returns the color of the player at the given index.
+ *
+ * If the index is out of bounds, undefined is returned.
+ *
+ * @param index The index of the player.
+ */
+const getAvatarColor = (index: number): DiskColor | undefined => {
+  if (0 <= index && index < boardStore.players.length) {
+    return boardStore.players[index].color
+  }
+  return undefined
+}
+
+/**
+ * Returns whether it is the turn of the player at the given index.
+ *
+ * If the index is out of bounds, false is returned.
+ *
+ * @param index The index of the player.
+ */
+const getIsMyTurn = (index: number): boolean => {
+  if (0 <= index && index < boardStore.players.length) {
+    return boardStore.currentPlayer === boardStore.players[index].color
+  }
+  return false
+}
 
 /**
  * Sends a "step" message to the WebSocket with the current player and the given board index.
