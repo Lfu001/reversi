@@ -49,10 +49,6 @@ const props = withDefaults(
      */
     diskColor?: DiskColor
     /**
-     * The size of the player avatar.
-     */
-    size?: number
-    /**
      * Whether it is the player's turn.
      */
     isMyTurn?: boolean
