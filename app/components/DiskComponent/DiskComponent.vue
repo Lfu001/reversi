@@ -1,5 +1,5 @@
 <template>
-  <div class="absolute inset-0 flex items-center justify-center">
+  <div class="flex w-4/5 items-center justify-center">
     <div
       v-if="color"
       class="w-full aspect-square max-w-16 rounded-full"
@@ -7,7 +7,7 @@
     />
     <div
       v-else-if="guideColor"
-      class="w-full max-w-3 aspect-square rounded-full"
+      class="w-1/4 max-w-3 aspect-square rounded-full"
       :class="guideColorClass"
     />
   </div>
