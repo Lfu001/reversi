@@ -11,16 +11,16 @@
 
       <div class="mb-6 grid max-h-[50vh] grid-cols-4 gap-4 overflow-y-auto p-1 sm:grid-cols-5 md:grid-cols-6">
         <button
-          v-for="avatar in avatars"
-          :key="avatar"
+          v-for="fileUrl in avatars.fileUrls"
+          :key="fileUrl"
           class="rounded-full transition-transform hover:scale-105 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:outline-none"
           :class="{
-            'ring-2 ring-blue-500 ring-offset-2': selectedAvatar === avatar,
+            'ring-2 ring-blue-500 ring-offset-2': selectedAvatarUrl === fileUrl,
           }"
-          @click="selectedAvatar = avatar"
+          @click="selectedAvatarUrl = fileUrl"
         >
           <PlayerAvatar
-            :src="`/images/avatars/${avatar}`"
+            :src="fileUrl"
             class="h-full w-full"
           />
         </button>
@@ -34,7 +34,7 @@
         />
         <Button
           label="OK"
-          :disabled="!selectedAvatar"
+          :disabled="!selectedAvatarUrl"
           @click="handleSelect"
         />
       </div>
@@ -62,47 +62,20 @@ const emit = defineEmits<{
   (e: 'select', avatarUrl: string): void
 }>()
 
+const avatars = useAvatars()
+
 /**
  * An url of the selected avatar.
  * Initially set to null, and updated when the user selects an avatar.
  */
-const selectedAvatar = ref<string | null>(null)
-
-/**
- * An array of avatar file names.
- */
-const avatars = [
-  'ancient-oak.png',
-  'autumn-leaves.png',
-  'bamboo-grove.png',
-  'browsing-giraffe.png',
-  'camouflaged-octopus.png',
-  'crystalline-dragon.png',
-  'cutting-marlin.png',
-  'delicate-fern.png',
-  'forest-spirit-deer.png',
-  'giant-squid.png',
-  'grazing-sheep.png',
-  'humpback-whale.png',
-  'leaping-dolphin.png',
-  'majestic-stag.png',
-  'mythical-griffin.png',
-  'penguin-on-ice.png',
-  'perched-squirrel.png',
-  'sea-serpent.png',
-  'seal-on-rock.png',
-  'shimmering-phoenix.png',
-  'soaring-eagle.png',
-  'vibrant-succulent.png',
-  'wise-owl.png',
-]
+const selectedAvatarUrl = ref<string | null>(null)
 
 /**
  * Handles the select event when the user selects and confirms an avatar.
  */
 const handleSelect = () => {
-  if (selectedAvatar.value) {
-    emit('select', `/images/avatars/${selectedAvatar.value}`)
+  if (selectedAvatarUrl.value) {
+    emit('select', selectedAvatarUrl.value)
     emit('close')
   }
 }

@@ -20,7 +20,7 @@ const meta: Meta<typeof PlayerAvatar> = {
 export default meta
 type Story = StoryObj<typeof PlayerAvatar>
 
-const defaultImage = '/images/avatars/autumn-leaves.png'
+const defaultImage = useAvatars().choose()
 
 export const Default: Story = {
   render: args => ({

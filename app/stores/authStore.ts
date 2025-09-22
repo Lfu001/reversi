@@ -17,7 +17,7 @@ export const useAuthStore = defineStore('auth', () => {
   /**
    * The URL of the user's avatar.
    */
-  const avatarUrl = ref<string>('/images/avatars/autumn-leaves.png')
+  const avatarUrl = ref<string>(useAvatars().choose())
 
   /**
    * Sets the URL of the user's avatar and updates it on the server.
