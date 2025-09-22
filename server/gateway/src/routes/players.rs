@@ -36,12 +36,12 @@ pub async fn register_player(
 
     // Write player ID and name to redis.
     let player_id = PlayerId::new();
-    let profile = PlayerProfile {
-        name: form.name.clone(),
-        avatar_url: form.avatar_url.clone(),
-    };
-    let res =
-        write_player_profile(&mut *app_state.redis_client().await, &player_id, &profile).await;
+    let res = write_player_profile(
+        &mut *app_state.redis_client().await,
+        &player_id,
+        &form.into_inner(),
+    )
+    .await;
     if let Err(err) = res {
         log::error!("Failed to write player ID and name to redis: {}", err);
         return HttpResponse::InternalServerError().finish();
