@@ -1,5 +1,6 @@
 <template>
   <div
+    v-if="props.isOpen"
     class="fixed inset-0 z-[101] flex items-center justify-center bg-black/30 backdrop-blur-sm"
     @click.self="$emit('close')"
   >
@@ -30,6 +31,13 @@
 </template>
 
 <script setup lang="ts">
+const props = defineProps<{
+  /**
+   * Whether the modal is currently open
+   */
+  isOpen: boolean
+}>()
+
 const emit = defineEmits<{
   /** Emitted when the modal is closed */
   (e: 'close'): void

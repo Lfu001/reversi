@@ -14,7 +14,7 @@
       <div class="game-container">
         <div class="player-a">
           <PlayerAvatar
-            src="/images/avatars/autumn-leaves.png"
+            :src="boardStore.players[0].avatarUrl"
             :name="boardStore.players[0].name"
             :disk-color="DiskColor.Dark"
             :is-my-turn="boardStore.currentPlayer === DiskColor.Dark"
@@ -31,7 +31,7 @@
         </div>
         <div class="player-b">
           <PlayerAvatar
-            src="/images/avatars/wise-owl.png"
+            :src="boardStore.players[1].avatarUrl"
             :name="boardStore.players[1].name"
             :disk-color="DiskColor.Light"
             :is-my-turn="boardStore.currentPlayer === DiskColor.Light"

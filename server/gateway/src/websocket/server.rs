@@ -2,7 +2,7 @@ use super::message::WsMessage;
 use crate::{
     authentication::validate_jwt,
     services::redis_client::RedisClient,
-    types::{ConnectionId, PlayerId, TableId, TableState},
+    types::{ConnectionId, PlayerId, PlayerProfile, TableId, TableState},
 };
 use common::{Action, DiskColor, PutConfig, StateResponseMessage, StepRequestMessage};
 use fastrand;
@@ -324,29 +324,29 @@ impl GameSessionManager {
             .unwrap();
     }
 
-    /// Read the player names from Redis.
+    /// Read the player profiles from Redis.
     ///
     /// # Arguments
     ///
     /// * `table_id` - An ID of the table to read.
-    async fn read_player_names(&self, table_id: &TableId) -> Vec<String> {
+    async fn read_player_profiles(&self, table_id: &TableId) -> Vec<PlayerProfile> {
         let table = self.tables.get(table_id).unwrap();
         let player_ids = table
             .iter()
             .map(|conn| self.connection_player_map.get(conn).unwrap().to_owned())
             .collect::<Vec<PlayerId>>();
-        let mut player_names = Vec::new();
+        let mut player_profiles = Vec::new();
         for player_id in player_ids {
-            let name = self
+            let json = self
                 .redis_client
                 .lock()
                 .await
-                .get(&player_id)
+                .json_get(&player_id, ".")
                 .await
                 .unwrap();
-            player_names.push(name);
+            player_profiles.push(serde_json::from_value(json).unwrap());
         }
-        player_names
+        player_profiles
     }
 
     /// Start the game session manager.
@@ -376,8 +376,8 @@ impl GameSessionManager {
 
                         match table_id {
                             Some(table_id) => {
-                                let player_names = self.read_player_names(&table_id).await;
-                                let message = WsMessage::Players(player_names);
+                                let player_profiles = self.read_player_profiles(&table_id).await;
+                                let message = WsMessage::Players(player_profiles);
                                 self.broadcast_message(&table_id, message).await;
                             }
                             None => {
@@ -410,8 +410,8 @@ impl GameSessionManager {
                     self.join(&connection_id, &table_id, &player_id).await;
 
                     // Broadcast to players in the table that a new player has joined.
-                    let player_names = self.read_player_names(&table_id).await;
-                    let message = WsMessage::Players(player_names);
+                    let player_profiles = self.read_player_profiles(&table_id).await;
+                    let message = WsMessage::Players(player_profiles);
                     self.broadcast_message(&table_id, message).await;
 
                     let _ = response_tx.send(());

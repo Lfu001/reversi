@@ -39,6 +39,7 @@ interface ServerGameState {
  */
 interface Player {
   name: string
+  avatarUrl: string
 }
 
 /**
@@ -143,8 +144,8 @@ export const useBoardStore = defineStore('board', () => {
     const rootKey = keys[0]
 
     if (rootKey === 'Players') { // If someone joined or left the table
-      const playerNames: string[] = data[rootKey]
-      players.value = playerNames.map((name: string) => ({ name }))
+      const playerNames: { name: string, avatar_url: string }[] = data[rootKey]
+      players.value = playerNames.map(({ name, avatar_url }) => ({ name, avatarUrl: avatar_url }))
       console.log('Players:', players.value)
     }
     else if (rootKey === 'GameState') { // If the game state is updated

@@ -1,5 +1,21 @@
 <template>
   <div class="h-full">
+    <div class="absolute top-4 right-4 flex items-center gap-4">
+      <button
+        type="button"
+        class="group relative rounded-full transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+        @click="openAvatarModal"
+      >
+        <PlayerAvatar
+          :src="authStore.avatarUrl"
+          class="h-16 w-16"
+        />
+        <div class="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+          <Cog6ToothIcon class="h-8 w-8 text-white" />
+        </div>
+      </button>
+    </div>
+
     <div class="flex h-full flex-col items-center justify-center">
       <div class="flex flex-col space-y-4">
         <Button
@@ -14,29 +30,61 @@
     </div>
 
     <Teleport to="body">
-      <div
-        v-if="isJoinModalOpen"
-        class="fixed inset-0 z-[100]"
-      >
-        <ModalJoin
-          @close="closeJoinModal"
-          @join="joinTable"
-        />
-      </div>
+      <ModalJoin
+        :is-open="isJoinModalOpen"
+        @close="closeJoinModal"
+        @join="joinTable"
+      />
+
+      <ModalAvatarSelect
+        :is-open="isAvatarModalOpen"
+        @close="closeAvatarModal"
+        @select="handleAvatarSelect"
+      />
     </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
+import { Cog6ToothIcon } from '@heroicons/vue/24/solid'
+
 definePageMeta({
   layout: 'entry-flow',
 })
+
+const authStore = useAuthStore()
 
 /**
  * Starts a game against the computer
  */
 const startComputerGame = () => {
   alert('TODO: Computer vs. player game')
+}
+
+/**
+ * Reactive variable to manage the visibility state of the avatar selection modal
+ */
+const isAvatarModalOpen = ref(false)
+
+/**
+ * Handles the event when an avatar is selected
+ */
+const handleAvatarSelect = async (avatarUrl: string) => {
+  await authStore.setAvatarUrl(avatarUrl)
+}
+
+/**
+ * Opens the avatar selection modal
+ */
+const openAvatarModal = () => {
+  isAvatarModalOpen.value = true
+}
+
+/**
+ * Closes the avatar selection modal
+ */
+const closeAvatarModal = () => {
+  isAvatarModalOpen.value = false
 }
 
 /**
@@ -67,7 +115,6 @@ const closeJoinModal = () => {
  */
 const joinTable = async (password: string) => {
   try {
-    const authStore = useAuthStore()
     const jwt = authStore.jwt
     const response = await $fetch.raw('http://127.0.0.1:8081/join', {
       method: 'POST',

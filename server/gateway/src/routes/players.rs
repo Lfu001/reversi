@@ -2,18 +2,11 @@ use crate::{
     app_state::AppState,
     authentication::{generate_jwt, EXPIRE_TIME_SECONDS},
     services::redis_client::RedisClient,
-    types::PlayerId,
+    types::{PlayerId, PlayerProfile},
 };
 use actix_web::{web, HttpResponse, Responder};
 use redis::RedisError;
 use serde::{Deserialize, Serialize};
-
-/// A player registration request message.
-#[derive(Serialize, Deserialize)]
-pub struct PlayerRegistrationRequest {
-    /// A name of the player.
-    name: String,
-}
 
 /// A player registration response message.
 #[derive(Serialize, Deserialize)]
@@ -32,18 +25,23 @@ pub struct PlayerRegistrationResponse {
 ///
 /// A JWT including the player's ID.
 pub async fn register_player(
-    req: web::Form<PlayerRegistrationRequest>,
+    form: web::Form<PlayerProfile>,
     app_state: web::Data<AppState>,
 ) -> impl Responder {
     // Check name length.
-    let name = req.name.as_str();
+    let name = form.name.as_str();
     if name.len() > 10 {
         return HttpResponse::BadRequest().json(serde_json::json!({ "error": "Name exceeds maximum length of 10 characters.", "error_code": "NAME_TOO_LONG"}));
     }
 
     // Write player ID and name to redis.
     let player_id = PlayerId::new();
-    let res = write_player_id_name(&mut *app_state.redis_client().await, &player_id, name).await;
+    let profile = PlayerProfile {
+        name: form.name.clone(),
+        avatar_url: form.avatar_url.clone(),
+    };
+    let res =
+        write_player_profile(&mut *app_state.redis_client().await, &player_id, &profile).await;
     if let Err(err) = res {
         log::error!("Failed to write player ID and name to redis: {}", err);
         return HttpResponse::InternalServerError().finish();
@@ -66,13 +64,15 @@ pub async fn register_player(
 ///
 /// * `client` - A Redis client.
 /// * `player_id` - A player ID.
-/// * `name` - A name of the player.
-async fn write_player_id_name(
+/// * `profile` - A player profile.
+async fn write_player_profile(
     client: &mut (impl RedisClient + ?Sized),
     player_id: &PlayerId,
-    name: &str,
+    profile: &PlayerProfile,
 ) -> Result<(), RedisError> {
-    client.set(player_id, name).await?;
+    client
+        .json_set(player_id, ".", &serde_json::json!(profile))
+        .await?;
     client.expire(player_id, EXPIRE_TIME_SECONDS as i64).await?;
 
     Ok(())
@@ -119,8 +119,9 @@ mod tests {
             // Test request
             let req = test::TestRequest::post()
                 .uri("/players")
-                .set_form(PlayerRegistrationRequest {
+                .set_form(PlayerProfile {
                     name: String::from(player_name),
+                    avatar_url: String::from("https://example.com/avatar.png"),
                 })
                 .to_request();
 
@@ -136,11 +137,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_write_player_id_name() {
+    async fn test_write_player_profile() {
         let player_id = PlayerId::new();
-        let name = "foo";
+        let profile = PlayerProfile {
+            name: String::from("foo"),
+            avatar_url: String::from("https://example.com/avatar.png"),
+        };
         let mut client = MockRedisClient::default();
-        let res = write_player_id_name(&mut client, &player_id, name).await;
+        let res = write_player_profile(&mut client, &player_id, &profile).await;
         assert!(res.is_ok());
     }
 }
