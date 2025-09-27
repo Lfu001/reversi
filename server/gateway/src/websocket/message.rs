@@ -1,3 +1,4 @@
+use crate::types::PlayerProfile;
 use common::{Action, StateResponseMessage};
 use serde::{Deserialize, Serialize};
 
@@ -5,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Clone)]
 pub enum WsMessage {
     /// **(Client <= Server)** The server sends the list of players in the table.
-    Players(Vec<String>),
+    Players(Vec<PlayerProfile>),
     /// **(Client => Server)** The player requests authentication.
     Authenticate(String),
     /// **(Client => Server)** The player is ready to start the game.

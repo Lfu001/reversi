@@ -1,15 +1,11 @@
 <template>
-  <div class="flex w-full max-w-[90vw] items-center justify-center rounded-[15px] bg-[#4a3222] p-4 shadow-lg select-none sm:max-w-[80vw] sm:p-6 md:max-w-[700px] md:p-8">
+  <div class="flex w-full items-center justify-center rounded-[15px] bg-[#4a3222] p-4 shadow-lg select-none sm:p-6 md:p-8">
     <div class="w-full rounded-[10px] bg-[radial-gradient(#50aa50,#2d642d)] p-2 sm:p-2.5">
-      <div class="grid aspect-square w-full grid-cols-8 grid-rows-8 border-r-2 border-b-2 border-black">
+      <div class="relative grid aspect-square w-full grid-cols-8 grid-rows-8 border-r-2 border-b-2 border-black">
         <div
           v-for="(c, index) in props.board"
           :key="index"
-          class="relative h-0 w-full border-t-2 border-l-2 border-black pb-[100%]"
-          :class="{
-            'before:absolute before:top-[-1px] before:left-[-1px] before:h-[6px] before:w-[6px] before:-translate-x-1/2 before:-translate-y-1/2 before:transform before:rounded-full before:bg-black before:opacity-100 before:content-[\'\']':
-              isDotPosition(index),
-          }"
+          class="flex aspect-square w-full items-center justify-center border-t-2 border-l-2 border-black"
         >
           <DiskComponent
             :color="c"
@@ -17,6 +13,11 @@
             @click="onSquareClick(index)"
           />
         </div>
+
+        <div class="absolute top-1/4 left-1/4 mt-px ml-px h-[6px] w-[6px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-black" />
+        <div class="absolute top-1/4 left-3/4 mt-px ml-px h-[6px] w-[6px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-black" />
+        <div class="absolute top-3/4 left-1/4 mt-px ml-px h-[6px] w-[6px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-black" />
+        <div class="absolute top-3/4 left-3/4 mt-px ml-px h-[6px] w-[6px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-black" />
       </div>
     </div>
   </div>
@@ -46,16 +47,6 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'onSquareClick', index: number): void
 }>()
-
-/**
- * Checks if a given index is a position where a dot is drawn.
- * @param index A number from 0 to 63.
- * @returns Whether the position is a dot position.
- */
-const isDotPosition = (index: number): boolean => {
-  const dotPositions = [18, 22, 50, 54]
-  return dotPositions.some(i => i === index)
-}
 
 /**
  * Checks if a given index is a position where a disk can be placed.

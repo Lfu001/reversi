@@ -15,6 +15,7 @@ pub trait RedisClient: Send + Sync + 'static {
     /// # Arguments
     ///
     /// * `key` - A key of the value.
+    #[allow(unused)]
     async fn get(&mut self, key: &(dyn RedisKey + Sync)) -> Result<String, RedisError>;
 
     /// Sets a key-value pair in Redis.
@@ -23,6 +24,7 @@ pub trait RedisClient: Send + Sync + 'static {
     ///
     /// * `key` - A key to set.
     /// * `value` - A value to set.
+    #[allow(unused)]
     async fn set(&mut self, key: &(dyn RedisKey + Sync), value: &str) -> Result<(), RedisError>;
 
     /// Gets a JSON value from Redis.
@@ -148,7 +150,9 @@ pub mod test {
     /// Mock implementation of RedisClient.
     #[derive(Clone)]
     pub struct MockRedisClient {
+        #[allow(unused)]
         pub get_result: String,
+        #[allow(unused)]
         pub set_result: String,
         pub json_get_result: String,
         pub json_set_result: String,

@@ -12,12 +12,25 @@ const meta: Meta<typeof BoardContainer> = {
 export default meta
 type Story = StoryObj<typeof BoardContainer>
 
+const renderTemplate = (args: {
+  board: Array<DiskColor | null>
+  puttablePositions: Array<Position>
+  positionGuideColor: DiskColor
+}) => ({
+  components: { BoardContainer },
+  setup() {
+    return { args }
+  },
+  template: '<div class="max-h-[600px] max-w-[600px]"><BoardContainer v-bind="args" /></div>',
+})
+
 export const Empty: Story = {
   args: {
     board: Array(64).fill(null),
     puttablePositions: [],
     positionGuideColor: DiskColor.Dark,
   },
+  render: renderTemplate,
 }
 
 export const InitialState1: Story = {
@@ -38,6 +51,7 @@ export const InitialState1: Story = {
     ],
     positionGuideColor: DiskColor.Dark,
   },
+  render: renderTemplate,
 }
 
 export const InitialState2: Story = {
@@ -58,6 +72,7 @@ export const InitialState2: Story = {
     ],
     positionGuideColor: DiskColor.Light,
   },
+  render: renderTemplate,
 }
 
 export const MidGame: Story = {
@@ -84,6 +99,7 @@ export const MidGame: Story = {
     ],
     positionGuideColor: DiskColor.Dark,
   },
+  render: renderTemplate,
 }
 
 export const EndGame: Story = {
@@ -97,4 +113,5 @@ export const EndGame: Story = {
     puttablePositions: [],
     positionGuideColor: DiskColor.Dark,
   },
+  render: renderTemplate,
 }
