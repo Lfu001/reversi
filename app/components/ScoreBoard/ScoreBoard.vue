@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-white/70 dark:bg-gray-800/70 rounded-2xl shadow-md p-6 flex justify-between items-end w-full max-w-md mx-auto">
+  <div class="bg-white/70 dark:bg-black/70 rounded-2xl shadow-md p-6 flex justify-between items-end w-full max-w-md mx-auto">
     <!-- Left Player -->
     <div class="text-center">
       <p class="text-6xl font-extrabold text-black dark:text-white">
