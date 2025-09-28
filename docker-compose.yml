@@ -67,6 +67,10 @@ services:
     container_name: reversi-proxy
     networks:
       - server_network
+      - proxy_network
+    depends_on:
+      lfu_random:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
@@ -74,6 +78,22 @@ services:
       timeout: 5s
       retries: 3
 
+  lfu_random:
+    build:
+      context: ./server/ml
+      dockerfile: models/lfu_random/Dockerfile
+    container_name: reversi-lfu_random
+    networks:
+      - proxy_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
 networks:
   server_network:
+    driver: bridge
+  proxy_network:
     driver: bridge
