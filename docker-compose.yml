@@ -44,6 +44,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - NEW_GAME_API_URL=http://game:8080/new
       - STEP_GAME_API_URL=http://game:8080/step
+      - SUGGESTION_API_URL=http://proxy:80/models
     networks:
       - server_network
     depends_on:
@@ -51,9 +52,24 @@ services:
         condition: service_healthy
       game:
         condition: service_healthy
+      proxy:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  proxy:
+    build:
+      context: ./server/ml/proxy
+    container_name: reversi-proxy
+    networks:
+      - server_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 10s
       timeout: 5s
       retries: 3
