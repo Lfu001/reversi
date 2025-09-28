@@ -33,7 +33,7 @@ class HandlerService:
         module_to_import = f"{model_name}.{USER_MODULE_NAME}"
 
         try:
-            # Import the module as part of a package (e.g., "lfu_random.inference")
+            # Import the module as part of a package
             inference_module = importlib.import_module(module_to_import)
             handler_cls = getattr(inference_module, USER_HANDLER)
             if not issubclass(handler_cls, BaseInferenceHandler):
