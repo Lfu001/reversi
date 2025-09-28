@@ -1,0 +1,17 @@
+[project]
+name = "lfu-random"
+version = "0.1.0"
+description = "A model that randomly selects a valid position."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.117.1",
+    "inference-kit",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
+
+[tool.uv.sources]
+inference-kit = { path = "../../inference_kit" }
