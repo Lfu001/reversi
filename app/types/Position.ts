@@ -34,6 +34,16 @@ class Position {
   }
 
   /**
+   * Converts this position to string
+   * @returns a string representation of the position
+   */
+  toString(): string {
+    const colKey = Object.keys(Column).find(k => Column[k as keyof typeof Column] === this.column)
+    const rowNumber = this.row + 1
+    return `${colKey}${rowNumber}`
+  }
+
+  /**
    * Check if the given Position is equal to this one.
    * @param other - The other Position to compare with.
    * @returns true if the given Position is equal to this one, false otherwise.
