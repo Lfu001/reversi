@@ -1,4 +1,7 @@
-use crate::types::PlayerProfile;
+use crate::{
+    types::PlayerProfile,
+    websocket::suggestion::{SuggestionRequest, SuggestionResponse},
+};
 use common::{Action, StateResponseMessage};
 use serde::{Deserialize, Serialize};
 
@@ -17,4 +20,8 @@ pub enum WsMessage {
     GameState(StateResponseMessage),
     /// **(Client <= Server)** Internal server error occurred.
     InternalServerError(String),
+    /// **(Client => Server)** The player requests a suggestion.
+    SuggestionRequest(SuggestionRequest),
+    /// **(Client <= Server)** The server sends a suggestion.
+    SuggestionResponse(SuggestionResponse),
 }

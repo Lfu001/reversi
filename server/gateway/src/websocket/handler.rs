@@ -104,6 +104,10 @@ pub async fn game_ws(
                         let json = serde_json::json!({"GameState": state_response_message});
                         session.text(json.to_string()).await.unwrap();
                     },
+                    WsMessage::SuggestionResponse(suggestion_response_message) => {
+                        let json = serde_json::json!({"SuggestionResponse": suggestion_response_message});
+                        session.text(json.to_string()).await.unwrap();
+                    },
                     WsMessage::InternalServerError(err) => {
                         session.text(serde_json::json!({ "InternalServerError": err }).to_string()).await.unwrap();
                     },
@@ -157,6 +161,7 @@ async fn process_message(
                         .await;
                 }
                 Err(err) => {
+                    log::error!("Failed to step game state: {}", err);
                     game_server_handle
                         .broadcast_message(conn_id, WsMessage::InternalServerError(err))
                         .await;
@@ -182,11 +187,22 @@ async fn process_message(
                         .await;
                 }
                 Err(err) => {
+                    log::error!("Failed to fetch initial game state: {}", err);
                     game_server_handle
                         .broadcast_message(conn_id, WsMessage::InternalServerError(err))
                         .await;
                 }
             }
+        }
+        WsMessage::SuggestionRequest(req) => {
+            let message = match game_server_handle.suggest_placement(&req, table_id).await {
+                Ok(response) => WsMessage::SuggestionResponse(response),
+                Err(err) => {
+                    log::error!("Failed to suggest placement: {}", err);
+                    WsMessage::InternalServerError(err)
+                }
+            };
+            game_server_handle.send_message(conn_id, message).await;
         }
         _ => {
             log::error!("Unexpected message type received.");

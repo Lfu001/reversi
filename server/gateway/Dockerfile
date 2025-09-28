@@ -37,6 +37,7 @@ ENV PORT=8081
 ENV REDIS_URL=redis://redis:6379
 ENV NEW_GAME_API_URL=http://game:8080/new
 ENV STEP_GAME_API_URL=http://game:8080/step
+ENV SUGGESTION_API_URL=http://proxy:80/models
 
 # Expose the port the app runs on
 EXPOSE 8081

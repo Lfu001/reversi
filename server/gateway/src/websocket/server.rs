@@ -1,14 +1,19 @@
-use super::message::WsMessage;
 use crate::{
     authentication::validate_jwt,
     services::redis_client::RedisClient,
     types::{ConnectionId, PlayerId, PlayerProfile, TableId, TableState},
+    websocket::{
+        message::WsMessage,
+        suggestion::ModelResponse,
+        suggestion::{SuggestionRequest, SuggestionResponse},
+    },
 };
 use common::{Action, DiskColor, PutConfig, StateResponseMessage, StepRequestMessage};
 use fastrand;
 use jwt_simple::prelude::HS256Key;
 use std::{collections::HashMap, env, io, sync::Arc};
 use tokio::sync::{mpsc, oneshot, Mutex};
+use url::Url;
 
 /// A command received by the game session manager.
 enum Command {
@@ -39,8 +44,14 @@ enum Command {
         player_id: PlayerId,
         response_tx: oneshot::Sender<()>,
     },
-    /// Send a message.
-    Message {
+    /// Broadcast a message to all connections in a table.
+    BroadcastMessage {
+        message: WsMessage,
+        connection_id: ConnectionId,
+        response_tx: oneshot::Sender<()>,
+    },
+    /// Send a message to a specific connection.
+    SendMessage {
         message: WsMessage,
         connection_id: ConnectionId,
         response_tx: oneshot::Sender<()>,
@@ -56,6 +67,12 @@ enum Command {
         table_id: TableId,
         action: Action,
         response_tx: oneshot::Sender<Result<StateResponseMessage, String>>,
+    },
+    /// Request a placement suggestion from a model.
+    SuggestPlacement {
+        request: SuggestionRequest,
+        table_id: TableId,
+        response_tx: oneshot::Sender<Result<SuggestionResponse, String>>,
     },
 }
 
@@ -177,9 +194,7 @@ impl GameSessionManager {
         match self.tables.get(table_id) {
             Some(conn_ids) => {
                 for conn in conn_ids {
-                    if let Some(tx) = self.sessions.get(conn) {
-                        let _ = tx.send(message.clone());
-                    }
+                    self.send_message(conn, message.clone()).await;
                 }
             }
             None => {
@@ -188,6 +203,18 @@ impl GameSessionManager {
                     table_id
                 );
             }
+        }
+    }
+
+    /// Send a message to a specific connection.
+    ///
+    /// # Arguments
+    ///
+    /// * `conn_id` - The connection ID of the receiver.
+    /// * `message` - The message to send.
+    async fn send_message(&self, conn_id: &ConnectionId, message: WsMessage) {
+        if let Some(tx) = self.sessions.get(conn_id) {
+            let _ = tx.send(message);
         }
     }
 
@@ -293,6 +320,48 @@ impl GameSessionManager {
         self.update_game_state(table_id, &table_state).await;
 
         Ok(new_game_state)
+    }
+
+    /// Request a placement suggestion from a model.
+    ///
+    /// This function will send the current game state to a model, and receive a list of suggested positions.
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - A suggestion request which contains the request ID and the model to use.
+    /// * `table_id` - The table ID to get the game state from.
+    async fn suggest_placement(
+        &self,
+        request: &SuggestionRequest,
+        table_id: &TableId,
+    ) -> Result<SuggestionResponse, String> {
+        let game_state = self.fetch_game_state(table_id).await;
+        let base_url =
+            env::var("SUGGESTION_API_URL").unwrap_or("http://proxy:80/models".to_string());
+        let mut url = Url::parse(&base_url).map_err(|e| e.to_string())?;
+        url.path_segments_mut()
+            .map_err(|_| "Cannot be a base URL".to_string())?
+            .push(&request.model)
+            .push("suggest");
+
+        let res = match ureq::post(url.as_str()).send_json(&game_state) {
+            Ok(res) => res,
+            Err(ureq::Error::Status(_, response)) => {
+                return Err(response.into_string().unwrap_or(String::from("")));
+            }
+            Err(ureq::Error::Transport(transport)) => {
+                return Err(String::from(transport.message().unwrap_or("")));
+            }
+        };
+
+        let model_response: Result<ModelResponse, _> = res.into_json();
+        match model_response {
+            Ok(model_response) => Ok(SuggestionResponse {
+                request_id: request.request_id.clone(),
+                positions: model_response.positions,
+            }),
+            Err(e) => Err(format!("Failed to parse model response: {}", e)),
+        }
     }
 
     /// Fetch the current game state from Redis.
@@ -418,7 +487,7 @@ impl GameSessionManager {
 
                     let _ = response_tx.send(());
                 }
-                Command::Message {
+                Command::BroadcastMessage {
                     message,
                     connection_id,
                     response_tx,
@@ -439,6 +508,14 @@ impl GameSessionManager {
                     }
                     let _ = response_tx.send(());
                 }
+                Command::SendMessage {
+                    message,
+                    connection_id: conn_id,
+                    response_tx,
+                } => {
+                    self.send_message(&conn_id, message).await;
+                    let _ = response_tx.send(());
+                }
                 Command::FetchInitialState {
                     table_id,
                     response_tx,
@@ -454,6 +531,14 @@ impl GameSessionManager {
                 } => {
                     let new_game_state = self.step(&connection_id, &table_id, &action).await;
                     let _ = response_tx.send(new_game_state);
+                }
+                Command::SuggestPlacement {
+                    request,
+                    table_id,
+                    response_tx,
+                } => {
+                    let result = self.suggest_placement(&request, &table_id).await;
+                    let _ = response_tx.send(result);
                 }
             }
         }
@@ -579,9 +664,29 @@ impl GameSessionManagerHandle {
         let (res_tx, res_rx) = oneshot::channel();
 
         self.command_tx
-            .send(Command::Message {
+            .send(Command::BroadcastMessage {
                 message,
                 connection_id: conn_id.to_owned(),
+                response_tx: res_tx,
+            })
+            .unwrap();
+
+        res_rx.await.unwrap();
+    }
+
+    /// Send a message to a specific connection.
+    ///
+    /// # Arguments
+    ///
+    /// * `conn_id` - The connection ID of the receiver.
+    /// * `message` - The message to send.
+    pub async fn send_message(&self, conn_id: &ConnectionId, message: WsMessage) {
+        let (res_tx, res_rx) = oneshot::channel();
+
+        self.command_tx
+            .send(Command::SendMessage {
+                connection_id: conn_id.to_owned(),
+                message,
                 response_tx: res_tx,
             })
             .unwrap();
@@ -634,6 +739,30 @@ impl GameSessionManagerHandle {
                 connection_id: conn_id.to_owned(),
                 table_id: table_id.to_owned(),
                 action: action.to_owned(),
+                response_tx: res_tx,
+            })
+            .unwrap();
+
+        res_rx.await.unwrap()
+    }
+
+    /// Request a placement suggestion from a model.
+    ///
+    /// # Arguments
+    ///
+    /// * `request` - The suggestion request.
+    /// * `table_id` - The table ID.
+    pub async fn suggest_placement(
+        &self,
+        request: &SuggestionRequest,
+        table_id: &TableId,
+    ) -> Result<SuggestionResponse, String> {
+        let (res_tx, res_rx) = oneshot::channel();
+
+        self.command_tx
+            .send(Command::SuggestPlacement {
+                request: request.clone(),
+                table_id: table_id.to_owned(),
                 response_tx: res_tx,
             })
             .unwrap();
