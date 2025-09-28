@@ -51,9 +51,24 @@ services:
         condition: service_healthy
       game:
         condition: service_healthy
+      proxy:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  proxy:
+    build:
+      context: ./server/ml/proxy
+    container_name: reversi-proxy
+    networks:
+      - server_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 10s
       timeout: 5s
       retries: 3
