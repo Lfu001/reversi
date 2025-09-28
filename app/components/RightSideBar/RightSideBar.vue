@@ -6,7 +6,7 @@
       :dark-name="props.darkName"
       :light-name="props.lightName"
     />
-    <HistoryBoard :turns="props.turns" />
+    <HistoryPanel :turns="props.turns" />
   </div>
 </template>
 

@@ -11,7 +11,7 @@
     </div>
 
     <!-- VS -->
-    <div class="text-2xl self-center text-gray-400 dark:text-gray-300 text-3xl font-bold mx-4">
+    <div class="text-3xl self-center text-gray-400 dark:text-gray-300 font-bold mx-4">
       VS
     </div>
 
