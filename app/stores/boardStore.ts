@@ -1,5 +1,7 @@
 import { DiskColor } from '~/types/DiskColor'
+import type { RawPosition } from '~/types/Position'
 import { Position } from '~/types/Position'
+import type { SuggestedPosition, SuggestionResponse } from '~/types/Suggestion'
 
 type Board = Array<DiskColor | null>
 
@@ -22,7 +24,7 @@ interface ServerGameState {
     history: Array<{ position: string } | 'Pass'>
   }
   /** The positions that the current player can put disks on. */
-  puttable_positions: { row: string, column: string }[]
+  puttable_positions: RawPosition[]
   /** The roles of the players. */
   player_colors?: Array<DiskColor>
   /** The result of the game if the game is over. */
@@ -95,6 +97,14 @@ export const useBoardStore = defineStore('board', () => {
    */
   const players = ref<Player[]>([])
   /**
+   * The suggested positions to highlight on the board.
+   */
+  const suggestions = ref<SuggestedPosition[]>([])
+  /**
+   * The ID of the last suggestion request sent to the server.
+   */
+  const lastSuggestionRequestId = ref<string | null>(null)
+  /**
    * Whether the game has started.
    */
   const hasGameStarted = ref(false)
@@ -114,6 +124,14 @@ export const useBoardStore = defineStore('board', () => {
   })
 
   /**
+   * The suggestions with a confidence score above a certain threshold.
+   */
+  const filteredSuggestions = computed(() => {
+    const threshold = 0.75
+    return suggestions.value.filter(s => s.confidence >= threshold)
+  })
+
+  /**
    * Resets the state of the board to its initial state.
    */
   function reset() {
@@ -122,7 +140,18 @@ export const useBoardStore = defineStore('board', () => {
     puttablePositions.value = []
     winner.value = null
     players.value = []
+    suggestions.value = []
     hasGameStarted.value = false
+    lastSuggestionRequestId.value = null
+  }
+
+  /**
+   * Sets the ID of the last suggestion request.
+   *
+   * @param requestId - The ID of the request.
+   */
+  function setLastSuggestionRequestId(requestId: string) {
+    lastSuggestionRequestId.value = requestId
   }
 
   /**
@@ -147,6 +176,10 @@ export const useBoardStore = defineStore('board', () => {
     else {
       winner.value = null
     }
+
+    // Reset suggestions since the game state has changed
+    suggestions.value = []
+    lastSuggestionRequestId.value = null
   }
 
   /**
@@ -185,6 +218,22 @@ export const useBoardStore = defineStore('board', () => {
         )
       }
     }
+    else if (rootKey === 'SuggestionResponse') { // If the server sends a suggestion
+      const suggestionResponse: SuggestionResponse = data[rootKey]
+      if (suggestionResponse.request_id !== lastSuggestionRequestId.value) {
+        console.log('Ignoring stale suggestion:', suggestionResponse)
+        return
+      }
+
+      console.log('SuggestionResponse:', suggestionResponse)
+
+      suggestions.value = suggestionResponse.positions
+        .map(p => ({
+          ...p,
+          position: Position.fromString(p.position.row, p.position.column),
+        }))
+        .filter(p => p.position !== null) as SuggestedPosition[]
+    }
     else if (rootKey === 'InternalServerError') { // If the server returns an error
       const internalServerError = data[rootKey]
       console.error('InternalServerError:', internalServerError)
@@ -200,10 +249,13 @@ export const useBoardStore = defineStore('board', () => {
     puttablePositions,
     winner,
     players,
+    suggestions,
+    filteredSuggestions,
     scores,
     hasGameStarted,
     reset,
     setStateFromServer,
     handleWebsocketMessage,
+    setLastSuggestionRequestId,
   }
 })

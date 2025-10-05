@@ -1,13 +1,13 @@
 <template>
-  <div class="flex w-4/5 items-center justify-center">
+  <div class="relative flex w-4/5 aspect-square items-center justify-center">
     <div
       v-if="color"
-      class="w-full aspect-square max-w-16 rounded-full"
+      class="aspect-square w-full max-w-16 rounded-full"
       :class="colorClass"
     />
     <div
       v-else-if="guideColor"
-      class="w-1/4 max-w-3 aspect-square rounded-full"
+      class="aspect-square w-1/4 max-w-3 rounded-full"
       :class="guideColorClass"
     />
   </div>

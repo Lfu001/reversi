@@ -16,6 +16,7 @@ const renderTemplate = (args: {
   board: Array<DiskColor | null>
   puttablePositions: Array<Position>
   positionGuideColor: DiskColor
+  suggestedPositions: Array<Position>
 }) => ({
   components: { BoardContainer },
   setup() {
@@ -29,6 +30,29 @@ export const Empty: Story = {
     board: Array(64).fill(null),
     puttablePositions: [],
     positionGuideColor: DiskColor.Dark,
+    suggestedPositions: [],
+  },
+  render: renderTemplate,
+}
+
+export const WithSuggestions: Story = {
+  args: {
+    board: (() => {
+      const board = Array(64).fill(null)
+      board[27] = DiskColor.Dark
+      board[28] = DiskColor.Light
+      board[35] = DiskColor.Light
+      board[36] = DiskColor.Dark
+      return board
+    })(),
+    puttablePositions: [
+      Position.fromIndex(20),
+      Position.fromIndex(29),
+      Position.fromIndex(34),
+      Position.fromIndex(43),
+    ],
+    positionGuideColor: DiskColor.Dark,
+    suggestedPositions: [Position.fromIndex(20), Position.fromIndex(43)],
   },
   render: renderTemplate,
 }
@@ -50,6 +74,7 @@ export const InitialState1: Story = {
       Position.fromIndex(43),
     ],
     positionGuideColor: DiskColor.Dark,
+    suggestedPositions: [],
   },
   render: renderTemplate,
 }
@@ -71,6 +96,7 @@ export const InitialState2: Story = {
       Position.fromIndex(37),
     ],
     positionGuideColor: DiskColor.Light,
+    suggestedPositions: [],
   },
   render: renderTemplate,
 }
@@ -98,6 +124,7 @@ export const MidGame: Story = {
       Position.fromIndex(54),
     ],
     positionGuideColor: DiskColor.Dark,
+    suggestedPositions: [],
   },
   render: renderTemplate,
 }
@@ -112,6 +139,7 @@ export const EndGame: Story = {
     })(),
     puttablePositions: [],
     positionGuideColor: DiskColor.Dark,
+    suggestedPositions: [],
   },
   render: renderTemplate,
 }
