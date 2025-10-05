@@ -2,7 +2,7 @@ from abc import ABCMeta, abstractmethod
 from collections.abc import Callable
 from typing import Any
 
-from .api_model import PredictionOutput, TableState
+from .api_model import SuggestedPosition, TableState
 
 
 class BaseInferenceHandler(metaclass=ABCMeta):
@@ -53,15 +53,15 @@ class BaseInferenceHandler(metaclass=ABCMeta):
         ...
 
     @abstractmethod
-    def output(self, prediction: Any) -> PredictionOutput:
+    def output(self, prediction: Any) -> list[SuggestedPosition]:
         """
-        Processes and formats the prediction result to a desired output format.
+        Processes and formats the prediction result to a list of suggested positions.
         Subclasses should define the output transformation logic.
 
         Args:
-            prediction: The prediction result.
+            prediction: The prediction result from the model.
 
         Returns:
-            The formatted output.
+            A list of suggested positions with confidence scores.
         """
         ...

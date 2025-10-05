@@ -1,7 +1,7 @@
-from random import choice
+from random import randint
 from typing import Any, Callable, override
 
-from inference_kit.api_model import PredictionOutput, TableState
+from inference_kit.api_model import Position, SuggestedPosition, TableState
 from inference_kit.base_inference_handler import BaseInferenceHandler
 
 
@@ -19,6 +19,26 @@ class InferenceHandler(BaseInferenceHandler):
         return data
 
     @override
-    def output(self, prediction: TableState) -> PredictionOutput:
-        pos_flat = choice(prediction.puttable_positions)
-        return PredictionOutput(row=pos_flat // 8, column=pos_flat % 8)
+    def output(self, prediction: TableState) -> list[SuggestedPosition]:
+        """
+        Returns all possible moves with confidence scores.
+        The randomly selected move gets confidence 1.0, others get 0.0.
+
+        Args:
+            prediction: The table state containing possible moves
+
+        Returns:
+            List of suggested positions with confidence scores
+        """
+        if not prediction.puttable_positions:
+            return []
+
+        selected_idx = randint(0, len(prediction.puttable_positions) - 1)
+
+        return [
+            SuggestedPosition(
+                position=Position(row=pos.row, column=pos.column),
+                confidence=1.0 if i == selected_idx else 0.0,
+            )
+            for i, pos in enumerate(prediction.puttable_positions)
+        ]
