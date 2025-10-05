@@ -102,4 +102,14 @@ class Position {
   }
 }
 
+/**
+ * A raw position object as received from the server.
+ */
+export interface RawPosition {
+  /** The row of the position. */
+  row: string
+  /** The column of the position. */
+  column: string
+}
+
 export { Position }

@@ -25,6 +25,7 @@
           <BoardContainer
             :board="boardStore.board"
             :puttable-positions="boardStore.puttablePositions"
+            :suggested-positions="boardStore.filteredSuggestions.map(s => s.position)"
             :position-guide-color="boardStore.currentPlayer"
             @on-square-click="onSquareClick"
           />
@@ -40,10 +41,35 @@
         </div>
       </div>
 
-      <!-- Right side - Sidebar placeholder -->
+      <!-- Right side - Game Controls -->
       <div class="w-full rounded-lg bg-white/50 p-4 shadow-lg backdrop-blur-sm lg:w-80">
-        <div class="flex h-full items-center justify-center text-gray-600">
-          <p>Sidebar content will go here</p>
+        <div class="space-y-4">
+          <div>
+            <h3 class="text-lg font-semibold text-gray-800">
+              Game Controls
+            </h3>
+          </div>
+
+          <!-- Suggestion Button -->
+          <button
+            :disabled="!canRequestSuggestion"
+            class="w-full rounded-lg bg-blue-500 px-4 py-2 text-white transition-colors hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+            @click="requestSuggestion"
+          >
+            Get Suggestion
+          </button>
+
+          <!-- Game Status -->
+          <div class="text-sm text-gray-600">
+            <p>Current Player: {{ boardStore.currentPlayer }}</p>
+            <p>Puttable Positions: {{ boardStore.puttablePositions.length }}</p>
+          </div>
+
+          <!-- Scores -->
+          <div class="text-sm text-gray-600">
+            <p>Dark: {{ boardStore.scores.Dark }}</p>
+            <p>Light: {{ boardStore.scores.Light }}</p>
+          </div>
         </div>
       </div>
     </div>
@@ -54,8 +80,11 @@
 import { HomeIcon } from '@heroicons/vue/24/solid'
 import type { DiskColor } from '~/types/DiskColor'
 import { Position } from '~/types/Position'
+import type { SuggestionRequest } from '~/types/Suggestion'
 
+/** The board store. */
 const boardStore = useBoardStore()
+/** The WebSocket store. */
 const webSocketStore = useWebSocketStore()
 
 /**
@@ -143,6 +172,33 @@ const handleBackToMenuClick = () => {
   boardStore.reset()
   navigateTo('/menu')
 }
+
+/**
+ * Requests a suggestion for the current game state.
+ */
+const requestSuggestion = () => {
+  if (!boardStore.hasGameStarted) {
+    console.warn('Cannot request suggestion: game has not started')
+    return
+  }
+
+  const requestId = crypto.randomUUID()
+  boardStore.setLastSuggestionRequestId(requestId)
+
+  const suggestionRequest: SuggestionRequest = {
+    model: 'lfu_random',
+    request_id: requestId,
+  }
+  const json = JSON.stringify({ SuggestionRequest: suggestionRequest })
+  webSocketStore.send(json)
+}
+
+/**
+ * Returns whether a suggestion can be requested.
+ */
+const canRequestSuggestion = computed(() => {
+  return boardStore.hasGameStarted && webSocketStore.isConnected && boardStore.puttablePositions.length > 0
+})
 </script>
 
 <style scoped>
