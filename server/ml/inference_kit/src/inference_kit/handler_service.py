@@ -2,8 +2,8 @@ import importlib
 import os
 import sys
 
-from inference_kit.api_model import ModelResponse, TableState
-from inference_kit.base_inference_handler import BaseInferenceHandler
+from .api_model import ModelResponse, TableState
+from .base_inference_handler import BaseInferenceHandler
 
 USER_MODULE_NAME = "inference"
 USER_HANDLER = "InferenceHandler"
