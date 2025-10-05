@@ -2,8 +2,8 @@ import importlib
 import os
 import sys
 
-from inference_kit.api_model import PredictionOutput, TableState
-from inference_kit.base_inference_handler import BaseInferenceHandler
+from .api_model import ModelResponse, TableState
+from .base_inference_handler import BaseInferenceHandler
 
 USER_MODULE_NAME = "inference"
 USER_HANDLER = "InferenceHandler"
@@ -47,18 +47,18 @@ class HandlerService:
             if sys.path[0] == models_root_dir:
                 sys.path.pop(0)
 
-    def transform(self, table_state: TableState) -> PredictionOutput:
+    def transform(self, table_state: TableState) -> ModelResponse:
         """
-        Transforms the table state into a prediction output using the inference handler.
+        Transforms the table state into a model response using the inference handler.
 
         Args:
             table_state (TableState): The current state of the game table.
 
         Returns:
-            PredictionOutput: The prediction result formatted as an output object.
+            A ModelResponse containing the suggested positions from the model.
         """
         data = self.handler.prepare_input(table_state)
         prediction = self.handler.predict(data, self.model)
-        result = self.handler.output(prediction)
+        suggested_positions = self.handler.output(prediction)
 
-        return result
+        return ModelResponse(positions=suggested_positions)
