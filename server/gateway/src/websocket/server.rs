@@ -328,6 +328,7 @@ impl GameSessionManager {
     ///
     /// # Arguments
     ///
+    /// * `connection_id` - The connection ID of the player who is requesting the suggestion.
     /// * `request` - A suggestion request which contains the request ID and the model to use.
     /// * `table_id` - The table ID to get the game state from.
     async fn suggest_placement(
