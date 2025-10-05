@@ -2,13 +2,10 @@ name: test (ml)
 
 on:
   push:
-    paths:
-      - 'server/ml/**'
-      - '.github/workflows/test-ml.yml'
+    branches: [main]
   pull_request:
     paths:
       - 'server/ml/**'
-      - '.github/workflows/test-ml.yml'
 
 jobs:
   test:
