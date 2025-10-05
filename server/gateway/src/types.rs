@@ -137,6 +137,16 @@ impl TableState {
     pub fn table(&self) -> &Table {
         &self.table
     }
+
+    /// Returns a reference to the roles of this [`TableState`].
+    pub fn roles(&self) -> &HashMap<PlayerId, DiskColor> {
+        &self.roles
+    }
+
+    /// Returns a reference to the puttable positions of this [`TableState`].
+    pub fn puttable_positions(&self) -> &Vec<Position> {
+        &self.puttable_positions
+    }
 }
 
 #[cfg(test)]

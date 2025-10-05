@@ -4,8 +4,7 @@ use crate::{
     types::{ConnectionId, PlayerId, PlayerProfile, TableId, TableState},
     websocket::{
         message::WsMessage,
-        suggestion::ModelResponse,
-        suggestion::{SuggestionRequest, SuggestionResponse},
+        suggestion::{InvocationRequest, ModelResponse, SuggestionRequest, SuggestionResponse},
     },
 };
 use common::{Action, DiskColor, PutConfig, StateResponseMessage, StepRequestMessage};
@@ -344,7 +343,12 @@ impl GameSessionManager {
             .push(&request.model)
             .push("suggest");
 
-        let res = match ureq::post(url.as_str()).send_json(&game_state) {
+        let data = InvocationRequest {
+            board: game_state.table().board().clone(),
+            turn: game_state.table().turn(),
+            puttable_positions: game_state.puttable_positions().clone(),
+        };
+        let res = match ureq::post(url.as_str()).send_json(&data) {
             Ok(res) => res,
             Err(ureq::Error::Status(_, response)) => {
                 return Err(response.into_string().unwrap_or(String::from("")));
