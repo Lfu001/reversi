@@ -69,6 +69,7 @@ enum Command {
     },
     /// Request a placement suggestion from a model.
     SuggestPlacement {
+        connection_id: ConnectionId,
         request: SuggestionRequest,
         table_id: TableId,
         response_tx: oneshot::Sender<Result<SuggestionResponse, String>>,
@@ -327,14 +328,36 @@ impl GameSessionManager {
     ///
     /// # Arguments
     ///
+    /// * `connection_id` - The connection ID of the player who is requesting the suggestion.
     /// * `request` - A suggestion request which contains the request ID and the model to use.
     /// * `table_id` - The table ID to get the game state from.
     async fn suggest_placement(
         &self,
+        connection_id: &ConnectionId,
         request: &SuggestionRequest,
         table_id: &TableId,
     ) -> Result<SuggestionResponse, String> {
         let game_state = self.fetch_game_state(table_id).await;
+
+        // Get player ID from connection
+        let player_id = self
+            .connection_player_map
+            .get(connection_id)
+            .ok_or_else(|| "Player not authenticated".to_string())?;
+
+        // Get player's color from game state
+        let player_color = game_state
+            .roles()
+            .iter()
+            .find(|(id, _)| *id == player_id)
+            .map(|(_, color)| *color)
+            .ok_or_else(|| "Player not found in this game".to_string())?;
+
+        // Check if it's the player's turn
+        if game_state.table().turn() != player_color {
+            return Err("It's not your turn".to_string());
+        }
+
         let base_url =
             env::var("SUGGESTION_API_URL").unwrap_or("http://proxy:80/models".to_string());
         let mut url = Url::parse(&base_url).map_err(|e| e.to_string())?;
@@ -537,11 +560,14 @@ impl GameSessionManager {
                     let _ = response_tx.send(new_game_state);
                 }
                 Command::SuggestPlacement {
+                    connection_id,
                     request,
                     table_id,
                     response_tx,
                 } => {
-                    let result = self.suggest_placement(&request, &table_id).await;
+                    let result = self
+                        .suggest_placement(&connection_id, &request, &table_id)
+                        .await;
                     let _ = response_tx.send(result);
                 }
             }
@@ -754,10 +780,12 @@ impl GameSessionManagerHandle {
     ///
     /// # Arguments
     ///
+    /// * `conn_id` - The connection ID of the player making the request.
     /// * `request` - The suggestion request.
     /// * `table_id` - The table ID.
     pub async fn suggest_placement(
         &self,
+        conn_id: &ConnectionId,
         request: &SuggestionRequest,
         table_id: &TableId,
     ) -> Result<SuggestionResponse, String> {
@@ -765,6 +793,7 @@ impl GameSessionManagerHandle {
 
         self.command_tx
             .send(Command::SuggestPlacement {
+                connection_id: conn_id.to_owned(),
                 request: request.clone(),
                 table_id: table_id.to_owned(),
                 response_tx: res_tx,
