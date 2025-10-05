@@ -195,7 +195,10 @@ async fn process_message(
             }
         }
         WsMessage::SuggestionRequest(req) => {
-            let message = match game_server_handle.suggest_placement(&req, table_id).await {
+            let message = match game_server_handle
+                .suggest_placement(conn_id, &req, table_id)
+                .await
+            {
                 Ok(response) => WsMessage::SuggestionResponse(response),
                 Err(err) => {
                     log::error!("Failed to suggest placement: {}", err);
