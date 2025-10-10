@@ -10,7 +10,12 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [
+          'models/lfu_random',
+        ]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,16 +30,7 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
 
-      - name: Find and run model tests
+      - name: Run tests for ${{ matrix.model }}
         working-directory: ./server/ml
         run: |
-          # Find all model directories and run their tests
-          find models -mindepth 1 -maxdepth 1 -type d | while read -r model_dir; do
-            if [ -d "$model_dir" ]; then
-              echo "\n=== Running tests for $model_dir ==="
-              (
-                cd "$model_dir"
-                uv run pytest
-              )
-            fi
-          done
+          cd "${{ matrix.model }}" && uv run pytest
