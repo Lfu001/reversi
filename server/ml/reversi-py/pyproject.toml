@@ -1,0 +1,18 @@
+[project]
+name = "reversi"
+version = "0.1.0"
+description = "Reversi Python binding"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.maturin]
+module-name = "reversi_rs"
+python-packages = ["reversi_rs"]
+python-source = "src"
+
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "Cargo.toml" }, { file = "Cargo.lock" }]
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
