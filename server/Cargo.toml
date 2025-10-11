@@ -1,0 +1,15 @@
+[workspace]
+resolver = "3"
+members = [
+    "common",
+    "gateway",
+    "reversi-core",
+    "game",
+    "ml/reversi-py",
+]
+default-members = [
+    "common",
+    "gateway",
+    "reversi-core",
+    "game",
+]
