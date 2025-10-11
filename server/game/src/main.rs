@@ -1,9 +1,10 @@
-mod game_logic;
-mod server;
+mod config;
+mod messages;
+mod routes;
 
+use crate::config::config;
 use actix_web::{middleware, App, HttpServer};
 use env_logger::Env;
-use server::config::config;
 use std::env;
 
 #[actix_web::main]

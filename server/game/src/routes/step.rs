@@ -1,8 +1,7 @@
-use crate::{
-    game_logic::controller::Controller, server::messages::response::StateResponseMessageExt,
-};
+use crate::messages::response::StateResponseMessageExt;
 use actix_web::{error, web, Responder, Result};
 use common::StepRequestMessage;
+use reversi_core::controller::Controller;
 
 /// A handler for step table.
 ///
@@ -31,9 +30,9 @@ pub async fn step_table(req: web::Json<StepRequestMessage>) -> Result<impl Respo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_logic::state::BoardExt;
     use actix_web::{http::StatusCode, test, App};
     use common::{position, Action, Column, DiskColor, Position, PutConfig, Row, Table};
+    use reversi_core::state::BoardExt;
 
     /// Test for step table by valid action "PutDisk"
     #[actix_web::test]

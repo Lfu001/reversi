@@ -1,4 +1,4 @@
-use super::action::{get_puttable_positions, ActionExt};
+use super::action::{ActionExt, get_puttable_positions};
 use common::{Action, DiskColor, JudgeResult, Position, Table, Winner};
 use std::cmp::Ordering;
 
@@ -100,8 +100,8 @@ impl Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_logic::state::BoardExt;
-    use common::{position, Column, Row};
+    use crate::state::BoardExt;
+    use common::{Column, Row, position};
     use num_traits::FromPrimitive;
 
     #[test]

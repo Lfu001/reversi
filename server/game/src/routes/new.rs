@@ -1,8 +1,7 @@
-use crate::{
-    game_logic::action::get_puttable_positions, server::messages::response::StateResponseMessageExt,
-};
+use crate::messages::response::StateResponseMessageExt;
 use actix_web::Responder;
 use common::Table;
+use reversi_core::action::get_puttable_positions;
 
 /// A handler for creating new table.
 ///
