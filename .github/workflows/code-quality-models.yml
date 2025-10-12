@@ -3,9 +3,10 @@ on:
     branches: [main]
   pull_request:
     paths:
-      - server/ml/**
+      - server/ml/inference_kit/**
+      - server/ml/models/**
 
-name: code quality (ml)
+name: code quality (models)
 
 jobs:
   format:
@@ -18,7 +19,12 @@ jobs:
         name: Run ruff format
         with:
           args: format --check
-          src: ./server/ml
+          src: ./server/ml/inference_kit
+      - uses: astral-sh/ruff-action@v1
+        name: Run ruff format
+        with:
+          args: format --check
+          src: ./server/ml/models
 
   lint:
     runs-on: ubuntu-latest
@@ -30,4 +36,9 @@ jobs:
         name: Run ruff lint
         with:
           args: check
-          src: ./server/ml
+          src: ./server/ml/inference_kit
+      - uses: astral-sh/ruff-action@v1
+        name: Run ruff lint
+        with:
+          args: check
+          src: ./server/ml/models
