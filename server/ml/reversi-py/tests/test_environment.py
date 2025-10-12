@@ -75,8 +75,8 @@ def test_step_return_spec(single_env: ReversiEnvironment):
     action = np.zeros((8, 8), dtype=np.float32)
     action[2, 3] = 1.0  # Play a valid move D3
 
-    # Act
-    next_state, done = single_env.step_batch(action)
+    # Act: Use deterministic=True for predictable outcomes
+    next_state, done = single_env.step_batch(action, deterministic=True)
 
     # Assert
     assert isinstance(next_state, np.ndarray)
@@ -85,17 +85,17 @@ def test_step_return_spec(single_env: ReversiEnvironment):
 
     assert isinstance(done, np.ndarray)
     assert done.shape == (1,)
-    assert done.dtype == bool
+    assert done.dtype == np.bool_  # Check for boolean dtype
 
 
-def test_step_board_mutation(single_env: ReversiEnvironment):
-    """Tests that the board state is correctly mutated after a step."""
+def test_step_deterministic_board_mutation(single_env: ReversiEnvironment):
+    """Tests that the board state is correctly mutated after a deterministic step."""
     single_env.reset()
     action = np.zeros((8, 8), dtype=np.float32)
     action[2, 3] = 1.0  # Dark plays at D3
 
     # Act
-    next_state, done = single_env.step_batch(action)
+    next_state, done = single_env.step_batch(action, deterministic=True)
 
     # Assert
     # It's now Light's turn. The state is from Light's perspective.
@@ -121,6 +121,45 @@ def test_step_board_mutation(single_env: ReversiEnvironment):
     np.testing.assert_array_equal(light_pieces, expected_light)
 
 
+def test_step_stochastic_selects_legal_move(single_env: ReversiEnvironment):
+    """
+    Tests that a stochastic step selects one of the provided legal moves.
+    """
+    # Create an action where two legal moves have non-zero probability
+    action = np.zeros((8, 8), dtype=np.float32)
+    action[2, 3] = 0.5  # D3
+    action[3, 2] = 0.5  # C4
+
+    # Act: Use deterministic=False for stochastic sampling
+    next_state, _ = single_env.step_batch(action, deterministic=False)
+
+    # Assert
+    # The new piece must be at one of the two locations we gave probability to.
+    # The state is from Light's perspective, so we check the opponent (Dark) plane.
+    dark_pieces = next_state[0, 1]
+
+    # Check if a piece was placed at D3 (resulting board)
+    board_if_d3 = np.zeros((8, 8), dtype=np.float32)
+    board_if_d3[2, 3] = 1
+    board_if_d3[3, 3] = 1
+    board_if_d3[3, 4] = 1
+    board_if_d3[4, 3] = 1
+
+    # Check if a piece was placed at C4 (resulting board)
+    board_if_c4 = np.zeros((8, 8), dtype=np.float32)
+    board_if_c4[3, 2] = 1
+    board_if_c4[3, 3] = 1
+    board_if_c4[4, 3] = 1
+    board_if_c4[3, 4] = 1
+
+    d3_was_played = np.array_equal(dark_pieces, board_if_d3)
+    c4_was_played = np.array_equal(dark_pieces, board_if_c4)
+
+    assert d3_was_played or c4_was_played, (
+        "The move played was not one of the provided options"
+    )
+
+
 def test_batch_step_independent(batch_env: ReversiEnvironment):
     """Tests that games in a batch are processed independently."""
     batch_env.reset()
@@ -136,7 +175,7 @@ def test_batch_step_independent(batch_env: ReversiEnvironment):
     actions = np.stack([action1, action2])  # Shape: (2, 8, 8)
 
     # Act
-    next_states, _ = batch_env.step_batch(actions)
+    next_states, _ = batch_env.step_batch(actions, deterministic=True)
 
     # Assert state of the first game (played at D3)
     dark_pieces_game1 = next_states[0, 1]
@@ -151,9 +190,9 @@ def test_batch_step_independent(batch_env: ReversiEnvironment):
     dark_pieces_game2 = next_states[1, 1]
     expected_dark_game2 = np.zeros((8, 8), dtype=np.float32)
     expected_dark_game2[3, 2] = 1
+    expected_dark_game2[4, 3] = 1
     expected_dark_game2[3, 3] = 1
     expected_dark_game2[3, 4] = 1
-    expected_dark_game2[4, 3] = 1
     np.testing.assert_array_equal(dark_pieces_game2, expected_dark_game2)
 
 
@@ -171,11 +210,17 @@ def test_init_invalid_batch_size():
 def test_step_invalid_action_shape(single_env: ReversiEnvironment):
     """Tests that ValueError is raised for actions with an incorrect shape."""
     single_env.reset()
+    # Test with one incorrect dimension
     with pytest.raises(ValueError, match="Expected actions with shape"):
-        invalid_action = np.zeros((1, 7, 8), dtype=np.float32)  # Incorrect shape
-        single_env.step_batch(invalid_action)
+        invalid_action = np.zeros((1, 7, 8), dtype=np.float32)
+        single_env.step_batch(invalid_action, deterministic=True)
 
+    # Test with shape that would be correct for a different batch size
     with pytest.raises(ValueError, match="Expected actions with shape"):
-        invalid_action_2d = np.zeros((8, 7), dtype=np.float32)  # Also incorrect
-        # This will be expanded to (1, 8, 7) and fail the check
-        single_env.step_batch(invalid_action_2d)
+        invalid_action_batch = np.zeros((2, 8, 8), dtype=np.float32)
+        single_env.step_batch(invalid_action_batch, deterministic=True)
+
+    # Test with incorrect 2D shape that gets expanded
+    with pytest.raises(ValueError, match="Expected actions with shape"):
+        invalid_action_2d = np.zeros((8, 7), dtype=np.float32)
+        single_env.step_batch(invalid_action_2d, deterministic=True)

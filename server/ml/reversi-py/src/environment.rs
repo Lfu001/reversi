@@ -1,35 +1,123 @@
 use common::{Action, Column, DiskColor, Position, PutConfig, Row, Table};
-use ndarray::Array;
+use ndarray::{s, Array};
 use num_traits::FromPrimitive;
 use numpy::{prelude::*, PyArray, PyArray1, PyArray4, PyReadonlyArray3};
 use pyo3::prelude::*;
+use rand::distr::weighted::WeightedIndex;
+use rand::prelude::*;
+use rayon::prelude::*;
 use reversi_core::{action::get_puttable_positions, controller::Controller, state::BoardExt};
 
-/// A PyClass that represents a batch of Reversi games.
+/// A PyClass that represents a batch of parallel Reversi games for reinforcement learning.
+///
+/// This environment is designed to be highly efficient, processing multiple games
+/// simultaneously using the Rayon library for parallel computation. It's suitable for
+/// training machine learning agents that require high throughput.
 #[pyclass]
 struct ReversiEnvironment {
-    /// A vector of Tables, each representing a game of Reversi.
+    /// A vector of `Table`s, each representing the state of a single Reversi game.
     tables: Vec<Table>,
-    /// A vector of booleans, each indicating whether a game has ended or not.
+    /// A vector of booleans, where `true` indicates that the game at the corresponding index has finished.
     dones: Vec<bool>,
     /// The number of games in the batch.
     batch_size: usize,
+}
+
+// Private implementation block for core logic not exposed to Python.
+impl ReversiEnvironment {
+    /// A private core function that handles the common logic for stepping the batch environment.
+    ///
+    /// This function iterates over all games in parallel. For each game, it determines the
+    /// next action by calling the `action_selector` closure, applies the action,
+    /// and updates the game state.
+    ///
+    /// # Arguments
+    /// * `py` - The Python GIL token.
+    /// * `actions` - A 3D numpy array of shape `(batch_size, 8, 8)` containing action probabilities.
+    /// * `action_selector` - A closure that defines the policy for selecting an action. It takes a
+    ///   slice of legal positions and the corresponding 2D action probabilities for a single game,
+    ///   and returns the chosen `Position`.
+    ///
+    /// # Type Parameters
+    /// * `F` - The type of the `action_selector` closure. It must be `Sync` and `Send` to be
+    ///   safely used across multiple threads by Rayon.
+    fn _step_batch_core<F>(
+        &mut self,
+        py: Python<'_>,
+        actions: PyReadonlyArray3<f32>,
+        action_selector: F,
+    ) -> PyResult<StepBatchResult>
+    where
+        F: Fn(&[Position], &ndarray::ArrayView2<'_, f32>) -> Position + Sync + Send,
+    {
+        let actions_array = actions.as_array();
+
+        // Process each game state in parallel using Rayon.
+        let results: Vec<_> = self
+            .tables
+            .par_iter_mut()
+            .zip(self.dones.par_iter_mut())
+            .enumerate()
+            .map(|(i, (table, done))| {
+                // If the game is already done, skip processing and return its done status.
+                if *done {
+                    return Ok(true);
+                }
+
+                let turn = table.turn();
+                let puttable_positions = get_puttable_positions(table.board(), turn);
+
+                let action = if puttable_positions.is_empty() {
+                    // If there are no legal moves, the only valid action is to pass the turn.
+                    Action::PassTurn(turn)
+                } else {
+                    // Get the 2D action probabilities for the current game.
+                    let game_actions = actions_array.slice(s![i, .., ..]);
+                    // Use the provided strategy (closure) to select the next move.
+                    let chosen_pos = action_selector(&puttable_positions, &game_actions);
+                    Action::PutDisk(PutConfig::new(turn, chosen_pos))
+                };
+
+                // Apply the chosen action to the game board.
+                match Controller::step(table, action) {
+                    Ok(step_result) => {
+                        // Check if the game has ended and update the `done` flag.
+                        if step_result.judge_result.is_some() {
+                            *done = true;
+                        }
+                        Ok(*done)
+                    }
+                    Err(_) => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        "Invalid action executed internally.",
+                    )),
+                }
+            })
+            .collect();
+
+        // Collect results from all threads. If any thread returned an error, propagate it.
+        let current_dones: Vec<bool> = results.into_iter().collect::<Result<_, _>>()?;
+
+        // Get the new state of all games and return the results to Python.
+        let next_states = self.get_state(py)?;
+        let dones_array = Array::from_vec(current_dones).into_pyarray(py);
+
+        Ok((next_states, dones_array.into()))
+    }
 }
 
 /// A tuple containing the results of a batch step of the environment.
 ///
 /// The tuple contains two elements:
 /// - The next state of the environment as a `Py<PyArray4<f32>>`.
-/// - A boolean array indicating whether each game in the batch has finished or not as a `Py<PyArray1<bool>>`.
+/// - A boolean array indicating whether each game in the batch has finished as a `Py<PyArray1<bool>>`.
 type StepBatchResult = (Py<PyArray4<f32>>, Py<PyArray1<bool>>);
 
 #[pymethods]
 impl ReversiEnvironment {
-    /// Creates a new [`ReversiEnvironment`] with the given `batch_size`.
+    /// Creates a new `ReversiEnvironment` with a specified batch size.
     ///
-    /// The environment is initialized with a vector of `Table`s, each
-    /// representing a game of Reversi. A vector of booleans is also
-    /// initialized to keep track of whether each game has ended or not.
+    /// # Arguments
+    /// * `batch_size` - The number of parallel games to simulate in this environment.
     #[new]
     fn new(batch_size: usize) -> Self {
         ReversiEnvironment {
@@ -39,39 +127,34 @@ impl ReversiEnvironment {
         }
     }
 
-    /// Returns the number of games in the batch.
+    /// The number of games in the batch.
     #[getter]
     fn batch_size(&self) -> usize {
         self.batch_size
     }
 
-    /// Resets the environment to its initial state.
+    /// Resets all games in the environment to their initial state.
     ///
-    /// This function resets the `tables` field to a vector of default [`Table`]s,
-    /// and resets the `dones` field to a vector of `false` values.
+    /// This is typically called at the beginning of a new training episode.
     ///
-    /// The function then returns the current state of the environment as a
-    /// `Py<PyArray4<f32>>`, which indicates [batch_size, channels, 8, 8] where
-    /// channels are:
-    /// - 0: Dark disks
-    /// - 1: Light disks
-    /// - 2: Turn
-    /// - 3: Legal moves
+    /// # Returns
+    /// A `Py<PyArray4<f32>>` representing the initial state of the batch.
     fn reset(&mut self, py: Python<'_>) -> PyResult<Py<PyArray4<f32>>> {
         self.tables = (0..self.batch_size).map(|_| Table::default()).collect();
         self.dones = vec![false; self.batch_size];
         self.get_state(py)
     }
 
-    /// Returns the current state of the environment.
+    /// Returns the current state of all games in the batch.
     ///
-    /// Returns a `Py<PyArray4<f32>>`, which indicates \[batch_size, channels, 8, 8\]
-    /// where channels are:
-    /// - 0: Dark disks
-    /// - 1: Light disks
-    /// - 2: Turn
-    /// - 3: Legal moves
+    /// The state is represented as a 4-dimensional numpy array with shape
+    /// `(batch_size, 4, 8, 8)`. The four channels are:
+    /// - Channel 0: Positions of the current player's disks (1.0 if disk exists, 0.0 otherwise).
+    /// - Channel 1: Positions of the opponent's disks.
+    /// - Channel 2: A plane indicating the current turn (1.0 for Dark, 0.0 for Light).
+    /// - Channel 3: A plane indicating all legal moves for the current player.
     fn get_state(&self, py: Python<'_>) -> PyResult<Py<PyArray4<f32>>> {
+        // Pre-allocate a vector with the exact required capacity for performance.
         let mut state_vec = Vec::with_capacity(self.batch_size * 4 * 8 * 8);
 
         for table in &self.tables {
@@ -79,36 +162,41 @@ impl ReversiEnvironment {
             let board = table.board();
             let puttable_positions = get_puttable_positions(board, turn);
 
-            let mut c0_dark_disks = [0.0f32; 64];
-            let mut c1_light_disks = [0.0f32; 64];
-            let c2_turn = match turn {
-                DiskColor::Dark => [1.0f32; 64],
-                DiskColor::Light => [0.0f32; 64],
+            // Initialize planes for the 4 channels.
+            let mut c0_player_disks = [0.0f32; 64];
+            let mut c1_opponent_disks = [0.0f32; 64];
+            let c2_turn_plane = if turn == DiskColor::Dark {
+                [1.0f32; 64]
+            } else {
+                [0.0f32; 64]
             };
             let mut c3_legal_moves = [0.0f32; 64];
 
+            // Populate disk positions.
             for r in 0..8 {
                 for c in 0..8 {
                     let pos = Position::new(Row::from_u8(r).unwrap(), Column::from_u8(c).unwrap());
                     let idx = (r * 8 + c) as usize;
                     if let Some(disk) = board.get_disk(&pos) {
                         if disk == turn {
-                            c0_dark_disks[idx] = 1.0;
+                            c0_player_disks[idx] = 1.0;
                         } else {
-                            c1_light_disks[idx] = 1.0;
+                            c1_opponent_disks[idx] = 1.0;
                         }
                     }
                 }
             }
 
+            // Populate legal moves.
             for pos in puttable_positions {
                 let idx = (pos.row() as u8 * 8 + pos.column() as u8) as usize;
                 c3_legal_moves[idx] = 1.0;
             }
 
-            state_vec.extend_from_slice(&c0_dark_disks);
-            state_vec.extend_from_slice(&c1_light_disks);
-            state_vec.extend_from_slice(&c2_turn);
+            // Append the channels for this game to the main state vector.
+            state_vec.extend_from_slice(&c0_player_disks);
+            state_vec.extend_from_slice(&c1_opponent_disks);
+            state_vec.extend_from_slice(&c2_turn_plane);
             state_vec.extend_from_slice(&c3_legal_moves);
         }
 
@@ -116,69 +204,81 @@ impl ReversiEnvironment {
         Ok(array.reshape((self.batch_size, 4, 8, 8))?.into())
     }
 
-    /// Steps the environment forward by one step.
+    /// Steps the environment forward by one move for each game, selecting actions stochastically.
     ///
-    /// This function takes in a 3D array of `actions` of shape
-    /// (batch_size, 8, 8) where each element is a float between 0 and
-    /// 1 representing the probability of taking a certain action.
-    /// Each element of the array is accessed as `actions[i, r, c]` where
-    /// `i` is the batch index, `r` is the row index and `c` is the column
-    /// index.
-    fn step_batch(
+    /// This method is intended for **training**, as it promotes exploration. It treats the
+    /// `actions` array as a probability distribution and samples a move for each game
+    /// according to the weights of the legal moves.
+    ///
+    /// # Arguments
+    /// * `actions`: A `numpy.ndarray` of shape `(batch_size, 8, 8)` and `dtype=float32`.
+    ///
+    /// # Returns
+    /// A tuple `(next_states, dones)`.
+    #[pyo3(name = "step_batch_stochastic")]
+    fn step_batch_stochastic(
         &mut self,
         py: Python<'_>,
         actions: PyReadonlyArray3<f32>,
     ) -> PyResult<StepBatchResult> {
-        let actions_array = actions.as_array();
-        let mut current_dones = vec![false; self.batch_size];
+        // Define the action selection strategy: sample from the probability distribution.
+        let selector = |puttable_positions: &[Position],
+                        game_actions: &ndarray::ArrayView2<'_, f32>| {
+            let weights: Vec<f32> = puttable_positions
+                .iter()
+                .map(|pos| game_actions[[pos.row() as usize, pos.column() as usize]])
+                .collect();
 
-        for i in 0..self.batch_size {
-            if self.dones[i] {
-                current_dones[i] = true;
-                continue;
+            // Create a weighted distribution for sampling.
+            match WeightedIndex::new(&weights) {
+                Ok(dist) => {
+                    // Create a thread-local random number generator.
+                    let mut rng = rand::rng();
+                    // Sample an index from the distribution and return the corresponding position.
+                    puttable_positions[dist.sample(&mut rng)]
+                }
+                // Fallback: if all legal moves have zero probability, just pick the first one.
+                Err(_) => puttable_positions[0],
             }
+        };
 
-            let table = &mut self.tables[i];
-            let turn = table.turn();
-            let puttable_positions = get_puttable_positions(table.board(), turn);
+        // Delegate the core logic to the private batch processing function.
+        self._step_batch_core(py, actions, selector)
+    }
 
-            let action = if puttable_positions.is_empty() {
-                Action::PassTurn(turn)
-            } else {
-                let mut best_pos = puttable_positions[0];
-                let mut max_prob = -1.0;
+    /// Steps the environment forward by one move for each game, selecting actions deterministically.
+    ///
+    /// This method is intended for **inference or evaluation**. It always chooses the
+    /// action with the highest probability from the legal moves for each game.
+    ///
+    /// # Arguments
+    /// * `actions`: A `numpy.ndarray` of shape `(batch_size, 8, 8)` and `dtype=float32`.
+    ///
+    /// # Returns
+    /// A tuple `(next_states, dones)`.
+    #[pyo3(name = "step_batch_deterministic")]
+    fn step_batch_deterministic(
+        &mut self,
+        py: Python<'_>,
+        actions: PyReadonlyArray3<f32>,
+    ) -> PyResult<StepBatchResult> {
+        // Define the action selection strategy: always pick the best move (greedy).
+        let selector = |puttable_positions: &[Position],
+                        game_actions: &ndarray::ArrayView2<'_, f32>| {
+            // Find the position with the maximum probability among all legal moves.
+            // The `unwrap()` calls are safe because this closure is only called when `puttable_positions` is not empty.
+            *puttable_positions
+                .iter()
+                .max_by(|&a, &b| {
+                    let prob_a = game_actions[[a.row() as usize, a.column() as usize]];
+                    let prob_b = game_actions[[b.row() as usize, b.column() as usize]];
+                    prob_a.partial_cmp(&prob_b).unwrap()
+                })
+                .unwrap()
+        };
 
-                for pos in &puttable_positions {
-                    let r = pos.row() as usize;
-                    let c = pos.column() as usize;
-                    let prob = actions_array[[i, r, c]];
-                    if prob > max_prob {
-                        max_prob = prob;
-                        best_pos = *pos;
-                    }
-                }
-                Action::PutDisk(PutConfig::new(turn, best_pos))
-            };
-
-            match Controller::step(table, action) {
-                Ok(step_result) => {
-                    if step_result.judge_result.is_some() {
-                        self.dones[i] = true;
-                        current_dones[i] = true;
-                    }
-                }
-                Err(_) => {
-                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                        "Invalid action executed internally.",
-                    ));
-                }
-            }
-        }
-
-        let next_states = self.get_state(py)?;
-        let dones_array = Array::from_vec(current_dones).into_pyarray(py);
-
-        Ok((next_states, dones_array.into()))
+        // Delegate the core logic to the private batch processing function.
+        self._step_batch_core(py, actions, selector)
     }
 }
 

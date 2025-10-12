@@ -6,6 +6,7 @@ optimized for reinforcement learning with batch processing support.
 """
 
 import numpy as np
+
 from ._core import ReversiEnvironment as _ReversiEnvironment
 from .exceptions import InvalidMoveError, ReversiError
 from .types import BoardState, NDArray
@@ -56,24 +57,36 @@ class ReversiEnvironment:
 
     def step_batch(
         self,
-        actions: NDArray,  # Shape: (batch, 8, 8) or (8, 8) if batch_size=1
+        actions: NDArray,
+        deterministic: bool,
     ) -> tuple[BoardState, NDArray]:
-        """Apply actions to all games in the batch.
+        """
+        Apply actions to all games in the batch and advance them by one step.
 
         Args:
-            actions: Array of action probabilities with shape (batch, 8, 8).
-                     For batch_size=1, an (8, 8) array is also accepted.
-                     Only the relative probabilities of valid moves matter.
+            actions: An array of action probabilities.
+                     Shape should be (batch_size, 8, 8). For a batch_size of 1,
+                     an (8, 8) array is also accepted.
+            deterministic: If True, the action with the highest probability is
+                           always chosen (greedy policy, for evaluation/inference).
+                           If False, an action is sampled from the probability
+                           distribution (stochastic policy, for training/exploration).
 
         Returns:
-            Tuple of (next_states, dones):
-            - next_states: Array with shape (batch, 4, 8, 8)
-            - dones: Boolean array with shape (batch,)
+            A tuple of (next_states, dones):
+            - next_states: An array of shape (batch_size, 4, 8, 8) representing the
+                           new board states.
+            - dones: A boolean array of shape (batch_size,) indicating which games
+                     have finished.
 
         Raises:
-            ValueError: If actions have incorrect shape.
-            ReversiError: For other game-related errors.
+            ValueError: If the actions array has an incorrect shape.
+            ReversiError: For internal game logic errors.
         """
+        # Ensure actions are of the correct float32 dtype for the Rust extension.
+        if actions.dtype != np.float32:
+            actions = actions.astype(np.float32)
+
         # For batch_size=1, allow (8, 8) actions by adding a batch dimension.
         if self.batch_size == 1 and actions.shape == (8, 8):
             actions = np.expand_dims(actions, axis=0)
@@ -85,9 +98,14 @@ class ReversiEnvironment:
             )
 
         try:
-            return self._env.step_batch(actions)
+            # Choose the appropriate Rust method based on the deterministic flag.
+            if deterministic:
+                return self._env.step_batch_deterministic(actions)
+            else:
+                return self._env.step_batch_stochastic(actions)
         except Exception as e:
-            raise ReversiError(str(e)) from e
+            # Wrap Rust errors in a custom Python exception.
+            raise ReversiError(f"An error occurred in the Rust core: {e}") from e
 
     @property
     def batch_size(self) -> int:

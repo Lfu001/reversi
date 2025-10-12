@@ -14,6 +14,7 @@ class ReversiEnvironment:
     def step_batch(
         self,
         actions: NDArray,  # Shape: (batch, 8, 8)
+        deterministic: bool,
     ) -> tuple[BoardState, Dones]: ...
     @property
     def batch_size(self) -> int: ...
