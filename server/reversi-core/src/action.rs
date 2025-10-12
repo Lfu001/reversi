@@ -1,5 +1,5 @@
 use super::state::{BoardExt, DiskColorExt};
-use common::{position, Action, Board, DiskColor, Position, Table};
+use common::{Action, Board, DiskColor, Position, Table, position};
 use num_traits::FromPrimitive;
 
 /// A trait which provides an extension method for the [`Action`].
@@ -12,8 +12,8 @@ pub trait ActionExt {
     ///
     /// # Returns
     ///
-    /// `Ok(())` if the action is executed successfully, `Err(())` if the action is invalid.
-    fn execute(&self, table: &mut Table) -> Result<(), ()>;
+    /// `Ok(())` if the action is executed successfully, `Err(String)` if the action is invalid.
+    fn execute(&self, table: &mut Table) -> Result<(), String>;
     /// Checks if the action can be executed.
     ///
     /// # Arguments
@@ -27,9 +27,9 @@ pub trait ActionExt {
 }
 
 impl ActionExt for Action {
-    fn execute(&self, table: &mut Table) -> Result<(), ()> {
+    fn execute(&self, table: &mut Table) -> Result<(), String> {
         if !self.check_inputs(table) {
-            return Err(());
+            return Err("Invalid action".to_string());
         }
         // Update the board
         match self {
@@ -42,7 +42,7 @@ impl ActionExt for Action {
                     board.set_disk(position, config.color());
                 }
             }
-            Action::PassTurn(_) => (),
+            Action::PassTurn(_) => {}
         }
 
         // Update the history

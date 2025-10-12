@@ -1,4 +1,4 @@
-use super::routes::{health::health, new::create_new_table, step::step_table};
+use crate::routes::{health::health, new::create_new_table, step::step_table};
 use actix_web::web;
 
 /// Configure routes.

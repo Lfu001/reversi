@@ -1,0 +1,18 @@
+[package]
+name = "reversi-py"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+common = { workspace = true }
+ndarray = { workspace = true, features = ["rayon"] }
+num-traits = { workspace = true }
+numpy = { workspace = true }
+pyo3 = { workspace = true, features = ["extension-module", "abi3-py311"] }
+rand = { workspace = true }
+rayon = { workspace = true }
+reversi-core = { workspace = true }

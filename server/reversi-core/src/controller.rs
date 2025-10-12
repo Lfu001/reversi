@@ -1,4 +1,4 @@
-use super::action::{get_puttable_positions, ActionExt};
+use super::action::{ActionExt, get_puttable_positions};
 use common::{Action, DiskColor, JudgeResult, Position, Table, Winner};
 use std::cmp::Ordering;
 
@@ -22,12 +22,9 @@ impl Controller {
     /// # Returns
     ///
     /// The result of the action execution. If the game is over after the action, judge result is returned.
-    /// Otherwise, next puttable positions are returned. `Err(())` if the action is invalid.
-    pub fn step(table: &mut Table, action: Action) -> Result<StepResult, ()> {
-        let result = action.execute(table);
-        if result.is_err() {
-            return Err(());
-        }
+    /// Otherwise, next puttable positions are returned. `Err(String)` if the action is invalid.
+    pub fn step(table: &mut Table, action: Action) -> Result<StepResult, String> {
+        action.execute(table)?;
 
         if Controller::is_game_over(table) {
             Ok(StepResult {
@@ -100,8 +97,8 @@ impl Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game_logic::state::BoardExt;
-    use common::{position, Column, Row};
+    use crate::state::BoardExt;
+    use common::{Column, Row, position};
     use num_traits::FromPrimitive;
 
     #[test]

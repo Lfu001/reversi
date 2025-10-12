@@ -4,21 +4,19 @@
 FROM rust:1.89.0-trixie AS builder
 
 # Set the working directory
-WORKDIR /usr/src/reversi-gateway
+WORKDIR /usr/src/reversi/server
 
 # Install build dependencies
 RUN apt-get update && \
     apt-get install -y cmake pkg-config libclang-dev libssl-dev
 
-# Copy the dependency crate, manifest, lockfile, and source code
-COPY common/ ../common/
-COPY gateway/Cargo.toml gateway/Cargo.lock ./
-COPY gateway/src/ src/
+# Copy the workspace
+COPY . .
 
 # Build the application using mount cache
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/usr/src/reversi-gateway/target \
-    cargo install --path . --root /usr/local
+    --mount=type=cache,target=/usr/src/reversi/server/gateway/target \
+    cargo build --release -p gateway
 
 # Use a smaller image for the final container
 FROM debian:trixie-20250811-slim
@@ -29,7 +27,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy the binary from the builder stage
-COPY --from=builder /usr/local/bin/gateway /usr/local/bin/gateway
+COPY --from=builder /usr/src/reversi/server/target/release/gateway /usr/local/bin/gateway
 
 # Set environment variables with defaults
 ENV HOST=0.0.0.0
