@@ -1,4 +1,4 @@
-use common::{position, Board, DiskColor, Position};
+use common::{Board, DiskColor, Position, position};
 use num_traits::FromPrimitive;
 
 /// A trait which provides an extension method for the [`DiskColor`].

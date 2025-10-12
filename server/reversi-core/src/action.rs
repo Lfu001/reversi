@@ -1,5 +1,5 @@
 use super::state::{BoardExt, DiskColorExt};
-use common::{position, Action, Board, DiskColor, Position, Table};
+use common::{Action, Board, DiskColor, Position, Table, position};
 use num_traits::FromPrimitive;
 
 /// A trait which provides an extension method for the [`Action`].
