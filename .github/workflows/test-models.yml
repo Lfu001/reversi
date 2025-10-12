@@ -1,11 +1,12 @@
-name: test (ml)
-
 on:
   push:
     branches: [main]
   pull_request:
     paths:
-      - 'server/ml/**'
+      - 'server/ml/inference_kit/**'
+      - 'server/ml/models/**'
+
+name: test (models)
 
 jobs:
   test:
