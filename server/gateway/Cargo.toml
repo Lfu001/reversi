@@ -4,29 +4,27 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-actix-cors = "0.7.1"
-actix-web = "4.9.0"
-actix-ws = "0.3.0"
-async-trait = "0.1.85"
-base64 = "0.22.1"
-common = { version = "0.1.0", path = "../common" }
-env_logger = "0.11.6"
-fastrand = "2.3.0"
-futures-util = "0.3.31"
-jwt-simple = "0.12.10"
-log = "0.4.22"
-mockito = "1.6.1"
-redis = { version = "0.27.5", features = ["connection-manager", "json", "tokio-comp"] }
-redis-macros = "0.4.3"
-serde = { version = "1.0.215", features = ["derive"] }
-serde_json = "1.0.133"
-sha3 = "0.10.8"
-tokio = { version = "1.43.0", features = ["macros"] }
-tokio-macros = "2.5.0"
-ureq = { version = "2.10.1", features = ["json"] }
-url = "2.5.7"
-uuid = { version = "1.11.0", features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
+actix-cors = { workspace = true }
+actix-web = { workspace = true }
+actix-ws = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+common = { workspace = true }
+env_logger = { workspace = true }
+fastrand = { workspace = true }
+futures-util = { workspace = true }
+jwt-simple = { workspace = true }
+log = { workspace = true }
+redis = { workspace = true, features = ["connection-manager", "json", "tokio-comp"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha3 = { workspace = true }
+tokio = { workspace = true, features = ["macros"] }
+tokio-macros = { workspace = true }
+ureq = { workspace = true, features = ["json"] }
+url = { workspace = true }
+uuid = { workspace = true, features = ["v4", "fast-rng", "macro-diagnostics", "serde"] }
 
 [dev-dependencies]
-redis-test = { version = "0.6.0", features = ["aio"] }
-serial_test = "3.2.0"
+redis-test = { workspace = true, features = ["aio"] }
+serial_test = { workspace = true }
