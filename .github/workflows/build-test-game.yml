@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "server/common/**"
+      - "server/reversi-core/**"
       - "server/game/**"
 
 name: build and test (game)
