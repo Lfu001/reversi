@@ -22,12 +22,9 @@ impl Controller {
     /// # Returns
     ///
     /// The result of the action execution. If the game is over after the action, judge result is returned.
-    /// Otherwise, next puttable positions are returned. `Err(())` if the action is invalid.
-    pub fn step(table: &mut Table, action: Action) -> Result<StepResult, ()> {
-        let result = action.execute(table);
-        if result.is_err() {
-            return Err(());
-        }
+    /// Otherwise, next puttable positions are returned. `Err(String)` if the action is invalid.
+    pub fn step(table: &mut Table, action: Action) -> Result<StepResult, String> {
+        action.execute(table)?;
 
         if Controller::is_game_over(table) {
             Ok(StepResult {

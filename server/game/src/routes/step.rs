@@ -23,7 +23,7 @@ pub async fn step_table(req: web::Json<StepRequestMessage>) -> Result<impl Respo
             step_result.puttable_positions,
             step_result.judge_result,
         )),
-        Err(()) => Err(error::ErrorBadRequest("Invalid action.")),
+        Err(err) => Err(error::ErrorBadRequest(err)),
     }
 }
 

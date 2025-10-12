@@ -87,9 +87,7 @@ impl ReversiEnvironment {
                         }
                         Ok(*done)
                     }
-                    Err(_) => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                        "Invalid action executed internally.",
-                    )),
+                    Err(err) => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(err)),
                 }
             })
             .collect();
