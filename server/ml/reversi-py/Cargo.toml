@@ -4,9 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "reversi_rs"
+name = "_core"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.22.4", features = ["extension-module", "abi3-py311"] }
+common = { version = "0.1.0", path = "../../common" }
+ndarray = "0.16.1"
+num-traits = "0.2.19"
+numpy = "0.26.0"
+pyo3 = { version = "0.26.0", features = ["extension-module", "abi3-py311"] }
 reversi-core = { version = "0.1.0", path = "../../reversi-core" }
