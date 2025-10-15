@@ -1,5 +1,6 @@
 import { DiskColor } from '~/types/DiskColor'
 import { Position } from '~/types/Position'
+import type { Turn } from '~/types/Turn'
 
 type Board = Array<DiskColor | null>
 
@@ -95,6 +96,11 @@ export const useBoardStore = defineStore('board', () => {
    */
   const players = ref<Player[]>([])
   /**
+   * The history of the game.
+   * It is an array of objects, each representing an action with a `position` property or "Pass".
+   */
+  const history = ref<Turn[]>([])
+  /**
    * Whether the game has started.
    */
   const hasGameStarted = ref(false)
@@ -147,6 +153,27 @@ export const useBoardStore = defineStore('board', () => {
     else {
       winner.value = null
     }
+    history.value = serverState.table.history.map((value, index) => {
+      const player = index % 2 === 0 ? players.value[0].name : players.value[1].name
+      if (value === 'Pass') {
+        return { player, position: null }
+      }
+      // value.position は string 型なので Position に変換
+      // 例: "A1" → Position.fromString('A', 'One') のような変換が必要
+      // ここでは value.position を "A1" 形式と仮定
+      const match = /^([A-H])([1-8])$/.exec(value.position)
+      let pos: Position | null = null
+      if (match) {
+        const col = match[1]
+        const rowNum = match[2]
+        // Row: One=0, ... Eight=7 → 'One'~'Eight' へ
+        const rowMap = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight']
+        const row = rowMap[parseInt(rowNum, 10) - 1]
+        // Position.fromString(row, col) を使う
+        pos = Position.fromString(row, col)
+      }
+      return { player, position: pos }
+    })
   }
 
   /**
@@ -201,6 +228,7 @@ export const useBoardStore = defineStore('board', () => {
     winner,
     players,
     scores,
+    history,
     hasGameStarted,
     reset,
     setStateFromServer,

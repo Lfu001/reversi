@@ -43,7 +43,13 @@
       <!-- Right side - Sidebar placeholder -->
       <div class="w-full rounded-lg bg-white/50 p-4 shadow-lg backdrop-blur-sm lg:w-80">
         <div class="flex h-full items-center justify-center text-gray-600">
-          <p>Sidebar content will go here</p>
+          <RightSideBar
+            :dark-score="boardStore.scores.Dark"
+            :light-score="boardStore.scores.Light"
+            :dark-name="boardStore.players[0].name"
+            :light-name="boardStore.players[1].name"
+            :turns="boardStore.history"
+          />
         </div>
       </div>
     </div>
