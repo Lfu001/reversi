@@ -92,44 +92,42 @@ mod tests {
     }
 
     #[test]
-    fn test_board_indexing() {
-        // Index<Position>
-        {
-            let board = Board::default();
+    fn test_board_position_indexing() {
+        let board = Board::default();
 
-            assert_eq!(board[position!(Row::One, Column::A)], None);
-            assert_eq!(board[position!(Row::Eight, Column::H)], None);
-            assert_eq!(board[position!(Row::Three, Column::E)], None);
+        assert_eq!(board[position!(Row::One, Column::A)], None);
+        assert_eq!(board[position!(Row::Eight, Column::H)], None);
+        assert_eq!(board[position!(Row::Three, Column::E)], None);
 
-            assert_eq!(
-                board[position!(Row::Four, Column::D)],
-                Some(DiskColor::Light)
-            );
-            assert_eq!(
-                board[position!(Row::Four, Column::E)],
-                Some(DiskColor::Dark)
-            );
-            assert_eq!(
-                board[position!(Row::Five, Column::D)],
-                Some(DiskColor::Dark)
-            );
-            assert_eq!(
-                board[position!(Row::Five, Column::E)],
-                Some(DiskColor::Light)
-            );
-        }
+        assert_eq!(
+            board[position!(Row::Four, Column::D)],
+            Some(DiskColor::Light)
+        );
+        assert_eq!(
+            board[position!(Row::Four, Column::E)],
+            Some(DiskColor::Dark)
+        );
+        assert_eq!(
+            board[position!(Row::Five, Column::D)],
+            Some(DiskColor::Dark)
+        );
+        assert_eq!(
+            board[position!(Row::Five, Column::E)],
+            Some(DiskColor::Light)
+        );
+    }
 
-        // Index<usize>, IndexMut<usize>
-        {
-            let mut board = Board::default();
-            board[0] = Some(DiskColor::Light);
-            board[63] = Some(DiskColor::Dark);
+    #[test]
+    fn test_board_usize_indexing() {
+        let mut board = Board::default();
+        board[0] = Some(DiskColor::Light);
+        board[63] = Some(DiskColor::Dark);
 
-            assert_eq!(board[0], Some(DiskColor::Light));
-            assert_eq!(board[63], Some(DiskColor::Dark));
+        assert_eq!(board[0], Some(DiskColor::Light));
+        assert_eq!(board[63], Some(DiskColor::Dark));
 
-            assert_eq!(board[3], None);
-            assert_eq!(board[27], Some(DiskColor::Light));
-        }
+        assert_eq!(board[3], None);
+        assert_eq!(board[27], Some(DiskColor::Light));
+    }
     }
 }
