@@ -61,6 +61,23 @@ impl IndexMut<usize> for Board {
     }
 }
 
+impl From<BitBoard> for Board {
+    fn from(value: BitBoard) -> Self {
+        let dark_plane = value.dark_plane();
+        let light_plane = value.light_plane();
+        let mut board = [None; 64];
+        for idx in 0..64 {
+            let bit_mask = 1 << idx;
+            if (dark_plane & bit_mask) != 0 {
+                board[idx] = Some(DiskColor::Dark);
+            } else if (light_plane & bit_mask) != 0 {
+                board[idx] = Some(DiskColor::Light);
+            }
+        }
+        Self { board }
+    }
+}
+
 /// A compact representation of a Reversi board.
 ///
 /// This is a more efficient form of a board for operations that do not require
@@ -111,6 +128,24 @@ impl Default for BitBoard {
         let idx_5e: usize = position!(Row::Five, Column::E).into();
         let dark_plane = (1u64 << idx_4e) | (1u64 << idx_5d);
         let light_plane = (1u64 << idx_4d) | (1u64 << idx_5e);
+        Self {
+            dark_plane,
+            light_plane,
+        }
+    }
+}
+
+impl From<Board> for BitBoard {
+    fn from(value: Board) -> Self {
+        let mut dark_plane = 0u64;
+        let mut light_plane = 0u64;
+        for idx in 0..64 {
+            if value.board[idx] == Some(DiskColor::Dark) {
+                dark_plane |= 1u64 << idx;
+            } else if value.board[idx] == Some(DiskColor::Light) {
+                light_plane |= 1u64 << idx;
+            }
+        }
         Self {
             dark_plane,
             light_plane,
@@ -188,6 +223,27 @@ mod tests {
     }
 
     #[test]
+    fn test_board_from_bitboard() {
+        let bit_board = BitBoard::default();
+
+        let board = Board::from(bit_board);
+
+        for idx in 0..64 {
+            if idx == position!(Row::Four, Column::D).into() {
+                assert_eq!(board[idx], Some(DiskColor::Light));
+            } else if idx == position!(Row::Four, Column::E).into() {
+                assert_eq!(board[idx], Some(DiskColor::Dark));
+            } else if idx == position!(Row::Five, Column::D).into() {
+                assert_eq!(board[idx], Some(DiskColor::Dark));
+            } else if idx == position!(Row::Five, Column::E).into() {
+                assert_eq!(board[idx], Some(DiskColor::Light));
+            } else {
+                assert_eq!(board[idx], None);
+            }
+        }
+    }
+
+    #[test]
     fn test_bitboard_default() {
         let bit_board = BitBoard::default();
         assert_eq!(
@@ -198,5 +254,32 @@ mod tests {
             bit_board.light_plane(),
             0b00000000_00000000_00000000_00010000_00001000_00000000_00000000_00000000
         );
+    }
+
+    #[test]
+    fn test_bitboard_from_board() {
+        let board = Board::default();
+
+        let bit_board = BitBoard::from(board);
+
+        for idx in 0..64usize {
+            let bit_mask = 1 << idx;
+            if idx == position!(Row::Four, Column::D).into() {
+                assert_eq!(bit_board.dark_plane() & bit_mask, 0);
+                assert_eq!(bit_board.light_plane() & bit_mask, bit_mask);
+            } else if idx == position!(Row::Four, Column::E).into() {
+                assert_eq!(bit_board.dark_plane() & bit_mask, bit_mask);
+                assert_eq!(bit_board.light_plane() & bit_mask, 0);
+            } else if idx == position!(Row::Five, Column::D).into() {
+                assert_eq!(bit_board.dark_plane() & bit_mask, bit_mask);
+                assert_eq!(bit_board.light_plane() & bit_mask, 0);
+            } else if idx == position!(Row::Five, Column::E).into() {
+                assert_eq!(bit_board.dark_plane() & bit_mask, 0);
+                assert_eq!(bit_board.light_plane() & bit_mask, bit_mask);
+            } else {
+                assert_eq!(bit_board.dark_plane() & bit_mask, 0);
+                assert_eq!(bit_board.light_plane() & bit_mask, 0);
+            }
+        }
     }
 }
