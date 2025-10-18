@@ -60,7 +60,7 @@ impl Default for Table {
 mod tests {
     use super::*;
     use crate::action::PutConfig;
-    use crate::position::{Column, Row};
+    use crate::position::{Column, Position, Row};
 
     #[test]
     fn test_push_history() {
