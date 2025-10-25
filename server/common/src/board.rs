@@ -109,6 +109,14 @@ pub struct BitBoard {
 }
 
 impl BitBoard {
+    /// Creates a new [`BitBoard`].
+    pub fn new(dark_plane: u64, light_plane: u64) -> Self {
+        Self {
+            dark_plane,
+            light_plane,
+        }
+    }
+
     /// Returns the dark plane of this [`BitBoard`].
     pub fn dark_plane(&self) -> u64 {
         self.dark_plane
@@ -128,10 +136,7 @@ impl Default for BitBoard {
         let idx_5e: usize = position!(Row::Five, Column::E).into();
         let dark_plane = (1u64 << idx_4e) | (1u64 << idx_5d);
         let light_plane = (1u64 << idx_4d) | (1u64 << idx_5e);
-        Self {
-            dark_plane,
-            light_plane,
-        }
+        Self::new(dark_plane, light_plane)
     }
 }
 
@@ -146,10 +151,7 @@ impl From<Board> for BitBoard {
                 light_plane |= 1u64 << idx;
             }
         }
-        Self {
-            dark_plane,
-            light_plane,
-        }
+        Self::new(dark_plane, light_plane)
     }
 }
 
