@@ -92,7 +92,7 @@ impl Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::{BitBoard, BitPosition, Column, Position, Row};
+    use common::{BitPosition, Bitboard, Column, Position, Row};
 
     fn xy_to_bit(row: Row, column: Column) -> u64 {
         let position = Position::new(row, column);
@@ -112,7 +112,7 @@ mod tests {
             let mut table = Table::default();
             let board = table.board();
             let mask = xy_to_bit(Row::Four, Column::C) | xy_to_bit(Row::Four, Column::D);
-            let new_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
+            let new_board = Bitboard::new(board.dark_plane() | mask, board.light_plane() & !mask);
             table.set_board(new_board);
             table.set_turn(DiskColor::Light);
             assert!(!Controller::is_game_over(&table));
@@ -122,7 +122,7 @@ mod tests {
         {
             let mut table = Table::default();
             let fill = !0u64;
-            let new_board = BitBoard::new(fill, 0);
+            let new_board = Bitboard::new(fill, 0);
             table.set_board(new_board);
             table.set_turn(DiskColor::Light);
             assert!(Controller::is_game_over(&table));
@@ -145,7 +145,7 @@ mod tests {
                 | xy_to_bit(Row::Five, Column::D)
                 | xy_to_bit(Row::Five, Column::E)
                 | xy_to_bit(Row::Six, Column::D);
-            let new_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
+            let new_board = Bitboard::new(board.dark_plane() | mask, board.light_plane() & !mask);
             table.set_board(new_board);
             table.set_turn(DiskColor::Light);
             assert!(Controller::is_game_over(&table));
@@ -173,7 +173,7 @@ mod tests {
                 | xy_to_bit(Row::Seven, Column::F)
                 | xy_to_bit(Row::Eight, Column::E)
                 | xy_to_bit(Row::Eight, Column::G);
-            let new_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
+            let new_board = Bitboard::new(board.dark_plane() | mask, board.light_plane() & !mask);
             table.set_board(new_board);
             table.set_turn(DiskColor::Light);
 
@@ -187,7 +187,7 @@ mod tests {
         {
             let mut table = Table::default();
             let fill = !0u64;
-            let new_board = BitBoard::new(0, fill);
+            let new_board = Bitboard::new(0, fill);
             table.set_board(new_board);
             table.set_turn(DiskColor::Dark);
 
@@ -225,7 +225,7 @@ mod tests {
                 | xy_to_bit(Row::Five, Column::D)
                 | xy_to_bit(Row::Five, Column::E)
                 | xy_to_bit(Row::Five, Column::F);
-            let new_board = BitBoard::new(
+            let new_board = Bitboard::new(
                 (board.dark_plane() | dark_mask) & !light_mask,
                 (board.light_plane() | light_mask) & !dark_mask,
             );

@@ -32,7 +32,7 @@ mod tests {
     use super::*;
     use actix_web::{http::StatusCode, test, App};
     use common::{
-        position, Action, BitBoard, BitPosition, Column, DiskColor, Position, PutConfig, Row, Table,
+        position, Action, Bitboard, BitPosition, Column, DiskColor, Position, PutConfig, Row, Table,
     };
 
     /// Test for step table by valid action "PutDisk"
@@ -95,7 +95,7 @@ mod tests {
             | xy_to_bit(Row::Six, Column::H)
             | xy_to_bit(Row::Seven, Column::H)
             | xy_to_bit(Row::Eight, Column::H);
-        let new_board = BitBoard::new(
+        let new_board = Bitboard::new(
             (board.dark_plane() | dark_mask) & !light_mask,
             (board.light_plane() | light_mask) & !dark_mask,
         );

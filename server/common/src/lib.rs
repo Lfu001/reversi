@@ -9,7 +9,7 @@ mod table;
 
 pub use {
     crate::action::{Action, PutConfig},
-    crate::board::{BitBoard, Board},
+    crate::board::{Bitboard, Board},
     crate::disk::DiskColor,
     crate::judge::{JudgeResult, Winner},
     crate::message::{StateResponseMessage, StepRequestMessage},
