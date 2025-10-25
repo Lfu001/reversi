@@ -71,18 +71,8 @@ impl Controller {
     fn judge(table: &Table) -> JudgeResult {
         debug_assert!(Controller::is_game_over(table));
 
-        let (dark_count, light_count) =
-            table
-                .board()
-                .board()
-                .iter()
-                .fold((0, 0), |(acc_dark, acc_light), disk| match disk {
-                    Some(color) => match color {
-                        DiskColor::Dark => (acc_dark + 1, acc_light),
-                        DiskColor::Light => (acc_dark, acc_light + 1),
-                    },
-                    None => (acc_dark, acc_light),
-                });
+        let dark_count = table.board().dark_plane().count_ones();
+        let light_count = table.board().light_plane().count_ones();
 
         let winner = match dark_count.cmp(&light_count) {
             Ordering::Less => Winner::Win(DiskColor::Light),
@@ -90,7 +80,11 @@ impl Controller {
             Ordering::Greater => Winner::Win(DiskColor::Dark),
         };
 
-        JudgeResult::new(dark_count, light_count, winner)
+        JudgeResult::new(
+            dark_count.try_into().unwrap(),
+            light_count.try_into().unwrap(),
+            winner,
+        )
     }
 }
 
