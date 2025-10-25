@@ -27,15 +27,14 @@ pub trait ActionExt {
     ///
     /// # Returns
     ///
-    /// `true` if the action can be executed, otherwise `false`.
-    fn check_inputs(&self, table: &Table) -> bool;
+    /// `Ok(())` if the action can be executed, `Err(String)` if the action is invalid.
+    fn check_inputs(&self, table: &Table) -> Result<(), String>;
 }
 
 impl ActionExt for Action {
     fn execute(&self, table: &mut Table) -> Result<(), String> {
-        if !self.check_inputs(table) {
-            return Err("Invalid action".to_string());
-        }
+        self.check_inputs(table)?;
+
         // Update the board
         match self {
             Action::PutDisk(config) => {
@@ -67,36 +66,55 @@ impl ActionExt for Action {
     ///
     /// # Returns
     ///
-    /// `true` if the action can be executed, otherwise `false`.
-    fn check_inputs(&self, table: &Table) -> bool {
+    /// `Ok(())` if the action can be executed, `Err(String)` if the action is invalid.
+    fn check_inputs(&self, table: &Table) -> Result<(), String> {
         match self {
             Action::PutDisk(config) => {
                 // Check whether the turn is correct.
                 if config.color() != table.turn() {
-                    return false;
+                    return Err(format!(
+                        "Current turn is {:?}, but tried to put a disk with the wrong turn: {:?}",
+                        table.turn(),
+                        config.color()
+                    ));
                 }
                 // Check whether the square is empty.
-                if table.board().get_disk(config.position()).is_some() {
-                    return false;
+                let bit_position = BitPosition::from(*config.position());
+                let dark_plane = table.board().dark_plane();
+                let light_plane = table.board().light_plane();
+                if (dark_plane & bit_position.0 != 0) || (light_plane & bit_position.0 != 0) {
+                    return Err(format!(
+                        "Tried to put a disk on a non-empty square: {:?}",
+                        config.position()
+                    ));
                 }
                 // Check whether the disk can be put.
-                if get_flip_positions(table.board(), table.turn(), config.position()).is_empty() {
-                    return false;
+                if get_flip_positions(table.board(), table.turn(), bit_position).is_empty() {
+                    return Err(format!(
+                        "Tried to put a disk on a square that cannot be put: {:?}",
+                        config.position()
+                    ));
                 }
 
-                true
+                Ok(())
             }
             Action::PassTurn(color) => {
                 // Check the turn is correct.
                 if *color != table.turn() {
-                    return false;
+                    return Err(format!(
+                        "Current turn is {:?}, but tried to pass turn with the wrong turn: {:?}",
+                        table.turn(),
+                        color
+                    ));
                 }
                 // Check whether the disk cannot be put.
                 if !get_puttable_positions(table.board(), table.turn()).is_empty() {
-                    return false;
+                    return Err(String::from(
+                        "Tried to pass turn but there are puttable positions",
+                    ));
                 }
 
-                true
+                Ok(())
             }
         }
     }
@@ -427,14 +445,14 @@ mod tests {
                 DiskColor::Dark,
                 position!(Row::One, Column::A),
             ));
-            assert!(!action.check_inputs(&table));
+            assert!(action.check_inputs(&table).is_err());
 
             // The square is not empty
             let action = Action::PutDisk(PutConfig::new(
                 DiskColor::Dark,
                 position!(Row::Four, Column::E),
             ));
-            assert!(!action.check_inputs(&table));
+            assert!(action.check_inputs(&table).is_err());
         }
         // Invalid turn
         {
@@ -444,7 +462,7 @@ mod tests {
                 DiskColor::Light,
                 position!(Row::Four, Column::F),
             ));
-            assert!(!action.check_inputs(&table));
+            assert!(action.check_inputs(&table).is_err());
 
             // Light's turn but dark try to put
             let board = table.board();
@@ -457,7 +475,7 @@ mod tests {
                 DiskColor::Dark,
                 position!(Row::Four, Column::C),
             ));
-            assert!(!action.check_inputs(&table));
+            assert!(action.check_inputs(&table).is_err());
         }
 
         // Pass turn
@@ -475,7 +493,7 @@ mod tests {
             let new_board = BitBoard::new(board.dark_plane() & !mask, board.light_plane() | mask);
             table.set_board(new_board);
             let action = Action::PassTurn(DiskColor::Light);
-            assert!(!action.check_inputs(&table));
+            assert!(action.check_inputs(&table).is_err());
 
             // Light's turn but dark try to pass
             let mut table = Table::default();
@@ -490,14 +508,14 @@ mod tests {
             let new_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
             table.set_board(new_board);
             let action = Action::PassTurn(DiskColor::Dark);
-            assert!(!action.check_inputs(&table));
+            assert!(action.check_inputs(&table).is_err());
         }
         // Invalid pass
         {
             // Dark can put but try to pass
             let table = Table::default();
             let action = Action::PassTurn(DiskColor::Dark);
-            assert!(!action.check_inputs(&table));
+            assert!(action.check_inputs(&table).is_err());
 
             // Light can put but try to pass
             let mut table = Table::default();
@@ -508,7 +526,7 @@ mod tests {
             let new_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
             table.set_board(new_board);
             let action = Action::PassTurn(DiskColor::Light);
-            assert!(!action.check_inputs(&table));
+            assert!(action.check_inputs(&table).is_err());
         }
 
         // Valid put
@@ -518,7 +536,7 @@ mod tests {
                 DiskColor::Dark,
                 position!(Row::Four, Column::C),
             ));
-            assert!(action.check_inputs(&table));
+            assert!(action.check_inputs(&table).is_ok());
         }
         // Valid pass
         {
@@ -534,7 +552,7 @@ mod tests {
             let new_board = BitBoard::new(board.dark_plane() & !mask, board.light_plane() | mask);
             table.set_board(new_board);
             let action = Action::PassTurn(DiskColor::Light);
-            assert!(action.check_inputs(&table));
+            assert!(action.check_inputs(&table).is_ok());
         }
     }
 
