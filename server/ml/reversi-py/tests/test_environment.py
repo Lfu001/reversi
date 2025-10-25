@@ -98,9 +98,8 @@ def test_step_deterministic_board_mutation(single_env: ReversiEnvironment):
     next_state, done = single_env.step_batch(action, deterministic=True)
 
     # Assert
-    # It's now Light's turn. The state is from Light's perspective.
-    light_pieces = next_state[0, 0]
-    dark_pieces = next_state[0, 1]
+    dark_pieces = next_state[0, 0]
+    light_pieces = next_state[0, 1]
     turn_plane = next_state[0, 2]
 
     # Assert turn changed to Light (plane of 0s)
@@ -135,8 +134,7 @@ def test_step_stochastic_selects_legal_move(single_env: ReversiEnvironment):
 
     # Assert
     # The new piece must be at one of the two locations we gave probability to.
-    # The state is from Light's perspective, so we check the opponent (Dark) plane.
-    dark_pieces = next_state[0, 1]
+    dark_pieces = next_state[0, 0]
 
     # Check if a piece was placed at D3 (resulting board)
     board_if_d3 = np.zeros((8, 8), dtype=np.float32)
@@ -178,7 +176,7 @@ def test_batch_step_independent(batch_env: ReversiEnvironment):
     next_states, _ = batch_env.step_batch(actions, deterministic=True)
 
     # Assert state of the first game (played at D3)
-    dark_pieces_game1 = next_states[0, 1]
+    dark_pieces_game1 = next_states[0, 0]
     expected_dark_game1 = np.zeros((8, 8), dtype=np.float32)
     expected_dark_game1[2, 3] = 1
     expected_dark_game1[3, 3] = 1
@@ -187,7 +185,7 @@ def test_batch_step_independent(batch_env: ReversiEnvironment):
     np.testing.assert_array_equal(dark_pieces_game1, expected_dark_game1)
 
     # Assert state of the second game (played at C4)
-    dark_pieces_game2 = next_states[1, 1]
+    dark_pieces_game2 = next_states[1, 0]
     expected_dark_game2 = np.zeros((8, 8), dtype=np.float32)
     expected_dark_game2[3, 2] = 1
     expected_dark_game2[4, 3] = 1
