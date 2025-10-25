@@ -66,12 +66,12 @@ impl From<BitBoard> for Board {
         let dark_plane = value.dark_plane();
         let light_plane = value.light_plane();
         let mut board = [None; 64];
-        for idx in 0..64 {
+        for (idx, disk_color) in board.iter_mut().enumerate() {
             let bit_mask = 1 << idx;
             if (dark_plane & bit_mask) != 0 {
-                board[idx] = Some(DiskColor::Dark);
+                *disk_color = Some(DiskColor::Dark);
             } else if (light_plane & bit_mask) != 0 {
-                board[idx] = Some(DiskColor::Light);
+                *disk_color = Some(DiskColor::Light);
             }
         }
         Self { board }
