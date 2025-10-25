@@ -236,14 +236,14 @@ mod tests {
         let board = Board::from(bitboard);
 
         for idx in 0..64 {
-            if idx == position!(Row::Four, Column::D).into() {
+            if idx == position!(Row::Four, Column::D).into()
+                || idx == position!(Row::Five, Column::E).into()
+            {
                 assert_eq!(board[idx], Some(DiskColor::Light));
-            } else if idx == position!(Row::Four, Column::E).into() {
+            } else if idx == position!(Row::Four, Column::E).into()
+                || idx == position!(Row::Five, Column::D).into()
+            {
                 assert_eq!(board[idx], Some(DiskColor::Dark));
-            } else if idx == position!(Row::Five, Column::D).into() {
-                assert_eq!(board[idx], Some(DiskColor::Dark));
-            } else if idx == position!(Row::Five, Column::E).into() {
-                assert_eq!(board[idx], Some(DiskColor::Light));
             } else {
                 assert_eq!(board[idx], None);
             }
@@ -271,18 +271,16 @@ mod tests {
 
         for idx in 0..64usize {
             let bit_mask = 1 << idx;
-            if idx == position!(Row::Four, Column::D).into() {
+            if idx == position!(Row::Four, Column::D).into()
+                || idx == position!(Row::Five, Column::E).into()
+            {
                 assert_eq!(bitboard.dark_plane() & bit_mask, 0);
                 assert_eq!(bitboard.light_plane() & bit_mask, bit_mask);
-            } else if idx == position!(Row::Four, Column::E).into() {
+            } else if idx == position!(Row::Four, Column::E).into()
+                || idx == position!(Row::Five, Column::D).into()
+            {
                 assert_eq!(bitboard.dark_plane() & bit_mask, bit_mask);
                 assert_eq!(bitboard.light_plane() & bit_mask, 0);
-            } else if idx == position!(Row::Five, Column::D).into() {
-                assert_eq!(bitboard.dark_plane() & bit_mask, bit_mask);
-                assert_eq!(bitboard.light_plane() & bit_mask, 0);
-            } else if idx == position!(Row::Five, Column::E).into() {
-                assert_eq!(bitboard.dark_plane() & bit_mask, 0);
-                assert_eq!(bitboard.light_plane() & bit_mask, bit_mask);
             } else {
                 assert_eq!(bitboard.dark_plane() & bit_mask, 0);
                 assert_eq!(bitboard.light_plane() & bit_mask, 0);
