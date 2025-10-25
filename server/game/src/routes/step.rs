@@ -32,7 +32,7 @@ mod tests {
     use super::*;
     use actix_web::{http::StatusCode, test, App};
     use common::{
-        position, Action, Bitboard, BitPosition, Column, DiskColor, Position, PutConfig, Row, Table,
+        position, Action, BitPosition, Bitboard, Column, DiskColor, Position, PutConfig, Row, Table,
     };
 
     /// Test for step table by valid action "PutDisk"
