@@ -224,6 +224,16 @@ pub fn get_puttable_positions(board: &BitBoard, turn: DiskColor) -> PuttablePosi
     PuttablePositions(legal_moves & empty_board)
 }
 
+/// A bit board that represents positions on the board that can be flipped.
+struct FlipPositions(pub u64);
+
+impl FlipPositions {
+    /// Checks if there are no positions that can be flipped.
+    pub fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
+}
+
 /// Returns a list of positions that can be flipped.
 ///
 /// # Arguments
@@ -235,30 +245,85 @@ pub fn get_puttable_positions(board: &BitBoard, turn: DiskColor) -> PuttablePosi
 /// # Returns
 ///
 /// A list of positions that can be flipped.
-fn get_flip_positions(board: &Board, turn: DiskColor, position: &Position) -> Vec<Position> {
-    if board.get_disk(position).is_some() {
-        return vec![];
+fn get_flip_positions(board: &BitBoard, turn: DiskColor, position: BitPosition) -> FlipPositions {
+    let (player_board, opponent_board) = match turn {
+        DiskColor::Dark => (board.dark_plane(), board.light_plane()),
+        DiskColor::Light => (board.light_plane(), board.dark_plane()),
+    };
+    let mut flipped_positions = FlipPositions(0u64);
+
+    /// A direction and a mask for that direction.
+    struct Direction {
+        /// A shift value for a direction. Positive values mean left shift and negative values mean right shift.
+        shift: i8,
+        /// A bit mask to prevent wrapping around the board.
+        mask: u64,
     }
 
-    let mut positions = vec![];
-    let rays = board.get_rays(position);
-    for ray in rays {
-        let mut local_positions = vec![];
-        for (square, pos) in ray {
-            match square {
-                Some(color) => {
-                    if color == turn {
-                        positions.append(&mut local_positions);
-                        break;
-                    }
-                    local_positions.push(pos);
-                }
-                None => break,
-            };
+    const ALL_BITS: u64 = 0xffffffffffffffff;
+    const DIRECTIONS: [Direction; 8] = [
+        Direction {
+            shift: -1,
+            mask: NOT_A_COLUMN,
+        }, // Right
+        Direction {
+            shift: 1,
+            mask: NOT_H_COLUMN,
+        }, // Left
+        Direction {
+            shift: -8,
+            mask: ALL_BITS,
+        }, // Down
+        Direction {
+            shift: 8,
+            mask: ALL_BITS,
+        }, // Up
+        Direction {
+            shift: -9,
+            mask: NOT_A_COLUMN,
+        }, // Right down
+        Direction {
+            shift: -7,
+            mask: NOT_H_COLUMN,
+        }, // Left down
+        Direction {
+            shift: 7,
+            mask: NOT_A_COLUMN,
+        }, // Right up
+        Direction {
+            shift: 9,
+            mask: NOT_H_COLUMN,
+        }, // Left up
+    ];
+
+    for direction in DIRECTIONS {
+        let mut line = 0u64;
+        let mut scanner = position.0;
+
+        loop {
+            if direction.shift > 0 {
+                scanner <<= direction.shift as u32;
+            } else {
+                scanner >>= -direction.shift as u32;
+            }
+            // Remove bits that wrapped around
+            scanner &= direction.mask;
+
+            if scanner == 0 || (scanner & opponent_board) == 0 {
+                // If the line ends or there are no opponent disks
+                break;
+            }
+
+            line |= scanner;
+        }
+
+        if line != 0 && (scanner & player_board) != 0 {
+            // If there are continuous opponent disks and the line ends with player's disk
+            flipped_positions.0 |= line;
         }
     }
 
-    positions
+    flipped_positions
 }
 
 #[cfg(test)]
