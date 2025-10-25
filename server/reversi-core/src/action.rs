@@ -38,13 +38,14 @@ impl ActionExt for Action {
         // Update the board
         match self {
             Action::PutDisk(config) => {
+                let bit_position = BitPosition::from(*config.position());
                 let flip_positions =
-                    get_flip_positions(table.board(), table.turn(), config.position());
-                let board = table.board_mut();
-                board.set_disk(*config.position(), config.color());
-                for position in flip_positions {
-                    board.set_disk(position, config.color());
-                }
+                    get_flip_positions(table.board(), table.turn(), bit_position.clone());
+
+                let mut new_board = place_disk(table.board(), bit_position, config.color());
+                new_board = flip_disks(&new_board, flip_positions, config.color());
+
+                table.set_board(new_board);
             }
             Action::PassTurn(_) => {}
         }
@@ -342,6 +343,44 @@ fn get_flip_positions(board: &BitBoard, turn: DiskColor, position: BitPosition) 
     }
 
     flipped_positions
+}
+
+/// Flips all opponent's disks between the newly placed disk and existing disks of the same color.
+///
+/// Takes the current `board` state and flips all disks at `flip_positions` to match the `player_color`.
+/// The `flip_positions` should contain only the positions of the opponent's disks that are between
+/// the newly placed player's disk and an existing player's disk. Returns a new [`BitBoard`] with
+/// the captured disks flipped to the player's color.
+fn flip_disks(
+    board: &BitBoard,
+    flip_positions: FlipPositions,
+    player_color: DiskColor,
+) -> BitBoard {
+    match player_color {
+        DiskColor::Dark => BitBoard::new(
+            // Add flipped positions to dark plane
+            board.dark_plane() | flip_positions.0,
+            // Remove flipped positions from light plane
+            board.light_plane() ^ flip_positions.0,
+        ),
+        DiskColor::Light => BitBoard::new(
+            // Remove flipped positions from dark plane
+            board.dark_plane() ^ flip_positions.0,
+            // Add flipped positions to light plane
+            board.light_plane() | flip_positions.0,
+        ),
+    }
+}
+
+/// Places a new disk of the specified color on the board at the given position.
+///
+/// Returns a new [`BitBoard`] with the disk of `color` placed at `position`. The position
+/// must be empty, and the function does not perform any validation.
+fn place_disk(board: &BitBoard, position: BitPosition, color: DiskColor) -> BitBoard {
+    match color {
+        DiskColor::Dark => BitBoard::new(board.dark_plane() | position.0, board.light_plane()),
+        DiskColor::Light => BitBoard::new(board.dark_plane(), board.light_plane() | position.0),
+    }
 }
 
 #[cfg(test)]
