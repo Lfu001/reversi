@@ -395,82 +395,408 @@ mod tests {
     }
 
     #[test]
-    fn test_get_puttable_positions() {
-        // Check 1
-        let mut table = Table::default();
-        // Dark turn
-        let puttable = get_puttable_positions(table.board(), table.turn());
-        assert_eq!(
-            puttable,
-            vec![
-                position!(Row::Three, Column::D),
-                position!(Row::Four, Column::C),
-                position!(Row::Five, Column::F),
-                position!(Row::Six, Column::E),
-            ]
+    fn test_bit_puttable_position_to_vec() {
+        let puttable_positions = PuttablePositions(
+            0b00000000_00000001_00000000_00000000_10000000_00000000_00000000_00000000,
         );
-
-        // Check 2
-        table = Table::default();
-        table
-            .board_mut()
-            .set_disk(position!(Row::Five, Column::F), DiskColor::Dark);
-        table
-            .board_mut()
-            .set_disk(position!(Row::Six, Column::F), DiskColor::Light);
-        // Dark turn
-        let puttable = get_puttable_positions(table.board(), table.turn());
-        assert_eq!(
-            puttable,
-            vec![
-                position!(Row::Three, Column::D),
-                position!(Row::Four, Column::C),
-                position!(Row::Six, Column::E),
-                position!(Row::Seven, Column::F),
-            ]
-        );
+        let expected = vec![
+            position!(Row::Two, Column::H),
+            position!(Row::Five, Column::A),
+        ];
+        assert_eq!(puttable_positions.to_vec(), expected);
     }
 
-    #[test]
-    fn test_get_flip_positions() {
-        // Check 1
-        let mut table = Table::default();
-        // Dark turn
-        let flip = get_flip_positions(
-            table.board(),
-            table.turn(),
-            &position!(Row::Four, Column::B),
-        );
-        assert_eq!(flip, vec![]);
+    mod tests_get_puttable_positions {
+        use super::*;
 
-        // Check 2
-        table = Table::default();
-        table
-            .board_mut()
-            .set_disk(position!(Row::Five, Column::F), DiskColor::Dark);
-        table
-            .board_mut()
-            .set_disk(position!(Row::Six, Column::F), DiskColor::Light);
-        table
-            .board_mut()
-            .set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
-        table
-            .board_mut()
-            .set_disk(position!(Row::Six, Column::E), DiskColor::Dark);
-        // Light turn
-        table.set_turn(DiskColor::Light);
-        let flip = get_flip_positions(
-            table.board(),
-            table.turn(),
-            &position!(Row::Four, Column::F),
-        );
-        assert_eq!(
-            flip,
-            vec![
-                position!(Row::Four, Column::E),
-                position!(Row::Five, Column::F)
-            ]
-        );
+        #[test]
+        fn should_return_four_positions_for_dark_at_initial_board() {
+            let initial_board = BitBoard::default();
+            let turn = DiskColor::Dark;
+            let expected = xy_to_bit(2, 3) | xy_to_bit(3, 2) | xy_to_bit(5, 4) | xy_to_bit(4, 5);
+
+            let result = get_puttable_positions(&initial_board, turn);
+
+            assert_eq!(result.0, expected);
+        }
+
+        #[test]
+        fn should_return_four_positions_for_light_at_initial_board() {
+            let initial_board = BitBoard::default();
+            let turn = DiskColor::Light;
+            let expected = xy_to_bit(4, 2) | xy_to_bit(5, 3) | xy_to_bit(2, 4) | xy_to_bit(3, 5);
+
+            let result = get_puttable_positions(&initial_board, turn);
+
+            assert_eq!(result.0, expected);
+        }
+
+        #[test]
+        fn should_return_no_positions_when_no_moves_are_available() {
+            let board = BitBoard::new(xy_to_bit(0, 0), xy_to_bit(7, 7));
+            let turn = DiskColor::Dark;
+            let expected = 0;
+
+            let result = get_puttable_positions(&board, turn);
+
+            assert_eq!(result.0, expected);
+        }
+
+        #[test]
+        fn puttable_right_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(3, 2), xy_to_bit(3, 3)); // Player:C4, Opponent:D4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn);
+
+            assert_eq!(result.0, xy_to_bit(3, 4)); // Expect: E4 is puttable
+        }
+
+        #[test]
+        fn puttable_right_wraparound() {
+            let board = BitBoard::new(xy_to_bit(3, 6), xy_to_bit(3, 7)); // Player:G4, Opponent:H4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn); // A5 is empty
+
+            assert_eq!(result.0 & xy_to_bit(4, 0), 0); // Expect: A5 is NOT puttable
+        }
+
+        #[test]
+        fn puttable_left_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(3, 4), xy_to_bit(3, 3)); // Player:E4, Opponent:D4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn);
+
+            assert_eq!(result.0, xy_to_bit(3, 2)); // Expect: C4 is puttable
+        }
+
+        #[test]
+        fn puttable_left_wraparound() {
+            let board = BitBoard::new(xy_to_bit(3, 1), xy_to_bit(3, 0)); // Player:B4, Opponent:A4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn); // H3 is empty
+            assert_eq!(result.0 & xy_to_bit(2, 7), 0); // Expect: H3 is NOT puttable
+        }
+
+        #[test]
+        fn puttable_down_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(2, 3), xy_to_bit(3, 3)); // Player:D3, Opponent:D4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn);
+
+            assert_eq!(result.0, xy_to_bit(4, 3)); // Expect: D5 is puttable
+        }
+
+        #[test]
+        fn puttable_down_edge_case() {
+            let board = BitBoard::new(xy_to_bit(6, 3), xy_to_bit(7, 3)); // Player:D7, Opponent:D8
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn);
+
+            assert_eq!(result.0, 0); // Expect: No moves
+        }
+
+        #[test]
+        fn puttable_up_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(4, 3), xy_to_bit(3, 3)); // Player:D5, Opponent:D4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn);
+
+            assert_eq!(result.0, xy_to_bit(2, 3)); // Expect: D3 is puttable
+        }
+
+        #[test]
+        fn puttable_up_edge_case() {
+            let board = BitBoard::new(xy_to_bit(1, 3), xy_to_bit(0, 3)); // Player:D2, Opponent:D1
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn);
+
+            assert_eq!(result.0, 0); // Expect: No moves
+        }
+
+        #[test]
+        fn puttable_right_down_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(2, 2), xy_to_bit(3, 3)); // Player:C3, Opponent:D4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn);
+
+            assert_eq!(result.0, xy_to_bit(4, 4)); // Expect: E5 is puttable
+        }
+
+        #[test]
+        fn puttable_right_down_wraparound() {
+            let board = BitBoard::new(xy_to_bit(2, 6), xy_to_bit(3, 7)); // Player:G3, Opponent:H4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn); // A5 is empty
+
+            assert_eq!(result.0 & xy_to_bit(4, 0), 0); // Expect: A5 is NOT puttable
+        }
+
+        #[test]
+        fn puttable_left_down_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(2, 4), xy_to_bit(3, 3)); // Player:E3, Opponent:D4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn);
+
+            assert_eq!(result.0, xy_to_bit(4, 2)); // Expect: C5 is puttable
+        }
+
+        #[test]
+        fn puttable_left_down_wraparound() {
+            let board = BitBoard::new(xy_to_bit(2, 1), xy_to_bit(3, 0)); // Player:B3, Opponent:A4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn); // H5 is empty
+
+            assert_eq!(result.0 & xy_to_bit(4, 7), 0); // Expect: H5 is NOT puttable
+        }
+
+        #[test]
+        fn puttable_right_up_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(4, 2), xy_to_bit(3, 3)); // Player:C5, Opponent:D4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn);
+
+            assert_eq!(result.0, xy_to_bit(2, 4)); // Expect: E3 is puttable
+        }
+
+        #[test]
+        fn puttable_right_up_wraparound() {
+            let board = BitBoard::new(xy_to_bit(4, 6), xy_to_bit(3, 7)); // Player:G5, Opponent:H4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn); // A3 is empty
+
+            assert_eq!(result.0 & xy_to_bit(2, 0), 0); // Expect: A3 is NOT puttable
+        }
+
+        #[test]
+        fn puttable_left_up_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(4, 4), xy_to_bit(3, 3)); // Player:E5, Opponent:D4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn);
+
+            assert_eq!(result.0, xy_to_bit(2, 2)); // Expect: C3 is puttable
+        }
+
+        #[test]
+        fn puttable_left_up_wraparound() {
+            let board = BitBoard::new(xy_to_bit(4, 1), xy_to_bit(3, 0)); // Player:B5, Opponent:A4
+            let turn = DiskColor::Dark;
+
+            let result = get_puttable_positions(&board, turn); // H3 is empty
+
+            assert_eq!(result.0 & xy_to_bit(2, 7), 0); // Expect: H3 is NOT puttable
+        }
+    }
+
+    mod tests_get_flip_positions {
+        use super::*;
+
+        const TURN: DiskColor = DiskColor::Dark;
+
+        #[test]
+        fn should_flip_one_stone_horizontally() {
+            let board = BitBoard::default();
+            let put_position = BitPosition(xy_to_bit(2, 3));
+            let expected = xy_to_bit(3, 3);
+
+            let result = get_flip_positions(&board, TURN, put_position);
+
+            assert_eq!(result.0, expected);
+        }
+
+        #[test]
+        fn should_flip_multiple_stones_diagonally() {
+            let board = BitBoard::new(xy_to_bit(4, 4), xy_to_bit(2, 2) | xy_to_bit(3, 3));
+            let put_position = BitPosition(xy_to_bit(1, 1));
+            let expected = xy_to_bit(2, 2) | xy_to_bit(3, 3);
+
+            let result = get_flip_positions(&board, TURN, put_position);
+
+            assert_eq!(result.0, expected);
+        }
+
+        #[test]
+        fn should_flip_stones_in_multiple_directions_simultaneously() {
+            let board = BitBoard::new(
+                xy_to_bit(0, 0) | xy_to_bit(0, 2),
+                xy_to_bit(1, 1) | xy_to_bit(1, 2),
+            );
+            let put_position = BitPosition(xy_to_bit(2, 2));
+            let expected = xy_to_bit(1, 1) | xy_to_bit(1, 2);
+
+            let result = get_flip_positions(&board, TURN, put_position);
+
+            assert_eq!(result.0, expected);
+        }
+
+        #[test]
+        fn should_flip_no_stones_if_put_position_is_not_puttable() {
+            let board = BitBoard::new(xy_to_bit(0, 0), xy_to_bit(1, 0));
+            let put_position = BitPosition(xy_to_bit(3, 0));
+            let expected = 0;
+
+            let result = get_flip_positions(&board, TURN, put_position);
+
+            assert_eq!(result.0, expected);
+        }
+
+        #[test]
+        fn flip_right_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(3, 2), xy_to_bit(3, 3)); // Player:C4, Opponent:D4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(3, 4))); // Put:E4
+
+            assert_eq!(result.0, xy_to_bit(3, 3)); // Expect: D4
+        }
+
+        #[test]
+        fn flip_right_wraparound() {
+            let board = BitBoard::new(xy_to_bit(3, 6), xy_to_bit(3, 7)); // Player:G4, Opponent:H4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(4, 0))); // Put:A5
+
+            assert_eq!(result.0, 0); // Expect: Nothing to flip
+        }
+
+        #[test]
+        fn flip_left_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(3, 4), xy_to_bit(3, 3)); // Player:E4, Opponent:D4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(3, 2))); // Put:C4
+
+            assert_eq!(result.0, xy_to_bit(3, 3)); // Expect: D4
+        }
+
+        #[test]
+        fn flip_left_wraparound() {
+            let board = BitBoard::new(xy_to_bit(3, 1), xy_to_bit(3, 0)); // Player:B4, Opponent:A4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(2, 7))); // Put:H3
+
+            assert_eq!(result.0, 0); // Expect: Nothing to flip
+        }
+
+        #[test]
+        fn flip_down_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(2, 3), xy_to_bit(3, 3)); // Player:D3, Opponent:D4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(4, 3))); // Put:D5
+
+            assert_eq!(result.0, xy_to_bit(3, 3)); // Expect: D4
+        }
+
+        #[test]
+        fn flip_down_edge_case() {
+            let board = BitBoard::new(xy_to_bit(6, 3), xy_to_bit(7, 3)); // Player:D7, Opponent:D8
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(0, 3))); // Put:D1
+
+            assert_eq!(result.0, 0);
+        }
+
+        #[test]
+        fn flip_up_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(4, 3), xy_to_bit(3, 3)); // Player:D5, Opponent:D4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(2, 3))); // Put:D3
+
+            assert_eq!(result.0, xy_to_bit(3, 3)); // Expect: D4
+        }
+
+        #[test]
+        fn flip_up_edge_case() {
+            let board = BitBoard::new(xy_to_bit(1, 3), xy_to_bit(0, 3)); // Player:D2, Opponent:D1
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(7, 3))); // Put:D8
+
+            assert_eq!(result.0, 0);
+        }
+
+        #[test]
+        fn flip_right_down_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(2, 2), xy_to_bit(3, 3)); // Player:C3, Opponent:D4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(4, 4))); // Put:E5
+
+            assert_eq!(result.0, xy_to_bit(3, 3)); // Expect: D4
+        }
+
+        #[test]
+        fn flip_right_down_wraparound() {
+            let board = BitBoard::new(xy_to_bit(2, 6), xy_to_bit(3, 7)); // Player:G3, Opponent:H4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(4, 0))); // Put:A5
+
+            assert_eq!(result.0, 0);
+        }
+
+        #[test]
+        fn flip_left_down_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(2, 4), xy_to_bit(3, 3)); // Player:E3, Opponent:D4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(4, 2))); // Put:C5
+
+            assert_eq!(result.0, xy_to_bit(3, 3)); // Expect: D4
+        }
+
+        #[test]
+        fn flip_left_down_wraparound() {
+            let board = BitBoard::new(xy_to_bit(2, 1), xy_to_bit(3, 0)); // Player:B3, Opponent:A4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(4, 7))); // Put:H5
+
+            assert_eq!(result.0, 0);
+        }
+
+        #[test]
+        fn flip_right_up_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(4, 2), xy_to_bit(3, 3)); // Player:C5, Opponent:D4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(2, 4))); // Put:E3
+
+            assert_eq!(result.0, xy_to_bit(3, 3)); // Expect: D4
+        }
+
+        #[test]
+        fn flip_right_up_wraparound() {
+            let board = BitBoard::new(xy_to_bit(4, 6), xy_to_bit(3, 7)); // Player:G5, Opponent:H4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(2, 0))); // Put:A3
+
+            assert_eq!(result.0, 0);
+        }
+
+        #[test]
+        fn flip_left_up_no_wraparound() {
+            let board = BitBoard::new(xy_to_bit(4, 4), xy_to_bit(3, 3)); // Player:E5, Opponent:D4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(2, 2))); // Put:C3
+
+            assert_eq!(result.0, xy_to_bit(3, 3)); // Expect: D4
+        }
+
+        #[test]
+        fn flip_left_up_wraparound() {
+            let board = BitBoard::new(xy_to_bit(4, 1), xy_to_bit(3, 0)); // Player:B5, Opponent:A4
+
+            let result = get_flip_positions(&board, TURN, BitPosition(xy_to_bit(2, 7))); // Put:H3
+
+            assert_eq!(result.0, 0);
+        }
     }
 
     #[test]
