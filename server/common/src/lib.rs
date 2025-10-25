@@ -13,6 +13,6 @@ pub use {
     crate::disk::DiskColor,
     crate::judge::{JudgeResult, Winner},
     crate::message::{StateResponseMessage, StepRequestMessage},
-    crate::position::{Column, Position, Row},
+    crate::position::{BitPosition, Column, Position, Row},
     crate::table::Table,
 };

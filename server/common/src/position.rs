@@ -1,4 +1,5 @@
 use num_derive::FromPrimitive;
+use num_traits::FromPrimitive;
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, PartialEq, Debug, FromPrimitive, Serialize, Deserialize)]
@@ -59,6 +60,16 @@ impl From<(Row, Column)> for Position {
     }
 }
 
+impl From<BitPosition> for Position {
+    fn from(bit_position: BitPosition) -> Self {
+        let idx = 63 - bit_position.0.trailing_zeros() as usize;
+        Position::from((
+            Row::from_u8((idx / 8) as u8).unwrap(),
+            Column::from_u8((idx % 8) as u8).unwrap(),
+        ))
+    }
+}
+
 impl From<Position> for usize {
     fn from(value: Position) -> Self {
         (value.row() as usize) * 8 + (value.column() as usize)
@@ -76,6 +87,16 @@ macro_rules! position {
     ($row: expr, $column: expr) => {
         Position::new($row, $column)
     };
+}
+
+#[derive(Clone)]
+pub struct BitPosition(pub u64);
+
+impl From<Position> for BitPosition {
+    fn from(position: Position) -> Self {
+        let idx: usize = position.into();
+        BitPosition(1u64 << (63 - idx))
+    }
 }
 
 #[cfg(test)]
@@ -108,6 +129,14 @@ mod tests {
     }
 
     #[test]
+    fn test_position_from_bit_position() {
+        let bit_position = BitPosition(1u64 << (63 - (8 * 3 + 3)));
+        let position = Position::from(bit_position);
+        assert_eq!(position.row(), Row::Four);
+        assert_eq!(position.column(), Column::D);
+    }
+
+    #[test]
     fn test_usize_from_position() {
         for (row, column, expected) in [
             (Row::One, Column::A, 0),
@@ -136,5 +165,12 @@ mod tests {
             position!(Row::Eight, Column::H),
             Position::new(Row::Eight, Column::H)
         );
+    }
+
+    #[test]
+    fn test_bit_position_from_position() {
+        let position = Position::new(Row::Four, Column::D);
+        let bit_position = BitPosition::from(position);
+        assert_eq!(bit_position.0, 1u64 << (63 - (8 * 3 + 3)));
     }
 }
