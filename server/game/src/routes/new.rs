@@ -12,7 +12,7 @@ pub async fn create_new_table() -> impl Responder {
     let table = Table::default();
     let puttable_positions = get_puttable_positions(table.board(), table.turn());
 
-    StateResponseMessageExt::new(table, puttable_positions, None)
+    StateResponseMessageExt::new(table, puttable_positions.to_vec(), None)
 }
 
 #[cfg(test)]

@@ -1,11 +1,12 @@
 use super::action::{ActionExt, get_puttable_positions};
-use common::{Action, DiskColor, JudgeResult, Position, Table, Winner};
+use crate::action::PuttablePositions;
+use common::{Action, DiskColor, JudgeResult, Table, Winner};
 use std::cmp::Ordering;
 
 /// The result of the action execution.
 pub struct StepResult {
     pub judge_result: Option<JudgeResult>,
-    pub puttable_positions: Vec<Position>,
+    pub puttable_positions: PuttablePositions,
 }
 
 /// The controller of the game.
@@ -29,7 +30,7 @@ impl Controller {
         if Controller::is_game_over(table) {
             Ok(StepResult {
                 judge_result: Some(Controller::judge(table)),
-                puttable_positions: vec![],
+                puttable_positions: PuttablePositions(0),
             })
         } else {
             Ok(StepResult {

@@ -20,7 +20,7 @@ pub async fn step_table(req: web::Json<StepRequestMessage>) -> Result<impl Respo
     match step_result {
         Ok(step_result) => Ok(StateResponseMessageExt::new(
             table,
-            step_result.puttable_positions,
+            step_result.puttable_positions.to_vec(),
             step_result.judge_result,
         )),
         Err(err) => Err(error::ErrorBadRequest(err)),
