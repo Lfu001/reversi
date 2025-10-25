@@ -1,6 +1,11 @@
-use super::state::{BoardExt, DiskColorExt};
-use common::{Action, Board, DiskColor, Position, Table, position};
+use crate::state::DiskColorExt;
+use common::{Action, BitBoard, BitPosition, Column, DiskColor, Position, Row, Table};
 use num_traits::FromPrimitive;
+
+/// A bit mask where column A is 0 and other columns are 1.
+const NOT_A_COLUMN: u64 = 0x7f7f7f7f7f7f7f7f;
+/// A bit mask where column H is 0 and other columns are 1.
+const NOT_H_COLUMN: u64 = 0xfefefefefefefefe;
 
 /// A trait which provides an extension method for the [`Action`].
 pub trait ActionExt {
@@ -97,6 +102,30 @@ impl ActionExt for Action {
     }
 }
 
+/// A bit board that represents positions on the board that can be put.
+pub struct PuttablePositions(pub u64);
+
+impl PuttablePositions {
+    /// Checks if there are no puttable positions.
+    pub fn is_empty(&self) -> bool {
+        self.0 == 0
+    }
+
+    /// Returns a list of positions that can be put.
+    pub fn to_vec(&self) -> Vec<Position> {
+        let mut positions = Vec::new();
+        for idx in 0..64 {
+            if self.0 & (1 << (63 - idx)) != 0 {
+                positions.push(Position::from((
+                    Row::from_u8(idx / 8).unwrap(),
+                    Column::from_u8(idx % 8).unwrap(),
+                )));
+            }
+        }
+        positions
+    }
+}
+
 /// Returns a list of positions that can be put.
 ///
 /// # Arguments
@@ -107,23 +136,92 @@ impl ActionExt for Action {
 /// # Returns
 ///
 /// A list of positions that can be put.
-pub fn get_puttable_positions(board: &Board, turn: DiskColor) -> Vec<Position> {
-    let mut positions = vec![];
-    for row in 0..8 {
-        for column in 0..8 {
-            let position = position!(
-                FromPrimitive::from_i8(row).unwrap(),
-                FromPrimitive::from_i8(column).unwrap()
-            );
-            if board.get_disk(&position).is_some() {
-                continue;
-            }
-            if !get_flip_positions(board, turn, &position).is_empty() {
-                positions.push(position);
-            };
-        }
-    }
-    positions
+pub fn get_puttable_positions(board: &BitBoard, turn: DiskColor) -> PuttablePositions {
+    let (player_board, opponent_board) = match turn {
+        DiskColor::Dark => (board.dark_plane(), board.light_plane()),
+        DiskColor::Light => (board.light_plane(), board.dark_plane()),
+    };
+    let empty_board = !(player_board | opponent_board);
+
+    let opponent_not_a = opponent_board & NOT_A_COLUMN;
+    let opponent_not_h = opponent_board & NOT_H_COLUMN;
+
+    let mut legal_moves = 0;
+    let mut rev;
+
+    // Right (>> 1)
+    rev = (player_board >> 1) & opponent_not_a;
+    rev |= (rev >> 1) & opponent_not_a;
+    rev |= (rev >> 1) & opponent_not_a;
+    rev |= (rev >> 1) & opponent_not_a;
+    rev |= (rev >> 1) & opponent_not_a;
+    rev |= (rev >> 1) & opponent_not_a;
+    legal_moves |= (rev >> 1) & NOT_A_COLUMN;
+
+    // Left (<< 1)
+    rev = (player_board << 1) & opponent_not_h;
+    rev |= (rev << 1) & opponent_not_h;
+    rev |= (rev << 1) & opponent_not_h;
+    rev |= (rev << 1) & opponent_not_h;
+    rev |= (rev << 1) & opponent_not_h;
+    rev |= (rev << 1) & opponent_not_h;
+    legal_moves |= (rev << 1) & NOT_H_COLUMN;
+
+    // Down (>> 8)
+    rev = (player_board >> 8) & opponent_board;
+    rev |= (rev >> 8) & opponent_board;
+    rev |= (rev >> 8) & opponent_board;
+    rev |= (rev >> 8) & opponent_board;
+    rev |= (rev >> 8) & opponent_board;
+    rev |= (rev >> 8) & opponent_board;
+    legal_moves |= rev >> 8;
+
+    // Up (<< 8)
+    rev = (player_board << 8) & opponent_board;
+    rev |= (rev << 8) & opponent_board;
+    rev |= (rev << 8) & opponent_board;
+    rev |= (rev << 8) & opponent_board;
+    rev |= (rev << 8) & opponent_board;
+    rev |= (rev << 8) & opponent_board;
+    legal_moves |= rev << 8;
+
+    // Right down (>> 9)
+    rev = (player_board >> 9) & opponent_not_a;
+    rev |= (rev >> 9) & opponent_not_a;
+    rev |= (rev >> 9) & opponent_not_a;
+    rev |= (rev >> 9) & opponent_not_a;
+    rev |= (rev >> 9) & opponent_not_a;
+    rev |= (rev >> 9) & opponent_not_a;
+    legal_moves |= (rev >> 9) & NOT_A_COLUMN;
+
+    // Left down (>> 7)
+    rev = (player_board >> 7) & opponent_not_h;
+    rev |= (rev >> 7) & opponent_not_h;
+    rev |= (rev >> 7) & opponent_not_h;
+    rev |= (rev >> 7) & opponent_not_h;
+    rev |= (rev >> 7) & opponent_not_h;
+    rev |= (rev >> 7) & opponent_not_h;
+    legal_moves |= (rev >> 7) & NOT_H_COLUMN;
+
+    // Right up (<< 7)
+    rev = (player_board << 7) & opponent_not_a;
+    rev |= (rev << 7) & opponent_not_a;
+    rev |= (rev << 7) & opponent_not_a;
+    rev |= (rev << 7) & opponent_not_a;
+    rev |= (rev << 7) & opponent_not_a;
+    rev |= (rev << 7) & opponent_not_a;
+    legal_moves |= (rev << 7) & NOT_A_COLUMN;
+
+    // Left up (<< 9)
+    rev = (player_board << 9) & opponent_not_h;
+    rev |= (rev << 9) & opponent_not_h;
+    rev |= (rev << 9) & opponent_not_h;
+    rev |= (rev << 9) & opponent_not_h;
+    rev |= (rev << 9) & opponent_not_h;
+    rev |= (rev << 9) & opponent_not_h;
+    legal_moves |= (rev << 9) & NOT_H_COLUMN;
+
+    PuttablePositions(legal_moves & empty_board)
 }
 
 /// Returns a list of positions that can be flipped.
