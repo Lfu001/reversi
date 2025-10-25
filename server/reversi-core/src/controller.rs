@@ -91,9 +91,12 @@ impl Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::BoardExt;
-    use common::{Column, Row, position};
-    use num_traits::FromPrimitive;
+    use common::{BitBoard, BitPosition, Column, Position, Row};
+
+    fn xy_to_bit(row: Row, column: Column) -> u64 {
+        let position = Position::new(row, column);
+        BitPosition::from(position).0
+    }
 
     #[test]
     fn test_is_game_over() {
@@ -106,9 +109,10 @@ mod tests {
         // Continuable game
         {
             let mut table = Table::default();
-            let board = table.board_mut();
-            board.set_disk(position!(Row::Four, Column::C), DiskColor::Dark);
-            board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
+            let board = table.board();
+            let mask = xy_to_bit(Row::Four, Column::C) | xy_to_bit(Row::Four, Column::D);
+            let new_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
+            table.set_board(new_board);
             table.set_turn(DiskColor::Light);
             assert!(!Controller::is_game_over(&table));
         }
@@ -116,18 +120,9 @@ mod tests {
         // No more empty square
         {
             let mut table = Table::default();
-            let board = table.board_mut();
-            for row in 0..8 {
-                for column in 0..8 {
-                    board.set_disk(
-                        position!(
-                            FromPrimitive::from_i8(row).unwrap(),
-                            FromPrimitive::from_i8(column).unwrap()
-                        ),
-                        DiskColor::Dark,
-                    );
-                }
-            }
+            let fill = !0u64;
+            let new_board = BitBoard::new(fill, 0);
+            table.set_board(new_board);
             table.set_turn(DiskColor::Light);
             assert!(Controller::is_game_over(&table));
         }
@@ -135,20 +130,22 @@ mod tests {
         // There are empty squares but nobody can put
         {
             let mut table = Table::default();
-            let board = table.board_mut();
-            board.set_disk(position!(Row::Two, Column::D), DiskColor::Dark);
-            board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
-            board.set_disk(position!(Row::Three, Column::D), DiskColor::Dark);
-            board.set_disk(position!(Row::Three, Column::E), DiskColor::Dark);
-            board.set_disk(position!(Row::Four, Column::B), DiskColor::Dark);
-            board.set_disk(position!(Row::Four, Column::C), DiskColor::Dark);
-            board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
-            board.set_disk(position!(Row::Four, Column::E), DiskColor::Dark);
-            board.set_disk(position!(Row::Four, Column::F), DiskColor::Dark);
-            board.set_disk(position!(Row::Five, Column::C), DiskColor::Dark);
-            board.set_disk(position!(Row::Five, Column::D), DiskColor::Dark);
-            board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
-            board.set_disk(position!(Row::Six, Column::D), DiskColor::Dark);
+            let board = table.board();
+            let mask = xy_to_bit(Row::Two, Column::D)
+                | xy_to_bit(Row::Three, Column::C)
+                | xy_to_bit(Row::Three, Column::D)
+                | xy_to_bit(Row::Three, Column::E)
+                | xy_to_bit(Row::Four, Column::B)
+                | xy_to_bit(Row::Four, Column::C)
+                | xy_to_bit(Row::Four, Column::D)
+                | xy_to_bit(Row::Four, Column::E)
+                | xy_to_bit(Row::Four, Column::F)
+                | xy_to_bit(Row::Five, Column::C)
+                | xy_to_bit(Row::Five, Column::D)
+                | xy_to_bit(Row::Five, Column::E)
+                | xy_to_bit(Row::Six, Column::D);
+            let new_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
+            table.set_board(new_board);
             table.set_turn(DiskColor::Light);
             assert!(Controller::is_game_over(&table));
         }
@@ -159,22 +156,24 @@ mod tests {
         // Dark wins
         {
             let mut table = Table::default();
-            let board = table.board_mut();
-            board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
-            board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
-            board.set_disk(position!(Row::Four, Column::E), DiskColor::Dark);
-            board.set_disk(position!(Row::Four, Column::F), DiskColor::Dark);
-            board.set_disk(position!(Row::Four, Column::G), DiskColor::Dark);
-            board.set_disk(position!(Row::Five, Column::D), DiskColor::Dark);
-            board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
-            board.set_disk(position!(Row::Five, Column::F), DiskColor::Dark);
-            board.set_disk(position!(Row::Five, Column::G), DiskColor::Dark);
-            board.set_disk(position!(Row::Five, Column::H), DiskColor::Dark);
-            board.set_disk(position!(Row::Six, Column::E), DiskColor::Dark);
-            board.set_disk(position!(Row::Six, Column::G), DiskColor::Dark);
-            board.set_disk(position!(Row::Seven, Column::F), DiskColor::Dark);
-            board.set_disk(position!(Row::Eight, Column::E), DiskColor::Light);
-            board.set_disk(position!(Row::Eight, Column::G), DiskColor::Dark);
+            let board = table.board();
+            let mask = xy_to_bit(Row::Three, Column::C)
+                | xy_to_bit(Row::Four, Column::D)
+                | xy_to_bit(Row::Four, Column::E)
+                | xy_to_bit(Row::Four, Column::F)
+                | xy_to_bit(Row::Four, Column::G)
+                | xy_to_bit(Row::Five, Column::D)
+                | xy_to_bit(Row::Five, Column::E)
+                | xy_to_bit(Row::Five, Column::F)
+                | xy_to_bit(Row::Five, Column::G)
+                | xy_to_bit(Row::Five, Column::H)
+                | xy_to_bit(Row::Six, Column::E)
+                | xy_to_bit(Row::Six, Column::G)
+                | xy_to_bit(Row::Seven, Column::F)
+                | xy_to_bit(Row::Eight, Column::E)
+                | xy_to_bit(Row::Eight, Column::G);
+            let new_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
+            table.set_board(new_board);
             table.set_turn(DiskColor::Light);
 
             assert_eq!(
@@ -186,14 +185,9 @@ mod tests {
         // Light wins
         {
             let mut table = Table::default();
-            for row in 0..8 {
-                for column in 0..8 {
-                    table.board_mut().set_disk(
-                        position!(Row::from_u8(row).unwrap(), Column::from_u8(column).unwrap()),
-                        DiskColor::Light,
-                    );
-                }
-            }
+            let fill = !0u64;
+            let new_board = BitBoard::new(0, fill);
+            table.set_board(new_board);
             table.set_turn(DiskColor::Dark);
 
             assert_eq!(
@@ -205,31 +199,36 @@ mod tests {
         // Draw
         {
             let mut table = Table::default();
-            let board = table.board_mut();
-            board.set_disk(position!(Row::One, Column::A), DiskColor::Dark);
-            board.set_disk(position!(Row::One, Column::F), DiskColor::Light);
-            board.set_disk(position!(Row::Two, Column::B), DiskColor::Dark);
-            board.set_disk(position!(Row::Two, Column::F), DiskColor::Light);
-            board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
-            board.set_disk(position!(Row::Three, Column::E), DiskColor::Light);
-            board.set_disk(position!(Row::Three, Column::F), DiskColor::Light);
-            board.set_disk(position!(Row::Three, Column::G), DiskColor::Light);
-            board.set_disk(position!(Row::Four, Column::D), DiskColor::Light);
-            board.set_disk(position!(Row::Four, Column::E), DiskColor::Light);
-            board.set_disk(position!(Row::Four, Column::F), DiskColor::Light);
-            board.set_disk(position!(Row::Five, Column::C), DiskColor::Light);
-            board.set_disk(position!(Row::Five, Column::D), DiskColor::Light);
-            board.set_disk(position!(Row::Five, Column::E), DiskColor::Light);
-            board.set_disk(position!(Row::Five, Column::F), DiskColor::Light);
-            board.set_disk(position!(Row::Six, Column::F), DiskColor::Dark);
-            board.set_disk(position!(Row::Six, Column::H), DiskColor::Dark);
-            board.set_disk(position!(Row::Seven, Column::D), DiskColor::Dark);
-            board.set_disk(position!(Row::Seven, Column::E), DiskColor::Dark);
-            board.set_disk(position!(Row::Seven, Column::F), DiskColor::Dark);
-            board.set_disk(position!(Row::Seven, Column::G), DiskColor::Dark);
-            board.set_disk(position!(Row::Seven, Column::H), DiskColor::Dark);
-            board.set_disk(position!(Row::Eight, Column::F), DiskColor::Dark);
-            board.set_disk(position!(Row::Eight, Column::H), DiskColor::Dark);
+            let board = table.board();
+            let dark_mask = xy_to_bit(Row::One, Column::A)
+                | xy_to_bit(Row::Two, Column::B)
+                | xy_to_bit(Row::Three, Column::C)
+                | xy_to_bit(Row::Six, Column::F)
+                | xy_to_bit(Row::Six, Column::H)
+                | xy_to_bit(Row::Seven, Column::D)
+                | xy_to_bit(Row::Seven, Column::E)
+                | xy_to_bit(Row::Seven, Column::F)
+                | xy_to_bit(Row::Seven, Column::G)
+                | xy_to_bit(Row::Seven, Column::H)
+                | xy_to_bit(Row::Eight, Column::F)
+                | xy_to_bit(Row::Eight, Column::H);
+            let light_mask = xy_to_bit(Row::One, Column::F)
+                | xy_to_bit(Row::Two, Column::F)
+                | xy_to_bit(Row::Three, Column::E)
+                | xy_to_bit(Row::Three, Column::F)
+                | xy_to_bit(Row::Three, Column::G)
+                | xy_to_bit(Row::Four, Column::D)
+                | xy_to_bit(Row::Four, Column::E)
+                | xy_to_bit(Row::Four, Column::F)
+                | xy_to_bit(Row::Five, Column::C)
+                | xy_to_bit(Row::Five, Column::D)
+                | xy_to_bit(Row::Five, Column::E)
+                | xy_to_bit(Row::Five, Column::F);
+            let new_board = BitBoard::new(
+                (board.dark_plane() | dark_mask) & !light_mask,
+                (board.light_plane() | light_mask) & !dark_mask,
+            );
+            table.set_board(new_board);
             table.set_turn(DiskColor::Dark);
 
             assert_eq!(Controller::judge(&table).winner(), Winner::Draw);

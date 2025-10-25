@@ -166,7 +166,13 @@ fn get_flip_positions(board: &Board, turn: DiskColor, position: &Position) -> Ve
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::{Column, PutConfig, Row};
+    use common::{Column, PutConfig, Row, position};
+    use num_traits::FromPrimitive;
+
+    fn xy_to_bit(row: u8, column: u8) -> u64 {
+        let position = position!(Row::from_u8(row).unwrap(), Column::from_u8(column).unwrap());
+        BitPosition::from(position).0
+    }
 
     #[test]
     fn test_get_puttable_positions() {
@@ -278,9 +284,11 @@ mod tests {
             assert!(!action.check_inputs(&table));
 
             // Light's turn but dark try to put
-            let board = table.board_mut();
-            board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
-            board.set_disk(position!(Row::Five, Column::F), DiskColor::Dark);
+            let board = table.board();
+            let mask = xy_to_bit(Row::Five as u8, Column::E as u8)
+                | xy_to_bit(Row::Five as u8, Column::F as u8);
+            let new_board = BitBoard::new(board.dark_plane() & !mask, board.light_plane() | mask);
+            table.set_board(new_board);
             table.set_turn(DiskColor::Light);
             let action = Action::PutDisk(PutConfig::new(
                 DiskColor::Dark,
@@ -294,26 +302,30 @@ mod tests {
         {
             // Dark's turn but light try to pass
             let mut table = Table::default();
-            let board = table.board_mut();
-            board.set_disk(position!(Row::Three, Column::D), DiskColor::Light);
-            board.set_disk(position!(Row::Three, Column::E), DiskColor::Light);
-            board.set_disk(position!(Row::Three, Column::F), DiskColor::Light);
-            board.set_disk(position!(Row::Four, Column::F), DiskColor::Light);
-            board.set_disk(position!(Row::Five, Column::D), DiskColor::Light);
-            board.set_disk(position!(Row::Five, Column::F), DiskColor::Light);
+            let board = table.board();
+            let mask = xy_to_bit(Row::Three as u8, Column::D as u8)
+                | xy_to_bit(Row::Three as u8, Column::E as u8)
+                | xy_to_bit(Row::Three as u8, Column::F as u8)
+                | xy_to_bit(Row::Four as u8, Column::F as u8)
+                | xy_to_bit(Row::Five as u8, Column::D as u8)
+                | xy_to_bit(Row::Five as u8, Column::F as u8);
+            let new_board = BitBoard::new(board.dark_plane() & !mask, board.light_plane() | mask);
+            table.set_board(new_board);
             let action = Action::PassTurn(DiskColor::Light);
             assert!(!action.check_inputs(&table));
 
             // Light's turn but dark try to pass
             let mut table = Table::default();
             table.set_turn(DiskColor::Light);
-            let board = table.board_mut();
-            board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
-            board.set_disk(position!(Row::Four, Column::F), DiskColor::Dark);
-            board.set_disk(position!(Row::Five, Column::F), DiskColor::Dark);
-            board.set_disk(position!(Row::Six, Column::D), DiskColor::Dark);
-            board.set_disk(position!(Row::Six, Column::E), DiskColor::Dark);
-            board.set_disk(position!(Row::Six, Column::F), DiskColor::Dark);
+            let board = table.board();
+            let mask = xy_to_bit(Row::Four as u8, Column::D as u8)
+                | xy_to_bit(Row::Four as u8, Column::F as u8)
+                | xy_to_bit(Row::Five as u8, Column::F as u8)
+                | xy_to_bit(Row::Six as u8, Column::D as u8)
+                | xy_to_bit(Row::Six as u8, Column::E as u8)
+                | xy_to_bit(Row::Six as u8, Column::F as u8);
+            let new_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
+            table.set_board(new_board);
             let action = Action::PassTurn(DiskColor::Dark);
             assert!(!action.check_inputs(&table));
         }
@@ -327,9 +339,11 @@ mod tests {
             // Light can put but try to pass
             let mut table = Table::default();
             table.set_turn(DiskColor::Light);
-            let board = table.board_mut();
-            board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
-            board.set_disk(position!(Row::Five, Column::F), DiskColor::Dark);
+            let board = table.board();
+            let mask = xy_to_bit(Row::Five as u8, Column::E as u8)
+                | xy_to_bit(Row::Five as u8, Column::F as u8);
+            let new_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
+            table.set_board(new_board);
             let action = Action::PassTurn(DiskColor::Light);
             assert!(!action.check_inputs(&table));
         }
@@ -347,13 +361,15 @@ mod tests {
         {
             let mut table = Table::default();
             table.set_turn(DiskColor::Light);
-            let board = table.board_mut();
-            board.set_disk(position!(Row::Three, Column::D), DiskColor::Light);
-            board.set_disk(position!(Row::Three, Column::E), DiskColor::Light);
-            board.set_disk(position!(Row::Three, Column::F), DiskColor::Light);
-            board.set_disk(position!(Row::Four, Column::F), DiskColor::Light);
-            board.set_disk(position!(Row::Five, Column::D), DiskColor::Light);
-            board.set_disk(position!(Row::Five, Column::F), DiskColor::Light);
+            let board = table.board();
+            let mask = xy_to_bit(Row::Three as u8, Column::D as u8)
+                | xy_to_bit(Row::Three as u8, Column::E as u8)
+                | xy_to_bit(Row::Three as u8, Column::F as u8)
+                | xy_to_bit(Row::Four as u8, Column::F as u8)
+                | xy_to_bit(Row::Five as u8, Column::D as u8)
+                | xy_to_bit(Row::Five as u8, Column::F as u8);
+            let new_board = BitBoard::new(board.dark_plane() & !mask, board.light_plane() | mask);
+            table.set_board(new_board);
             let action = Action::PassTurn(DiskColor::Light);
             assert!(action.check_inputs(&table));
         }
@@ -362,7 +378,7 @@ mod tests {
     #[test]
     fn test_execute() {
         let mut table = Table::default();
-        let mut expected_board = Board::default();
+        let mut expected_board: BitBoard;
 
         // Dark put
         {
@@ -372,9 +388,10 @@ mod tests {
             ));
             action.execute(&mut table).unwrap();
             let board = table.board();
-            expected_board.set_disk(position!(Row::Four, Column::C), DiskColor::Dark);
-            expected_board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
-            assert_eq!(board.board(), expected_board.board());
+            let mask = xy_to_bit(Row::Four as u8, Column::C as u8)
+                | xy_to_bit(Row::Four as u8, Column::D as u8);
+            expected_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
+            assert_eq!(*board, expected_board);
             assert_eq!(table.turn(), DiskColor::Light);
         }
 
@@ -386,9 +403,10 @@ mod tests {
             ));
             action.execute(&mut table).unwrap();
             let board = table.board();
-            expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Light);
-            expected_board.set_disk(position!(Row::Four, Column::D), DiskColor::Light);
-            assert_eq!(board.board(), expected_board.board());
+            let mask = xy_to_bit(Row::Three as u8, Column::C as u8)
+                | xy_to_bit(Row::Four as u8, Column::D as u8);
+            expected_board = BitBoard::new(board.dark_plane() & !mask, board.light_plane() | mask);
+            assert_eq!(*board, expected_board);
             assert_eq!(table.turn(), DiskColor::Dark);
         }
 
@@ -400,9 +418,10 @@ mod tests {
             ));
             action.execute(&mut table).unwrap();
             let board = table.board();
-            expected_board.set_disk(position!(Row::Two, Column::C), DiskColor::Dark);
-            expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
-            assert_eq!(board.board(), expected_board.board());
+            let mask = xy_to_bit(Row::Two as u8, Column::C as u8)
+                | xy_to_bit(Row::Three as u8, Column::C as u8);
+            expected_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
+            assert_eq!(*board, expected_board);
             assert_eq!(table.turn(), DiskColor::Light);
         }
 
@@ -414,9 +433,10 @@ mod tests {
             ));
             action.execute(&mut table).unwrap();
             let board = table.board();
-            expected_board.set_disk(position!(Row::Two, Column::B), DiskColor::Light);
-            expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Light);
-            assert_eq!(board.board(), expected_board.board());
+            let mask = xy_to_bit(Row::Two as u8, Column::B as u8)
+                | xy_to_bit(Row::Three as u8, Column::C as u8);
+            expected_board = BitBoard::new(board.dark_plane() & !mask, board.light_plane() | mask);
+            assert_eq!(*board, expected_board);
             assert_eq!(table.turn(), DiskColor::Dark);
         }
 
@@ -428,9 +448,10 @@ mod tests {
             ));
             action.execute(&mut table).unwrap();
             let board = table.board();
-            expected_board.set_disk(position!(Row::Six, Column::E), DiskColor::Dark);
-            expected_board.set_disk(position!(Row::Five, Column::E), DiskColor::Dark);
-            assert_eq!(board.board(), expected_board.board());
+            let mask = xy_to_bit(Row::Six as u8, Column::E as u8)
+                | xy_to_bit(Row::Five as u8, Column::E as u8);
+            expected_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
+            assert_eq!(*board, expected_board);
             assert_eq!(table.turn(), DiskColor::Light);
         }
 
@@ -442,9 +463,10 @@ mod tests {
             ));
             action.execute(&mut table).unwrap();
             let board = table.board();
-            expected_board.set_disk(position!(Row::One, Column::C), DiskColor::Light);
-            expected_board.set_disk(position!(Row::Two, Column::C), DiskColor::Light);
-            assert_eq!(board.board(), expected_board.board());
+            let mask = xy_to_bit(Row::One as u8, Column::C as u8)
+                | xy_to_bit(Row::Two as u8, Column::C as u8);
+            expected_board = BitBoard::new(board.dark_plane() & !mask, board.light_plane() | mask);
+            assert_eq!(*board, expected_board);
             assert_eq!(table.turn(), DiskColor::Dark);
         }
 
@@ -456,11 +478,12 @@ mod tests {
             ));
             action.execute(&mut table).unwrap();
             let board = table.board();
-            expected_board.set_disk(position!(Row::One, Column::A), DiskColor::Dark);
-            expected_board.set_disk(position!(Row::Two, Column::B), DiskColor::Dark);
-            expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Dark);
-            expected_board.set_disk(position!(Row::Four, Column::D), DiskColor::Dark);
-            assert_eq!(board.board(), expected_board.board());
+            let mask = xy_to_bit(Row::One as u8, Column::A as u8)
+                | xy_to_bit(Row::Two as u8, Column::B as u8)
+                | xy_to_bit(Row::Three as u8, Column::C as u8)
+                | xy_to_bit(Row::Four as u8, Column::D as u8);
+            expected_board = BitBoard::new(board.dark_plane() | mask, board.light_plane() & !mask);
+            assert_eq!(*board, expected_board);
             assert_eq!(table.turn(), DiskColor::Light);
         }
 
@@ -472,9 +495,10 @@ mod tests {
             ));
             action.execute(&mut table).unwrap();
             let board = table.board();
-            expected_board.set_disk(position!(Row::Three, Column::A), DiskColor::Light);
-            expected_board.set_disk(position!(Row::Two, Column::B), DiskColor::Light);
-            assert_eq!(board.board(), expected_board.board());
+            let mask = xy_to_bit(Row::Three as u8, Column::A as u8)
+                | xy_to_bit(Row::Two as u8, Column::B as u8);
+            expected_board = BitBoard::new(board.dark_plane() & !mask, board.light_plane() | mask);
+            assert_eq!(*board, expected_board);
             assert_eq!(table.turn(), DiskColor::Dark);
         }
 
@@ -483,7 +507,7 @@ mod tests {
             let action = Action::PassTurn(DiskColor::Dark);
             action.execute(&mut table).unwrap();
             let board = table.board();
-            assert_eq!(board.board(), expected_board.board());
+            assert_eq!(*board, expected_board);
             assert_eq!(table.turn(), DiskColor::Light);
         }
 
@@ -495,10 +519,11 @@ mod tests {
             ));
             action.execute(&mut table).unwrap();
             let board = table.board();
-            expected_board.set_disk(position!(Row::Five, Column::C), DiskColor::Light);
-            expected_board.set_disk(position!(Row::Four, Column::C), DiskColor::Light);
-            expected_board.set_disk(position!(Row::Three, Column::C), DiskColor::Light);
-            assert_eq!(board.board(), expected_board.board());
+            let mask = xy_to_bit(Row::Five as u8, Column::C as u8)
+                | xy_to_bit(Row::Four as u8, Column::C as u8)
+                | xy_to_bit(Row::Three as u8, Column::C as u8);
+            expected_board = BitBoard::new(board.dark_plane() & !mask, board.light_plane() | mask);
+            assert_eq!(*board, expected_board);
             assert_eq!(table.turn(), DiskColor::Dark);
         }
     }
