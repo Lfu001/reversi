@@ -1,13 +1,11 @@
+use crate::{action::Action, board::BitBoard, disk::DiskColor};
 use serde::{Deserialize, Serialize};
-
-use crate::{action::Action, board::Board, disk::DiskColor};
 
 /// A state of a game table.
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Table {
     /// A board of Reversi.
-    #[serde(flatten)]
-    board: Board,
+    board: BitBoard,
     /// A color of the next turn.
     turn: DiskColor,
     /// A sequence of actions in the game history.
@@ -16,13 +14,13 @@ pub struct Table {
 
 impl Table {
     /// Returns a reference to the board of this [`Table`].
-    pub fn board(&self) -> &Board {
+    pub fn board(&self) -> &BitBoard {
         &self.board
     }
 
-    /// Returns a mutable reference to the board of this [`Table`].
-    pub fn board_mut(&mut self) -> &mut Board {
-        &mut self.board
+    /// Sets the board of this [`Table`].
+    pub fn set_board(&mut self, board: BitBoard) {
+        self.board = board;
     }
 
     /// Returns the turn of this [`Table`].
@@ -49,7 +47,7 @@ impl Table {
 impl Default for Table {
     fn default() -> Self {
         Self {
-            board: Board::default(),
+            board: BitBoard::default(),
             turn: DiskColor::Dark,
             history: Vec::new(),
         }
@@ -82,7 +80,7 @@ mod tests {
     fn test_default_table() {
         let table = Table::default();
 
-        assert_eq!(table.board(), &Board::default());
+        assert_eq!(table.board(), &BitBoard::default());
         assert_eq!(table.turn(), DiskColor::Dark);
         assert!(table.history().is_empty());
     }
