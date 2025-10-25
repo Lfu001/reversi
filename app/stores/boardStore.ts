@@ -5,6 +5,22 @@ import type { SuggestedPosition, SuggestionResponse } from '~/types/Suggestion'
 
 type Board = Array<DiskColor | null>
 
+/**
+ * The state of the board in bit board format.
+ */
+interface BitBoard {
+  /**
+   * A bit board string representing the positions of the dark disks on the board.
+   * Each bit in the number corresponds to a position on the board, with 1 indicating a dark disk and 0 indicating no disk.
+   */
+  dark_plane: string
+  /**
+   * A bit board string representing the positions of the light disks on the board.
+   * Each bit in the number corresponds to a position on the board, with 1 indicating a light disk and 0 indicating no disk.
+   */
+  light_plane: string
+}
+
 const Winner = {
   Draw: 'Draw',
   Dark: 'Dark',
@@ -17,7 +33,7 @@ interface ServerGameState {
   /** The current state of the table. */
   table: {
     /** The current state of the board. */
-    board: Board
+    board: BitBoard
     /** The current player. */
     turn: DiskColor
     /** The history of the game. */
@@ -36,6 +52,35 @@ interface ServerGameState {
     /** The winner of the game. */
     winner: Winner
   }
+}
+
+/**
+   * Parses a bit board object into a board object.
+   *
+   * @param bitBoard - The bit board object to parse.
+   * @returns The parsed board object.
+   */
+function parseBitBoard(bitBoard: BitBoard): Board {
+  const board: Board = []
+  const darkPlane = BigInt(bitBoard.dark_plane)
+  const lightPlane = BigInt(bitBoard.light_plane)
+  console.log(darkPlane, lightPlane)
+  console.log(bitBoard)
+  for (let i = 0; i < 64; i++) {
+    const mask = BigInt(1) << BigInt(63 - i)
+    const dark = darkPlane & mask
+    const light = lightPlane & mask
+    if (dark != 0n) {
+      board.push(DiskColor.Dark)
+    }
+    else if (light != 0n) {
+      board.push(DiskColor.Light)
+    }
+    else {
+      board.push(null)
+    }
+  }
+  return board
 }
 
 /**
@@ -160,7 +205,7 @@ export const useBoardStore = defineStore('board', () => {
    * @param serverState - The state of the game on the server.
    */
   function setStateFromServer(serverState: ServerGameState) {
-    board.value = serverState.table.board
+    board.value = parseBitBoard(serverState.table.board)
     currentPlayer.value = serverState.table.turn
     puttablePositions.value = serverState.puttable_positions
       .map(({ row, column }) => Position.fromString(row, column))

@@ -5,6 +5,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_big_array::BigArray;
+use serde_with::{serde_as, DisplayFromStr};
 use std::ops::{Index, IndexMut};
 
 /// A board of Reversi.
@@ -101,10 +102,14 @@ impl From<BitBoard> for Board {
 /// assert_eq!(bit_board.dark_plane(), 0b00000000_00000000_00000000_00001000_00010000_00000000_00000000_00000000);
 /// assert_eq!(bit_board.light_plane(), 0b00000000_00000000_00000000_00010000_00001000_00000000_00000000_00000000);
 /// ```
+#[serde_as]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct BitBoard {
     /// A bit representation of dark disks.
+    #[serde_as(as = "DisplayFromStr")]
     dark_plane: u64,
     /// A bit representation of light disks.
+    #[serde_as(as = "DisplayFromStr")]
     light_plane: u64,
 }
 
