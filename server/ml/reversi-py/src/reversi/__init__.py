@@ -67,6 +67,21 @@ class ReversiEnvironment:
         """
         return self._env.get_state()
 
+    @staticmethod
+    def get_next_state(state: BoardState, action: int) -> BoardState:
+        """Compute the next state from the given state and action.
+
+        This is a static method that works with a single game state.
+
+        Args:
+            state: Current game state with shape (4, 8, 8).
+            action: Action index (0-63) representing the position to place the disk.
+
+        Returns:
+            Next game state with shape (4, 8, 8) after applying the action.
+        """
+        return _ReversiEnvironment.get_next_state(state, action)
+
     def step_batch(
         self,
         actions: NDArray,

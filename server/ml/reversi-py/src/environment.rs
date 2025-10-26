@@ -1,6 +1,9 @@
-use common::{Action, BitPosition, DiskColor, PutConfig, Table};
+use common::{
+    position, Action, BitPosition, Bitboard, Column, DiskColor, Position, PutConfig, Row, Table,
+};
 use ndarray::{s, Array};
-use numpy::{prelude::*, PyArray, PyArray1, PyArray4, PyReadonlyArray3};
+use num_traits::FromPrimitive;
+use numpy::{prelude::*, PyArray, PyArray1, PyArray3, PyArray4, PyReadonlyArray3};
 use pyo3::prelude::*;
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::*;
@@ -105,6 +108,42 @@ impl ReversiEnvironment {
 
         Ok((next_states, dones_array.into()))
     }
+
+    /// Convert the current state of the environment to a 1D vector.
+    fn get_state_vec(tables: &Vec<Table>) -> Vec<f32> {
+        // Pre-allocate a vector with the exact required capacity for performance.
+        let mut state_vec = Vec::with_capacity(tables.len() * 4 * 8 * 8);
+        state_vec.resize(tables.len() * 4 * 8 * 8, 0.0);
+
+        for (batch_idx, table) in tables.iter().enumerate() {
+            let turn = table.turn();
+            let board = table.board();
+            let puttable_positions = get_puttable_positions(board, turn);
+            let turn_val = if turn == DiskColor::Dark { 1.0 } else { -1.0 };
+
+            let idx_offset = batch_idx * 256;
+
+            // Populate disk positions and legal moves.
+            let dark_plane = board.dark_plane();
+            let light_plane = board.light_plane();
+            for i in 0..64 {
+                let idx = idx_offset + i;
+                let mask = 1u64 << (63 - i);
+                if dark_plane & mask != 0 {
+                    state_vec[idx] = 1.0;
+                }
+                if light_plane & mask != 0 {
+                    state_vec[idx + 64] = 1.0;
+                }
+                state_vec[idx + 128] = turn_val;
+                if puttable_positions.0 & mask != 0 {
+                    state_vec[idx + 192] = 1.0;
+                }
+            }
+        }
+
+        state_vec
+    }
 }
 
 /// A tuple containing the results of a batch step of the environment.
@@ -177,39 +216,89 @@ impl ReversiEnvironment {
     /// - Channel 2: A plane indicating the current turn (1.0 for Dark, -1.0 for Light).
     /// - Channel 3: A plane indicating all legal moves for the current player (1.0 if move is legal, 0.0 otherwise).
     fn get_state(&self, py: Python<'_>) -> PyResult<Py<PyArray4<f32>>> {
-        // Pre-allocate a vector with the exact required capacity for performance.
-        let mut state_vec = Vec::with_capacity(self.batch_size * 4 * 8 * 8);
-        state_vec.resize(self.batch_size * 4 * 8 * 8, 0.0);
+        let state_vec = ReversiEnvironment::get_state_vec(&self.tables);
+        let array = PyArray::from_vec(py, state_vec);
+        Ok(array.reshape((self.batch_size, 4, 8, 8))?.into())
+    }
 
-        for (batch_idx, table) in self.tables.iter().enumerate() {
-            let turn = table.turn();
-            let board = table.board();
-            let puttable_positions = get_puttable_positions(board, turn);
-            let turn_val = if turn == DiskColor::Dark { 1.0 } else { -1.0 };
+    /// Compute the next state from a given state and action.
+    ///
+    /// This is a single-game version when processing individual games.
+    #[staticmethod]
+    fn get_next_state(
+        py: Python<'_>,
+        state: PyReadonlyArray3<f32>,
+        action: usize,
+    ) -> PyResult<Py<PyArray3<f32>>> {
+        let state_array = state.as_array();
 
-            let idx_offset = batch_idx * 256;
+        if state_array.shape() != [4, 8, 8] {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "State must have shape (4, 8, 8)",
+            ));
+        }
 
-            // Populate disk positions and legal moves.
-            let dark_plane = board.dark_plane();
-            let light_plane = board.light_plane();
-            for i in 0..64 {
-                let idx = idx_offset + i;
-                let mask = 1u64 << (63 - i);
-                if dark_plane & mask != 0 {
-                    state_vec[idx] = 1.0;
+        // Create a new table with the initial position
+        let mut table = Table::default();
+
+        // Convert the state to the internal representation
+        table.set_turn(if state_array[[2, 0, 0]] > 0.0 {
+            DiskColor::Dark
+        } else {
+            DiskColor::Light
+        });
+        let mut dark_plane = 0u64;
+        let mut light_plane = 0u64;
+        for row in 0..8 {
+            for col in 0..8 {
+                let dark = state_array[[0, row as usize, col as usize]];
+                let light = state_array[[1, row as usize, col as usize]];
+                let bit = 1 << (63 - (row * 8 + col));
+                if dark > 0.5 {
+                    dark_plane |= bit;
                 }
-                if light_plane & mask != 0 {
-                    state_vec[idx + 64] = 1.0;
-                }
-                state_vec[idx + 128] = turn_val;
-                if puttable_positions.0 & mask != 0 {
-                    state_vec[idx + 192] = 1.0;
+                if light > 0.5 {
+                    light_plane |= bit;
                 }
             }
         }
+        table.set_board(Bitboard::new(dark_plane, light_plane));
 
-        let array = PyArray::from_vec(py, state_vec);
-        Ok(array.reshape((self.batch_size, 4, 8, 8))?.into())
+        // Validate the action is within bounds (0-63)
+        if !(0..64).contains(&action) {
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                "Action must be between 0 and 63",
+            ));
+        }
+
+        // Apply the action
+        let action = Action::PutDisk(PutConfig::new(
+            table.turn(),
+            position!(
+                Row::from_usize(action / 8).unwrap(),
+                Column::from_usize(action % 8).unwrap()
+            ),
+        ));
+
+        match Controller::step(&mut table, action) {
+            Ok(step_result) => {
+                if step_result.puttable_positions.is_empty() {
+                    let turn = table.turn();
+                    match Controller::step(&mut table, Action::PassTurn(turn)) {
+                        Ok(_) => {}
+                        Err(err) => {
+                            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(err))
+                        }
+                    }
+                }
+            }
+            Err(err) => return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(err)),
+        }
+
+        // Convert the resulting state back to a numpy array
+        let result = ReversiEnvironment::get_state_vec(&vec![table]);
+        let array = PyArray::from_vec(py, result);
+        Ok(array.reshape((4, 8, 8))?.into())
     }
 
     /// Steps the environment forward by one move for each game, selecting actions stochastically.

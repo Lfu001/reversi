@@ -239,3 +239,73 @@ def test_step_invalid_action_shape(single_env: ReversiEnvironment):
     with pytest.raises(ValueError, match="Expected actions with shape"):
         invalid_action_2d = np.zeros((8, 7), dtype=np.float32)
         single_env.step_batch(invalid_action_2d, deterministic=True)
+
+
+def test_get_next_state_initial_move():
+    """Tests that the initial move is correctly applied."""
+    # Arrange
+    initial_state = np.zeros((4, 8, 8), dtype=np.float32)
+    # Set up initial disks
+    initial_state[0, 3, 4] = 1  # Dark disk
+    initial_state[0, 4, 3] = 1  # Dark disk
+    initial_state[1, 3, 3] = 1  # Light disk
+    initial_state[1, 4, 4] = 1  # Light disk
+    initial_state[2] = 1.0  # Dark's turn
+
+    # Set valid moves for dark (row 2, col 3)
+    initial_state[3, 2, 3] = 1  # Valid move
+
+    # Action: place at (2, 3)
+    action = 2 * 8 + 3  # row * 8 + col
+
+    # Act
+    next_state = ReversiEnvironment.get_next_state(initial_state, action)
+
+    # Assert - Check that the move was made and disks were flipped
+    assert next_state[0, 2, 3] == 1  # New disk placed
+    assert next_state[0, 3, 3] == 1  # Flipped disk
+    assert next_state[1, 3, 3] == 0  # Was light, now dark
+
+
+def test_get_next_state_invalid_action():
+    """Tests that an invalid action raises an appropriate error."""
+    # Arrange
+    initial_state = np.zeros((4, 8, 8), dtype=np.float32)
+    # Set up initial disks
+    initial_state[0, 3, 4] = 1  # Dark disk
+    initial_state[1, 4, 4] = 1  # Light disk
+    initial_state[2] = 1.0  # Dark's turn
+
+    # Action: invalid position (already occupied)
+    invalid_action = 3 * 8 + 4  # (3, 4) is already occupied
+
+    # Act & Assert
+    with pytest.raises(
+        ValueError, match=r"Tried to put a disk on a non-empty square:.*"
+    ):
+        ReversiEnvironment.get_next_state(initial_state, invalid_action)
+
+
+def test_get_next_state_invalid_state_shape():
+    """Tests that invalid state shape raises ValueError."""
+    # Arrange
+    invalid_state = np.zeros((3, 8, 8), dtype=np.float32)  # Wrong number of planes
+
+    # Act & Assert - Match the exact error message without escaped parentheses
+    with pytest.raises(ValueError, match=r"State must have shape \(4, 8, 8\)"):
+        ReversiEnvironment.get_next_state(invalid_state, 0)
+
+
+def test_get_next_state_invalid_action_range():
+    """Tests that action out of range raises appropriate error."""
+    # Arrange
+    state = np.zeros((4, 8, 8), dtype=np.float32)
+
+    # Act & Assert
+    # Negative numbers cause an OverflowError due to Rust's unsigned integer type
+    with pytest.raises(OverflowError, match=r"can't convert negative int to unsigned"):
+        ReversiEnvironment.get_next_state(state, -1)  # Too small
+
+    # Values that are too large should raise a ValueError with a descriptive message
+    with pytest.raises(ValueError, match=r"Action must be between 0 and 63"):
+        ReversiEnvironment.get_next_state(state, 64)  # Too large
