@@ -74,16 +74,11 @@ impl ReversiEnvironment {
                 let turn = table.turn();
                 let puttable_positions = get_puttable_positions(table.board(), turn);
 
-                let action = if puttable_positions.is_empty() {
-                    // If there are no legal moves, the only valid action is to pass the turn.
-                    Action::PassTurn(turn)
-                } else {
-                    // Get the 2D action probabilities for the current game.
-                    let game_actions = actions_array.slice(s![i, .., ..]);
-                    // Use the provided strategy (closure) to select the next move.
-                    let chosen_pos = action_selector(puttable_positions, &game_actions);
-                    Action::PutDisk(PutConfig::new(turn, chosen_pos.into()))
-                };
+                // Get the 2D action probabilities for the current game.
+                let game_actions = actions_array.slice(s![i, .., ..]);
+                // Use the provided strategy (closure) to select the next move.
+                let chosen_pos = action_selector(puttable_positions, &game_actions);
+                let action = Action::PutDisk(PutConfig::new(turn, chosen_pos.into()));
 
                 // Apply the chosen action to the game board.
                 match Controller::step(table, action) {
@@ -91,6 +86,20 @@ impl ReversiEnvironment {
                         // Check if the game has ended and update the `done` flag.
                         if step_result.judge_result.is_some() {
                             *done = true;
+                        }
+                        if step_result.puttable_positions.is_empty() {
+                            match Controller::step(table, Action::PassTurn(table.turn())) {
+                                Ok(step_result) => {
+                                    if step_result.judge_result.is_some() {
+                                        *done = true;
+                                    }
+                                }
+                                Err(err) => {
+                                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                                        err,
+                                    ))
+                                }
+                            }
                         }
                         Ok(*done)
                     }
