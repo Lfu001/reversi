@@ -48,6 +48,17 @@ class ReversiEnvironment:
         """
         return self._env.reset()
 
+    def reset_indices(self, indices: list[int]) -> BoardState:
+        """Reset games specified by `indices` to their initial state.
+
+        Args:
+            indices: A list of indices of the games to reset.
+
+        Returns:
+            Initial game states with shape (batch_size, 4, 8, 8).
+        """
+        return self._env.reset_indices(indices)
+
     def get_state(self) -> BoardState:
         """Get the current state of all games.
 

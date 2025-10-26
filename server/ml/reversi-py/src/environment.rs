@@ -149,6 +149,25 @@ impl ReversiEnvironment {
         self.get_state(py)
     }
 
+    /// Resets games specified by `indices` to their initial state.
+    ///
+    /// # Arguments
+    /// * `indices` - A slice of indices of the games to reset.
+    fn reset_indices(
+        &mut self,
+        py: Python<'_>,
+        indices: Vec<usize>,
+    ) -> PyResult<Py<PyArray4<f32>>> {
+        for index in indices {
+            if index >= self.batch_size {
+                continue;
+            }
+            self.tables[index] = Table::default();
+            self.dones[index] = false;
+        }
+        self.get_state(py)
+    }
+
     /// Returns the current state of all games in the batch.
     ///
     /// The state is represented as a 4-dimensional numpy array with shape
