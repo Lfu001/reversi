@@ -33,6 +33,23 @@ def test_reset_return_spec(single_env: ReversiEnvironment):
     assert state.dtype == np.float32
 
 
+def test_reset_indices_return_spec(batch_env: ReversiEnvironment):
+    """Tests that reset_indices() returns a state with the correct shape and dtype."""
+    batch_env.step_batch(np.zeros((2, 8, 8), dtype=np.float32), deterministic=True)
+    before_state = batch_env.get_state()
+
+    # Act
+    state = batch_env.reset_indices([0])
+
+    # Assert - Focus on I/O specification
+    assert isinstance(state, np.ndarray)
+    assert state.shape == (2, 4, 8, 8)
+    assert state.dtype == np.float32
+
+    assert not np.array_equal(state[0], before_state[0])
+    np.testing.assert_array_equal(state[1], before_state[1])
+
+
 def test_initial_board_state(single_env: ReversiEnvironment):
     """Tests the board configuration of the initial state."""
     state = single_env.reset()
