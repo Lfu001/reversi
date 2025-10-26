@@ -102,8 +102,8 @@ def test_step_deterministic_board_mutation(single_env: ReversiEnvironment):
     light_pieces = next_state[0, 1]
     turn_plane = next_state[0, 2]
 
-    # Assert turn changed to Light (plane of 0s)
-    np.testing.assert_array_equal(turn_plane, np.zeros((8, 8), dtype=np.float32))
+    # Assert turn changed to Light (plane of -1s)
+    np.testing.assert_array_equal(turn_plane, -np.ones((8, 8), dtype=np.float32))
     assert not done[0]
 
     # Check dark pieces: original 2, 1 new, 1 flipped
