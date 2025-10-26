@@ -31,11 +31,13 @@ During training, mini-batches are sampled from the replay buffer. For each sampl
 #### a. Value Loss
 
 Consistent with standard AlphaZero, we compute the mean squared error between the network's value output `v(S)` and the actual game outcome `Z`.
+
 $$ L_{value} = (v(S) - Z)^2 $$
 
 #### b. Policy Loss
 
 Also consistent with standard AlphaZero, we compute the cross-entropy between the network's policy output `p(S)` and the MCTS visit count distribution `π`.
+
 $$ L_{policy} = - \pi \cdot \log(p(S)) $$
 
 #### c. MCTS-GRPO Loss
@@ -49,7 +51,9 @@ This loss encourages the network's policy output to assign a higher probability 
 ### 3. Total Loss
 
 The final loss function is a weighted sum of these three components:
+
 $$ L_{total} = L_{value} + L_{policy} + \lambda_{GRPO} \cdot L_{GRPO} $$
+
 where `λ_GRPO` is a hyperparameter that balances the contribution of the GRPO loss.
 
 ## Experiments

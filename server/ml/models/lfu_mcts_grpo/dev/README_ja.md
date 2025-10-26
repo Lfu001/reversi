@@ -29,11 +29,13 @@ AlphaZeroと同様に、最新のニューラルネットワークを用いて�
 #### a. バリュー損失
 
 標準的なAlphaZeroと同様に、ネットワークの価値出力 `v(S)` と、実際のゲーム結果 `Z` の間の平均二乗誤差を計算する。
+
 $$ L_{value} = (v(S) - Z)^2 $$
 
 #### b. ポリシー損失
 
 これも標準的なAlphaZeroと同様に、ネットワークのポリシー出力 `p(S)` と、MCTSの探索回数分布 `π` の間のクロスエントロピーを計算する。
+
 $$ L_{policy} = - \pi \cdot \log(p(S)) $$
 
 #### c. MCTS-GRPO損失
@@ -47,7 +49,9 @@ $$ L_{GRPO\_pair} = \log(1 + \exp(-(\log p(S, a_{best}) - \log p(S, a_{suboptima
 ### 3. 合計損失
 
 最終的な損失関数は、これらの3つの項を重み付きで合計したものとなる。
+
 $$ L_{total} = L_{value} + L_{policy} + \lambda_{GRPO} \cdot L_{GRPO} $$
+
 ここで `λ_GRPO` は、GRPO損失の寄与度を調整するハイパーパラメータである。
 
 ## 実験
