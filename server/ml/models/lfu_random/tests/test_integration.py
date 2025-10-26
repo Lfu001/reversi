@@ -5,20 +5,11 @@ client = TestClient(app)
 
 
 def test_invocations():
-    # fmt: off
-    board = [
-        None, None, None, None, None, None, None, None,
-        None, None, None, None, None, None, None, None,
-        None, None, None, None, None, None, None, None,
-        None, None, None, "Light", "Dark", None, None, None,
-        None, None, None, "Dark", "Light", None, None, None,
-        None, None, None, None, None, None, None, None,
-        None, None, None, None, None, None, None, None,
-        None, None, None, None, None, None, None, None
-    ]
-    # fmt: on
     data = {
-        "board": board,
+        "board": {
+            "dark_plane": 34628173824,
+            "light_plane": 68853694464,
+        },
         "turn": "Dark",
         "puttable_positions": [
             {"row": 2, "column": 4},

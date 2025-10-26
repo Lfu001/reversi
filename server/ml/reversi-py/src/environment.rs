@@ -1,12 +1,14 @@
-use common::{Action, Column, DiskColor, Position, PutConfig, Row, Table};
+use common::{Action, BitPosition, DiskColor, PutConfig, Table};
 use ndarray::{s, Array};
-use num_traits::FromPrimitive;
 use numpy::{prelude::*, PyArray, PyArray1, PyArray4, PyReadonlyArray3};
 use pyo3::prelude::*;
 use rand::distr::weighted::WeightedIndex;
 use rand::prelude::*;
 use rayon::prelude::*;
-use reversi_core::{action::get_puttable_positions, controller::Controller, state::BoardExt};
+use reversi_core::{
+    action::{get_puttable_positions, PuttablePositions},
+    controller::Controller,
+};
 
 /// A PyClass that represents a batch of parallel Reversi games for reinforcement learning.
 ///
@@ -48,7 +50,7 @@ impl ReversiEnvironment {
         action_selector: F,
     ) -> PyResult<StepBatchResult>
     where
-        F: Fn(&[Position], &ndarray::ArrayView2<'_, f32>) -> Position + Sync + Send,
+        F: Fn(PuttablePositions, &ndarray::ArrayView2<'_, f32>) -> BitPosition + Sync + Send,
     {
         let actions_array = actions.as_array();
 
@@ -74,8 +76,8 @@ impl ReversiEnvironment {
                     // Get the 2D action probabilities for the current game.
                     let game_actions = actions_array.slice(s![i, .., ..]);
                     // Use the provided strategy (closure) to select the next move.
-                    let chosen_pos = action_selector(&puttable_positions, &game_actions);
-                    Action::PutDisk(PutConfig::new(turn, chosen_pos))
+                    let chosen_pos = action_selector(puttable_positions, &game_actions);
+                    Action::PutDisk(PutConfig::new(turn, chosen_pos.into()))
                 };
 
                 // Apply the chosen action to the game board.
@@ -147,55 +149,40 @@ impl ReversiEnvironment {
     ///
     /// The state is represented as a 4-dimensional numpy array with shape
     /// `(batch_size, 4, 8, 8)`. The four channels are:
-    /// - Channel 0: Positions of the current player's disks (1.0 if disk exists, 0.0 otherwise).
-    /// - Channel 1: Positions of the opponent's disks.
+    /// - Channel 0: Positions of the dark disks (1.0 if disk exists, 0.0 otherwise).
+    /// - Channel 1: Positions of the light disks (1.0 if disk exists, 0.0 otherwise).
     /// - Channel 2: A plane indicating the current turn (1.0 for Dark, 0.0 for Light).
-    /// - Channel 3: A plane indicating all legal moves for the current player.
+    /// - Channel 3: A plane indicating all legal moves for the current player (1.0 if move is legal, 0.0 otherwise).
     fn get_state(&self, py: Python<'_>) -> PyResult<Py<PyArray4<f32>>> {
         // Pre-allocate a vector with the exact required capacity for performance.
         let mut state_vec = Vec::with_capacity(self.batch_size * 4 * 8 * 8);
+        state_vec.resize(self.batch_size * 4 * 8 * 8, 0.0);
 
-        for table in &self.tables {
+        for (batch_idx, table) in self.tables.iter().enumerate() {
             let turn = table.turn();
             let board = table.board();
             let puttable_positions = get_puttable_positions(board, turn);
+            let turn_val = if turn == DiskColor::Dark { 1.0 } else { 0.0 };
 
-            // Initialize planes for the 4 channels.
-            let mut c0_player_disks = [0.0f32; 64];
-            let mut c1_opponent_disks = [0.0f32; 64];
-            let c2_turn_plane = if turn == DiskColor::Dark {
-                [1.0f32; 64]
-            } else {
-                [0.0f32; 64]
-            };
-            let mut c3_legal_moves = [0.0f32; 64];
+            let idx_offset = batch_idx * 256;
 
-            // Populate disk positions.
-            for r in 0..8 {
-                for c in 0..8 {
-                    let pos = Position::new(Row::from_u8(r).unwrap(), Column::from_u8(c).unwrap());
-                    let idx = (r * 8 + c) as usize;
-                    if let Some(disk) = board.get_disk(&pos) {
-                        if disk == turn {
-                            c0_player_disks[idx] = 1.0;
-                        } else {
-                            c1_opponent_disks[idx] = 1.0;
-                        }
-                    }
+            // Populate disk positions and legal moves.
+            let dark_plane = board.dark_plane();
+            let light_plane = board.light_plane();
+            for i in 0..64 {
+                let idx = idx_offset + i;
+                let mask = 1u64 << (63 - i);
+                if dark_plane & mask != 0 {
+                    state_vec[idx] = 1.0;
+                }
+                if light_plane & mask != 0 {
+                    state_vec[idx + 64] = 1.0;
+                }
+                state_vec[idx + 128] = turn_val;
+                if puttable_positions.0 & mask != 0 {
+                    state_vec[idx + 192] = 1.0;
                 }
             }
-
-            // Populate legal moves.
-            for pos in puttable_positions {
-                let idx = (pos.row() as u8 * 8 + pos.column() as u8) as usize;
-                c3_legal_moves[idx] = 1.0;
-            }
-
-            // Append the channels for this game to the main state vector.
-            state_vec.extend_from_slice(&c0_player_disks);
-            state_vec.extend_from_slice(&c1_opponent_disks);
-            state_vec.extend_from_slice(&c2_turn_plane);
-            state_vec.extend_from_slice(&c3_legal_moves);
         }
 
         let array = PyArray::from_vec(py, state_vec);
@@ -220,9 +207,10 @@ impl ReversiEnvironment {
         actions: PyReadonlyArray3<f32>,
     ) -> PyResult<StepBatchResult> {
         // Define the action selection strategy: sample from the probability distribution.
-        let selector = |puttable_positions: &[Position],
+        let selector = |puttable_positions: PuttablePositions,
                         game_actions: &ndarray::ArrayView2<'_, f32>| {
-            let weights: Vec<f32> = puttable_positions
+            let puttable_positions_vec = puttable_positions.to_vec();
+            let weights: Vec<f32> = puttable_positions_vec
                 .iter()
                 .map(|pos| game_actions[[pos.row() as usize, pos.column() as usize]])
                 .collect();
@@ -233,10 +221,11 @@ impl ReversiEnvironment {
                     // Create a thread-local random number generator.
                     let mut rng = rand::rng();
                     // Sample an index from the distribution and return the corresponding position.
-                    puttable_positions[dist.sample(&mut rng)]
+                    let idx = dist.sample(&mut rng);
+                    BitPosition::from(puttable_positions_vec[idx])
                 }
                 // Fallback: if all legal moves have zero probability, just pick the first one.
-                Err(_) => puttable_positions[0],
+                Err(_) => BitPosition::from(puttable_positions_vec[0]),
             }
         };
 
@@ -261,18 +250,20 @@ impl ReversiEnvironment {
         actions: PyReadonlyArray3<f32>,
     ) -> PyResult<StepBatchResult> {
         // Define the action selection strategy: always pick the best move (greedy).
-        let selector = |puttable_positions: &[Position],
+        let selector = |puttable_positions: PuttablePositions,
                         game_actions: &ndarray::ArrayView2<'_, f32>| {
             // Find the position with the maximum probability among all legal moves.
             // The `unwrap()` calls are safe because this closure is only called when `puttable_positions` is not empty.
-            *puttable_positions
+            let position = *puttable_positions
+                .to_vec()
                 .iter()
                 .max_by(|&a, &b| {
                     let prob_a = game_actions[[a.row() as usize, a.column() as usize]];
                     let prob_b = game_actions[[b.row() as usize, b.column() as usize]];
                     prob_a.partial_cmp(&prob_b).unwrap()
                 })
-                .unwrap()
+                .unwrap();
+            BitPosition::from(position)
         };
 
         // Delegate the core logic to the private batch processing function.

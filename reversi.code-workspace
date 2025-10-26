@@ -21,6 +21,6 @@
     ],
     "settings": {
         "conventionalCommits.scopes": ["app", "game", "gateway", "ml"],
-        "cSpell.words": ["Reversi"]
+        "cSpell.words": ["bitboard", "Reversi"]
     }
 }

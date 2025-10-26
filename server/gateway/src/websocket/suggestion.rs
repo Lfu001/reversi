@@ -1,4 +1,4 @@
-use common::{Board, DiskColor, Position};
+use common::{Bitboard, DiskColor, Position};
 use serde::{Deserialize, Serialize};
 
 /// A request for a suggestion from a model.
@@ -22,9 +22,8 @@ pub struct SuggestionResponse {
 /// A request to invoke a model for a suggestion.
 #[derive(Serialize)]
 pub struct InvocationRequest {
-    /// The game board state. This is a flattened version of the `Board` struct.
-    #[serde(flatten)]
-    pub board: Board,
+    /// The game board state.
+    pub board: Bitboard,
     /// The current player's turn.
     pub turn: DiskColor,
     /// The positions that the current player can put disks on.

@@ -1,6 +1,7 @@
 from enum import Enum
-from typing import Optional, Union
+from typing import Union
 
+import numpy as np
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -130,35 +131,84 @@ class DiskColor(Enum):
     DARK = "Dark"
 
 
+class Bitboard(BaseModel):
+    """
+    A bitboard representation of the Reversi game board.
+
+    Attributes:
+        dark_plane: Bitmask for dark disks (1 for dark disk, 0 otherwise)
+        light_plane: Bitmask for light disks (1 for light disk, 0 otherwise)
+    """
+
+    dark_plane: int
+    light_plane: int
+
+    def to_numpy(self) -> np.ndarray:
+        """Convert the bitboard to a numpy array with shape (2, 8, 8).
+
+        The array contains two channels:
+        - Channel 0: Dark disks (1.0 if disk exists, 0.0 otherwise)
+        - Channel 1: Light disks (1.0 if disk exists, 0.0 otherwise)
+
+        Returns:
+            np.ndarray: A 3D numpy array with shape (2, 8, 8)
+        """
+        board = np.zeros((2, 8, 8), dtype=np.float32)
+
+        for i in range(64):
+            mask = 1 << i
+            row = i // 8
+            col = i % 8
+
+            if self.dark_plane & mask:
+                board[0, row, col] = 1.0
+            elif self.light_plane & mask:
+                board[1, row, col] = 1.0
+
+        return board
+
+
 class TableState(BaseModel):
     """
     Current state of the game table
 
     Parameters:
-        board: List of 64 elements representing the game board (8x8)
+        board: Bitboard representing the game board (8x8)
         turn: Current player's turn
         puttable_positions: List of positions where the current player can place a disk
     """
 
-    board: list[Optional[DiskColor]]
+    board: Bitboard
     turn: DiskColor
     puttable_positions: list[Position]
 
-    @field_validator("board")
-    @classmethod
-    def validate_board_size(cls, v: list[str]) -> list[str]:
+    def to_numpy(self) -> np.ndarray:
         """
-        Validates the board size.
+        Convert the table state to a numpy array with shape (1, 4, 8, 8).
 
-        Args:
-            v: The board to validate.
+        The 4 channels are:
+        - Channel 0: Positions of the dark disks (1.0 if disk exists, 0.0 otherwise)
+        - Channel 1: Positions of the light disks (1.0 if disk exists, 0.0 otherwise)
+        - Channel 2: Current turn (1.0 for Dark, 0.0 for Light)
+        - Channel 3: Legal moves (1.0 if move is legal, 0.0 otherwise)
 
         Returns:
-            The validated board.
+            np.ndarray: A 4D numpy array with shape (1, 4, 8, 8)
         """
-        if len(v) != 64:
-            raise ValueError("Board must have exactly 64 elements (8x8)")
-        return v
+        state = np.zeros((1, 4, 8, 8), dtype=np.float32)
+
+        # Get board as a numpy array (2, 8, 8) and copy to the output
+        state[0, :2] = self.board.to_numpy()  # Dark and light disks
+
+        # Set turn plane (1.0 for Dark, 0.0 for Light)
+        if self.turn == DiskColor.DARK:
+            state[0, 2, :, :] = 1.0
+
+        # Set legal moves plane
+        for pos in self.puttable_positions:
+            state[0, 3, pos.row, pos.col] = 1.0
+
+        return state
 
 
 class SuggestedPosition(BaseModel):
