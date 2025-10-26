@@ -151,7 +151,7 @@ impl ReversiEnvironment {
     /// `(batch_size, 4, 8, 8)`. The four channels are:
     /// - Channel 0: Positions of the dark disks (1.0 if disk exists, 0.0 otherwise).
     /// - Channel 1: Positions of the light disks (1.0 if disk exists, 0.0 otherwise).
-    /// - Channel 2: A plane indicating the current turn (1.0 for Dark, 0.0 for Light).
+    /// - Channel 2: A plane indicating the current turn (1.0 for Dark, -1.0 for Light).
     /// - Channel 3: A plane indicating all legal moves for the current player (1.0 if move is legal, 0.0 otherwise).
     fn get_state(&self, py: Python<'_>) -> PyResult<Py<PyArray4<f32>>> {
         // Pre-allocate a vector with the exact required capacity for performance.
@@ -162,7 +162,7 @@ impl ReversiEnvironment {
             let turn = table.turn();
             let board = table.board();
             let puttable_positions = get_puttable_positions(board, turn);
-            let turn_val = if turn == DiskColor::Dark { 1.0 } else { 0.0 };
+            let turn_val = if turn == DiskColor::Dark { 1.0 } else { -1.0 };
 
             let idx_offset = batch_idx * 256;
 
