@@ -29,15 +29,16 @@ class ReversiEnvironment:
         >>> next_state, dones = env.step_batch(actions)
     """
 
-    def __init__(self, batch_size: int):
+    def __init__(self, batch_size: int, seed: int = 0):
         """Initialize the environment.
 
         Args:
             batch_size: Number of parallel games to manage.
+            seed: Seed value used to determine actions stochastically.
         """
         if batch_size < 1:
             raise ValueError("batch_size must be at least 1")
-        self._env = _ReversiEnvironment(batch_size)
+        self._env = _ReversiEnvironment(batch_size, seed)
 
     def reset(self) -> BoardState:
         """Reset all games to their initial state.

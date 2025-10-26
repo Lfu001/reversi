@@ -23,6 +23,8 @@ struct ReversiEnvironment {
     dones: Vec<bool>,
     /// The number of games in the batch.
     batch_size: usize,
+    /// A seed value used to determine actions stochastically.
+    seed: u64,
 }
 
 // Private implementation block for core logic not exposed to Python.
@@ -118,12 +120,14 @@ impl ReversiEnvironment {
     ///
     /// # Arguments
     /// * `batch_size` - The number of parallel games to simulate in this environment.
+    /// * `seed` - The seed value used to determine actions stochastically.
     #[new]
-    fn new(batch_size: usize) -> Self {
+    fn new(batch_size: usize, seed: u64) -> Self {
         ReversiEnvironment {
             tables: (0..batch_size).map(|_| Table::default()).collect(),
             dones: vec![false; batch_size],
             batch_size,
+            seed,
         }
     }
 
@@ -206,6 +210,8 @@ impl ReversiEnvironment {
         py: Python<'_>,
         actions: PyReadonlyArray3<f32>,
     ) -> PyResult<StepBatchResult> {
+        let seed = self.seed;
+        self.seed += 1;
         // Define the action selection strategy: sample from the probability distribution.
         let selector = |puttable_positions: PuttablePositions,
                         game_actions: &ndarray::ArrayView2<'_, f32>| {
@@ -219,7 +225,7 @@ impl ReversiEnvironment {
             match WeightedIndex::new(&weights) {
                 Ok(dist) => {
                     // Create a thread-local random number generator.
-                    let mut rng = rand::rng();
+                    let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
                     // Sample an index from the distribution and return the corresponding position.
                     let idx = dist.sample(&mut rng);
                     BitPosition::from(puttable_positions_vec[idx])
