@@ -296,7 +296,7 @@ impl ReversiEnvironment {
         }
 
         // Convert the resulting state back to a numpy array
-        let result = ReversiEnvironment::get_state_vec(&vec![table]);
+        let result = ReversiEnvironment::get_state_vec(&[table]);
         let array = PyArray::from_vec(py, result);
         Ok(array.reshape((4, 8, 8))?.into())
     }
