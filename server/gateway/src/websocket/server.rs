@@ -367,7 +367,7 @@ impl GameSessionManager {
             .push("suggest");
 
         let data = InvocationRequest {
-            board: (*game_state.table().board()).into(),
+            board: *game_state.table().board(),
             turn: game_state.table().turn(),
             puttable_positions: game_state.puttable_positions().clone(),
         };
