@@ -54,19 +54,19 @@ def test_initial_board_state(single_env: ReversiEnvironment):
     """Tests the board configuration of the initial state."""
     state = single_env.reset()
 
-    my_pieces = state[0, 0]
-    opponent_pieces = state[0, 1]
+    dark_disks = state[0, 0]
+    light_disks = state[0, 1]
     turn_plane = state[0, 2]
 
-    # Assert initial pieces
-    expected_my = np.zeros((8, 8), dtype=np.float32)
-    expected_opponent = np.zeros((8, 8), dtype=np.float32)
-    expected_my[3, 4] = 1
-    expected_my[4, 3] = 1
-    expected_opponent[3, 3] = 1
-    expected_opponent[4, 4] = 1
-    np.testing.assert_array_equal(my_pieces, expected_my)
-    np.testing.assert_array_equal(opponent_pieces, expected_opponent)
+    # Assert initial disks
+    expected_dark = np.zeros((8, 8), dtype=np.float32)
+    expected_light = np.zeros((8, 8), dtype=np.float32)
+    expected_dark[3, 4] = 1
+    expected_dark[4, 3] = 1
+    expected_light[3, 3] = 1
+    expected_light[4, 4] = 1
+    np.testing.assert_array_equal(dark_disks, expected_dark)
+    np.testing.assert_array_equal(light_disks, expected_light)
 
     # Assert it's Dark's turn (plane of 1s)
     np.testing.assert_array_equal(turn_plane, np.ones((8, 8), dtype=np.float32))
@@ -115,26 +115,26 @@ def test_step_deterministic_board_mutation(single_env: ReversiEnvironment):
     next_state, done = single_env.step_batch(action, deterministic=True)
 
     # Assert
-    dark_pieces = next_state[0, 0]
-    light_pieces = next_state[0, 1]
+    dark_disks = next_state[0, 0]
+    light_disks = next_state[0, 1]
     turn_plane = next_state[0, 2]
 
     # Assert turn changed to Light (plane of -1s)
     np.testing.assert_array_equal(turn_plane, -np.ones((8, 8), dtype=np.float32))
     assert not done[0]
 
-    # Check dark pieces: original 2, 1 new, 1 flipped
+    # Check dark disks: original 2, 1 new, 1 flipped
     expected_dark = np.zeros((8, 8), dtype=np.float32)
-    expected_dark[2, 3] = 1  # New piece at D3
-    expected_dark[3, 3] = 1  # Flipped piece at D4
-    expected_dark[3, 4] = 1  # Original piece at E4
-    expected_dark[4, 3] = 1  # Original piece at D5
-    np.testing.assert_array_equal(dark_pieces, expected_dark)
+    expected_dark[2, 3] = 1  # New disk at D3
+    expected_dark[3, 3] = 1  # Flipped disk at D4
+    expected_dark[3, 4] = 1  # Original disk at E4
+    expected_dark[4, 3] = 1  # Original disk at D5
+    np.testing.assert_array_equal(dark_disks, expected_dark)
 
-    # Check light pieces: one was flipped
+    # Check light disks: one was flipped
     expected_light = np.zeros((8, 8), dtype=np.float32)
-    expected_light[4, 4] = 1  # Original piece at E5
-    np.testing.assert_array_equal(light_pieces, expected_light)
+    expected_light[4, 4] = 1  # Original disk at E5
+    np.testing.assert_array_equal(light_disks, expected_light)
 
 
 def test_step_stochastic_selects_legal_move(single_env: ReversiEnvironment):
@@ -150,25 +150,24 @@ def test_step_stochastic_selects_legal_move(single_env: ReversiEnvironment):
     next_state, _ = single_env.step_batch(action, deterministic=False)
 
     # Assert
-    # The new piece must be at one of the two locations we gave probability to.
-    dark_pieces = next_state[0, 0]
+    dark_disks = next_state[0, 0]
 
-    # Check if a piece was placed at D3 (resulting board)
+    # Check if a disk was placed at D3 (resulting board)
     board_if_d3 = np.zeros((8, 8), dtype=np.float32)
     board_if_d3[2, 3] = 1
     board_if_d3[3, 3] = 1
     board_if_d3[3, 4] = 1
     board_if_d3[4, 3] = 1
 
-    # Check if a piece was placed at C4 (resulting board)
+    # Check if a disk was placed at C4 (resulting board)
     board_if_c4 = np.zeros((8, 8), dtype=np.float32)
     board_if_c4[3, 2] = 1
     board_if_c4[3, 3] = 1
     board_if_c4[4, 3] = 1
     board_if_c4[3, 4] = 1
 
-    d3_was_played = np.array_equal(dark_pieces, board_if_d3)
-    c4_was_played = np.array_equal(dark_pieces, board_if_c4)
+    d3_was_played = np.array_equal(dark_disks, board_if_d3)
+    c4_was_played = np.array_equal(dark_disks, board_if_c4)
 
     assert d3_was_played or c4_was_played, (
         "The move played was not one of the provided options"
@@ -193,25 +192,22 @@ def test_batch_step_independent(batch_env: ReversiEnvironment):
     next_states, _ = batch_env.step_batch(actions, deterministic=True)
 
     # Assert state of the first game (played at D3)
-    dark_pieces_game1 = next_states[0, 0]
+    dark_disks_game1 = next_states[0, 0]
     expected_dark_game1 = np.zeros((8, 8), dtype=np.float32)
     expected_dark_game1[2, 3] = 1
     expected_dark_game1[3, 3] = 1
     expected_dark_game1[3, 4] = 1
     expected_dark_game1[4, 3] = 1
-    np.testing.assert_array_equal(dark_pieces_game1, expected_dark_game1)
+    np.testing.assert_array_equal(dark_disks_game1, expected_dark_game1)
 
     # Assert state of the second game (played at C4)
-    dark_pieces_game2 = next_states[1, 0]
+    dark_disks_game2 = next_states[1, 0]
     expected_dark_game2 = np.zeros((8, 8), dtype=np.float32)
     expected_dark_game2[3, 2] = 1
     expected_dark_game2[4, 3] = 1
     expected_dark_game2[3, 3] = 1
     expected_dark_game2[3, 4] = 1
-    np.testing.assert_array_equal(dark_pieces_game2, expected_dark_game2)
-
-
-# --- Error Condition Tests ---
+    np.testing.assert_array_equal(dark_disks_game2, expected_dark_game2)
 
 
 def test_init_invalid_batch_size():
