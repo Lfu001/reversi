@@ -110,7 +110,7 @@ impl ReversiEnvironment {
     }
 
     /// Convert the current state of the environment to a 1D vector.
-    fn get_state_vec(tables: &Vec<Table>) -> Vec<f32> {
+    fn get_state_vec(tables: &[Table]) -> Vec<f32> {
         // Pre-allocate a vector with the exact required capacity for performance.
         let mut state_vec = Vec::with_capacity(tables.len() * 4 * 8 * 8);
         state_vec.resize(tables.len() * 4 * 8 * 8, 0.0);
