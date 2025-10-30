@@ -31,7 +31,7 @@ def train():
             total_limit=3, automatic_checkpoint_naming=True
         ),
     )
-    # accelerator.init_trackers("reversi_zero", config=config.to_dict())
+    accelerator.init_trackers("reversi_zero", config=config.to_dict())
 
     device = accelerator.device
 
