@@ -15,16 +15,16 @@ class ReversiZeroConfig(PretrainedConfig):
         dirichlet_alpha: float = 0.3,
         c_puct: float = 1.25,
         # Training
-        batch_size: int = 1,
+        batch_size: int = 512,
         replay_buffer_size: int = 600_000,
         learning_rate: float = 3e-4,
         weight_decay: float = 1e-2,
-        total_training_steps: int = 3,
-        games_per_iteration: int = 1,
-        training_steps_per_iteration: int = 1,
+        total_training_steps: int = 3_000,
+        games_per_iteration: int = 512,
+        training_steps_per_iteration: int = 60,
         # Tree-GRPO
         lambda_grpo: float = 1.0,
-        grpo_num_pairs: int = 1,
+        grpo_num_pairs: int = 16,
         **kwargs,
     ):
         super().__init__(**kwargs)
