@@ -1,0 +1,18 @@
+[project]
+name = "train"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate>=1.10.1",
+    "reversi",
+    "rich>=14.2.0",
+    "torch>=2.8.0",
+    "tqdm>=4.67.1",
+    "transformers>=4.57.0",
+    "wandb>=0.22.2",
+]
+
+[tool.uv.sources]
+reversi = { path = "../../../reversi-py" }
