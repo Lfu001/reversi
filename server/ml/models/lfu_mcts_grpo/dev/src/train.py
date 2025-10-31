@@ -64,10 +64,6 @@ def train():
         while games_completed_in_iteration < config.games_per_iteration:
             pi, q_values = mcts.run_simulations(model, current_states, device)
             next_states, dones = env.step_batch(pi, deterministic=False)
-            # print(
-            #     f"{step_count=}",
-            #     f"{games_completed_in_iteration=}, {len(replay_buffer)=}",
-            # )
             step_count += 1
             for i in range(config.batch_size):
                 ongoing_games_data[i].append(
