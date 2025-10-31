@@ -125,21 +125,24 @@ class MCTS:
 
             needs_eval_mask = ~is_terminal
             if np.any(needs_eval_mask):
-                states_to_eval = leaf_states[needs_eval_mask]
-                with torch.no_grad():
-                    policy_logits, network_values = model(
-                        torch.from_numpy(states_to_eval).to(device)
-                    )
+                states_to_eval_tensor = torch.from_numpy(
+                    leaf_states[needs_eval_mask]
+                ).to(device)
 
-                legal_moves_mask = states_to_eval[:, 3, :, :].reshape(
-                    states_to_eval.shape[0], -1
-                )
-                policy_logits = policy_logits.view(states_to_eval.shape[0], -1)
-                policy_logits[
-                    torch.from_numpy(legal_moves_mask == 0).to(device)
-                ] = -torch.inf
-                policy_probs = F.softmax(policy_logits, dim=1).cpu().numpy()
-                values_np[needs_eval_mask] = network_values.cpu().numpy()
+                with torch.inference_mode():
+                    policy_logits, network_values = model(states_to_eval_tensor)
+
+                    legal_moves_mask = (
+                        states_to_eval_tensor[:, 3, :, :]
+                        .reshape(states_to_eval_tensor.shape[0], -1)
+                        .bool()
+                    )
+                    policy_logits = policy_logits.view(
+                        states_to_eval_tensor.shape[0], -1
+                    )
+                    policy_logits.masked_fill_(~legal_moves_mask, -torch.inf)
+                    policy_probs = F.softmax(policy_logits, dim=1).cpu().numpy()
+                    values_np[needs_eval_mask] = network_values.cpu().numpy()
 
                 eval_idx = 0
                 for i in range(self.config.batch_size):
