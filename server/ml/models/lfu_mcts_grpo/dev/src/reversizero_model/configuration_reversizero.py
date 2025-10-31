@@ -10,7 +10,7 @@ class ReversiZeroConfig(PretrainedConfig):
         num_channels: int = 128,
         num_residual_blocks: int = 8,
         # MCTS
-        num_simulations: int = 10,
+        num_simulations: int = 200,
         dirichlet_epsilon: float = 0.25,
         dirichlet_alpha: float = 0.3,
         c_puct: float = 1.25,
@@ -24,7 +24,7 @@ class ReversiZeroConfig(PretrainedConfig):
         training_steps_per_iteration: int = 60,
         lambda_value: float = 3.0,
         # Tree-GRPO
-        lambda_grpo: float = 1.0,
+        lambda_grpo: float = 5.0,
         grpo_num_pairs: int = 16,
         **kwargs,
     ):
