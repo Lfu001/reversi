@@ -180,7 +180,11 @@ def train():
                 grpo_loss = torch.tensor(0.0, device=device)
 
             # Total Loss
-            total_loss = value_loss + policy_loss + config.lambda_grpo * grpo_loss
+            total_loss = (
+                config.lambda_value * value_loss
+                + policy_loss
+                + config.lambda_grpo * grpo_loss
+            )
 
             accelerator.backward(total_loss)
             optimizer.step()

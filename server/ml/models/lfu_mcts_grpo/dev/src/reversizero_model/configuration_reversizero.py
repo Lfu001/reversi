@@ -22,6 +22,7 @@ class ReversiZeroConfig(PretrainedConfig):
         total_training_steps: int = 3_000,
         games_per_iteration: int = 512,
         training_steps_per_iteration: int = 60,
+        lambda_value: float = 3.0,
         # Tree-GRPO
         lambda_grpo: float = 1.0,
         grpo_num_pairs: int = 16,
@@ -41,5 +42,6 @@ class ReversiZeroConfig(PretrainedConfig):
         self.total_training_steps = total_training_steps
         self.games_per_iteration = games_per_iteration
         self.training_steps_per_iteration = training_steps_per_iteration
+        self.lambda_value = lambda_value
         self.lambda_grpo = lambda_grpo
         self.grpo_num_pairs = grpo_num_pairs
