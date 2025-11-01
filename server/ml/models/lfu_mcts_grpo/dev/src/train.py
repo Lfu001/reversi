@@ -46,7 +46,6 @@ def train():
     model, optimizer, lr_scheduler = accelerator.prepare(model, optimizer, lr_scheduler)
 
     replay_buffer = ReplayBuffer(config.replay_buffer_size)
-    mcts = MCTS(config)
 
     ongoing_games_data = [[] for _ in range(config.batch_size)]
 
@@ -54,6 +53,7 @@ def train():
     num_iterations = config.total_training_steps // config.training_steps_per_iteration
     for iteration in tqdm(range(num_iterations), desc="Iteration"):
         # --- Self-Play (データ生成) ---
+        mcts = MCTS(config)
         model.eval()
         games_completed_in_iteration = 0
         pbar_selfplay = tqdm(
