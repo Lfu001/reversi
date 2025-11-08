@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "accelerate>=1.10.1",
+    "pydantic-settings>=2.11.0",
     "reversi",
     "rich>=14.2.0",
     "torch>=2.8.0",

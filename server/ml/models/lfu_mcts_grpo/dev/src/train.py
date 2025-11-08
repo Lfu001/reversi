@@ -8,11 +8,12 @@ from accelerate.utils import ProjectConfiguration, set_seed
 from reversi import ReversiEnvironment
 from tqdm.rich import tqdm
 
-from loss import compute_grpo_loss
-from mcts import MCTS
-from replay_buffer import Experience, ReplayBuffer
-from reversizero_model.configuration_reversizero import ReversiZeroConfig
-from reversizero_model.modeling_reversizero import ReversiZeroModel
+from .loss import compute_grpo_loss
+from .mcts import MCTS
+from .replay_buffer import Experience, ReplayBuffer
+from .reversizero_model.configuration_reversizero import ReversiZeroConfig
+from .reversizero_model.modeling_reversizero import ReversiZeroModel
+from .settings import Settings
 
 
 class Winner(Enum):
@@ -23,7 +24,7 @@ class Winner(Enum):
 
 def train():
     set_seed(0)
-    config = ReversiZeroConfig()
+    settings = Settings()
     accelerator = Accelerator(
         log_with="wandb",
         project_dir="logs",
@@ -31,41 +32,47 @@ def train():
             total_limit=3, automatic_checkpoint_naming=True
         ),
     )
-    accelerator.init_trackers("reversi_zero", config=config.to_dict())
+    # accelerator.init_trackers("reversi_zero", config=settings.model_dump())
 
     device = accelerator.device
 
-    env = ReversiEnvironment(batch_size=config.batch_size)
-    model = ReversiZeroModel(config)
+    env = ReversiEnvironment(batch_size=settings.training.batch_size)
+    model = ReversiZeroModel(ReversiZeroConfig(**settings.model.model_dump()))
     optimizer = torch.optim.AdamW(
-        model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay
+        model.parameters(),
+        lr=settings.training.learning_rate,
+        weight_decay=settings.training.weight_decay,
     )
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config.total_training_steps
+        optimizer, T_max=settings.training.total_training_steps
     )
     model, optimizer, lr_scheduler = accelerator.prepare(model, optimizer, lr_scheduler)
 
-    replay_buffer = ReplayBuffer(config.replay_buffer_size)
+    replay_buffer = ReplayBuffer(settings.training.replay_buffer_size)
 
-    ongoing_games_data = [[] for _ in range(config.batch_size)]
+    ongoing_games_data = [[] for _ in range(settings.training.batch_size)]
 
     # --- メインの学習ループ ---
-    num_iterations = config.total_training_steps // config.training_steps_per_iteration
+    num_iterations = (
+        settings.training.total_training_steps
+        // settings.training.training_steps_per_iteration
+    )
     for iteration in tqdm(range(num_iterations), desc="Iteration"):
         # --- Self-Play (データ生成) ---
-        mcts = MCTS(config)
+        mcts = MCTS(settings.mcts)
         model.eval()
         games_completed_in_iteration = 0
         pbar_selfplay = tqdm(
-            total=config.games_per_iteration, desc=f"[Iter {iteration + 1}] Self-Play"
+            total=settings.training.games_per_iteration,
+            desc=f"[Iter {iteration + 1}] Self-Play",
         )
         step_count = 0
         current_states = env.reset()
-        while games_completed_in_iteration < config.games_per_iteration:
+        while games_completed_in_iteration < settings.training.games_per_iteration:
             pi, q_values = mcts.run_simulations(model, current_states, device)
             next_states, dones = env.step_batch(pi, deterministic=False)
             step_count += 1
-            for i in range(config.batch_size):
+            for i in range(settings.training.batch_size):
                 ongoing_games_data[i].append(
                     {"state": current_states[i], "pi": pi[i], "q_values": q_values[i]}
                 )
@@ -117,7 +124,7 @@ def train():
 
                     ongoing_games_data[i] = []  # ゲーム履歴をクリア
             current_states = env.reset_indices(np.where(dones)[0])
-            if games_completed_in_iteration >= config.games_per_iteration:
+            if games_completed_in_iteration >= settings.training.games_per_iteration:
                 break
         pbar_selfplay.close()
 
@@ -126,11 +133,11 @@ def train():
         optimizer.zero_grad()
 
         pbar_train = tqdm(
-            total=config.training_steps_per_iteration,
+            total=settings.training.training_steps_per_iteration,
             desc=f"[Iter {iteration + 1}] Training",
         )
-        for step in range(config.training_steps_per_iteration):
-            experiences = replay_buffer.sample(config.batch_size)
+        for step in range(settings.training.training_steps_per_iteration):
+            experiences = replay_buffer.sample(settings.training.batch_size)
 
             states = torch.from_numpy(np.stack([e.state for e in experiences])).to(
                 device
@@ -145,7 +152,7 @@ def train():
 
             legal_moves = states[:, 3, :, :]
             non_terminal_mask = (
-                torch.sum(legal_moves.view(config.batch_size, -1), dim=1) > 0
+                torch.sum(legal_moves.view(settings.training.batch_size, -1), dim=1) > 0
             )
 
             pred_logits, pred_values = model(states)
@@ -172,7 +179,7 @@ def train():
                     pred_logits,  # 元のサイズのものを渡す
                     q_vals,  # 元のサイズのものを渡す
                     legal_moves,  # 元のサイズのものを渡す
-                    config.grpo_num_pairs,
+                    settings.grpo.grpo_num_pairs,
                     non_terminal_mask,  # マスクを渡す
                 )
             else:
@@ -181,9 +188,9 @@ def train():
 
             # Total Loss
             total_loss = (
-                config.lambda_value * value_loss
+                settings.training.lambda_value * value_loss
                 + policy_loss
-                + config.lambda_grpo * grpo_loss
+                + settings.grpo.lambda_grpo * grpo_loss
             )
 
             accelerator.backward(total_loss)
@@ -200,7 +207,7 @@ def train():
                     "loss/policy": policy_loss.item(),
                     "loss/grpo": grpo_loss.item(),
                 },
-                step=iteration * config.training_steps_per_iteration + step,
+                step=iteration * settings.training.training_steps_per_iteration + step,
             )
             pbar_train.set_postfix({"loss": f"{total_loss.item():.4f}"})
 

@@ -3,13 +3,16 @@ import torch
 import torch.nn.functional as F
 from reversi import ReversiEnvironment
 
-from reversizero_model.configuration_reversizero import ReversiZeroConfig
-from reversizero_model.modeling_reversizero import ReversiZeroModel
+from .settings import MCTSConfig
 
 
 class MCTS:
-    def __init__(self, config: ReversiZeroConfig):
-        self.config = config
+    # 定数定義
+    BOARD_SIZE = 8  # オセロのボードサイズ
+    ACTION_SIZE = BOARD_SIZE * BOARD_SIZE  # アクションの総数 (ボードのマス数)
+
+    def __init__(self, mcts_config: MCTSConfig):
+        self.mcts_config = mcts_config
         # Q(s,a): state s で action a を取ったときの平均行動価値
         self.Q: dict[bytes, np.ndarray] = {}
         # N(s,a): state s で action a を選択した回数
@@ -31,16 +34,23 @@ class MCTS:
         return 1 if np.all(state[2] == 1) else 0
 
     def run_simulations(
-        self, model: ReversiZeroModel, root_states: np.ndarray, device: torch.device
+        self, model: torch.nn.Module, root_states: np.ndarray, device: torch.device
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         与えられたバッチのルート状態に対して、MCTSシミュレーションを実行する。
 
+        Args:
+            model: 評価に使用するニューラルネットワークモデル
+            root_states: シミュレーションを開始するルート状態のバッチ (batch_size, channels, height, width)
+            device: 使用するデバイス
+
         Returns:
             tuple[np.ndarray, np.ndarray]:
-            - pi (np.ndarray): 改善された方策 (探索回数の分布) Shape: (batch, 8, 8)
-            - Q (np.ndarray): ルートノードにおける各アクションのQ値 Shape: (batch, 8, 8)
+            - pi (np.ndarray): 改善された方策 (探索回数の分布) Shape: (batch_size, 8, 8)
+            - Q (np.ndarray): ルートノードにおける各アクションのQ値 Shape: (batch_size, 8, 8)
         """
+        batch_size = root_states.shape[0]
+
         # --- ルートノードの初期展開 ---
         # まだ木に存在しないルートノードがあれば、NNで評価して木に追加する
         new_states_to_evaluate_mask = [
@@ -82,31 +92,31 @@ class MCTS:
         # --- ディリクレノイズをルートノードの方策に追加 ---
         for state in root_states:
             state_key = state.tobytes()
-            noise = np.random.dirichlet([self.config.dirichlet_alpha] * 64)
+            noise = np.random.dirichlet([self.mcts_config.dirichlet_alpha] * 64)
             self.P[state_key] = (
-                self.P[state_key] * (1 - self.config.dirichlet_epsilon)
-                + noise * self.config.dirichlet_epsilon
+                self.P[state_key] * (1 - self.mcts_config.dirichlet_epsilon)
+                + noise * self.mcts_config.dirichlet_epsilon
             )
 
         # --- シミュレーションループ ---
-        for _ in range(self.config.num_simulations):
+        for _ in range(self.mcts_config.num_simulations):
             current_states = root_states.copy()
-            paths: list[list[tuple[np.ndarray, int]]] = [
-                [] for _ in range(self.config.batch_size)
-            ]
-            is_terminal = np.zeros(self.config.batch_size, dtype=bool)
+            paths: list[list[tuple[np.ndarray, int]]] = [[] for _ in range(batch_size)]
+            is_terminal = np.zeros(batch_size, dtype=bool)
 
             # --- 1. Selection (選択) ---
-            for i in range(self.config.batch_size):
+            for i in range(batch_size):
                 state = current_states[i]
 
                 while state.tobytes() in self.P:
-                    if np.sum(state[3]) == 0:
+                    if np.sum(state[3]) == 0:  # 合法手がなければ終端状態
                         is_terminal[i] = True
                         break
 
                     visit_sum = np.sqrt(np.sum(self.N[state.tobytes()]))
-                    puct_scores = self.Q[state.tobytes()] + self.config.c_puct * self.P[
+                    puct_scores = self.Q[
+                        state.tobytes()
+                    ] + self.mcts_config.c_puct * self.P[
                         state.tobytes()
                     ] * visit_sum / (1 + self.N[state.tobytes()])
 
@@ -121,7 +131,7 @@ class MCTS:
 
             # --- 2. Expansion (展開) & Evaluation (評価) ---
             leaf_states = current_states
-            values_np = np.zeros(self.config.batch_size, dtype=np.float32)
+            values_np = np.zeros(batch_size, dtype=np.float32)
 
             needs_eval_mask = ~is_terminal
             if np.any(needs_eval_mask):
@@ -142,7 +152,7 @@ class MCTS:
                 values_np[needs_eval_mask] = network_values.cpu().numpy()
 
                 eval_idx = 0
-                for i in range(self.config.batch_size):
+                for i in range(batch_size):
                     if needs_eval_mask[i]:
                         state_key = leaf_states[i].tobytes()
                         self.P[state_key] = policy_probs[eval_idx]
@@ -169,7 +179,7 @@ class MCTS:
 
             # --- 3. Backup (バックアップ) ---
             # ★★★ 修正の核心部分 ★★★
-            for i in range(self.config.batch_size):
+            for i in range(batch_size):
                 value = values_np[i]
                 child_state = leaf_states[i]  # バックアップの開始点(子)はリーフノード
 
@@ -193,13 +203,21 @@ class MCTS:
                     child_state = parent_state
 
         # --- 最終的な方策πとQ値を計算 ---
-        pis = np.zeros((self.config.batch_size, 64), dtype=np.float32)
-        q_values = np.zeros((self.config.batch_size, 64), dtype=np.float32)
-        for i, state in enumerate(root_states):
+        pis = np.zeros((batch_size, self.ACTION_SIZE), dtype=np.float32)
+        q_values = np.zeros((batch_size, self.ACTION_SIZE), dtype=np.float32)
+
+        for i in range(batch_size):
+            state = root_states[i]
             state_key = state.tobytes()
             visit_counts = self.N[state_key]
+
+            # 訪問回数に基づく方策を計算
             if np.sum(visit_counts) > 0:
                 pis[i] = visit_counts / np.sum(visit_counts)
             q_values[i] = self.Q[state_key]
 
-        return pis.reshape(-1, 8, 8), q_values.reshape(-1, 8, 8)
+        # 1次元のアクション空間から2次元のボード形式に戻す
+        return (
+            pis.reshape(batch_size, self.BOARD_SIZE, self.BOARD_SIZE),
+            q_values.reshape(batch_size, self.BOARD_SIZE, self.BOARD_SIZE),
+        )

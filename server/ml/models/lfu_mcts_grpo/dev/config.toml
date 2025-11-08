@@ -1,0 +1,27 @@
+# Model architecture settings
+[model]
+num_channels = 128
+num_residual_blocks = 8
+
+# MCTS settings
+[mcts]
+num_simulations = 200
+dirichlet_epsilon = 0.25
+dirichlet_alpha = 0.3
+c_puct = 1.25
+
+# Training settings
+[training]
+batch_size = 512
+replay_buffer_size = 600_000
+learning_rate = 3e-4
+weight_decay = 1e-2
+total_training_steps = 3_000
+games_per_iteration = 512
+training_steps_per_iteration = 60
+lambda_value = 3.0
+
+# Tree-GRPO settings
+[grpo]
+lambda_grpo = 5.0
+grpo_num_pairs = 16
