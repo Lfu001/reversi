@@ -22,6 +22,12 @@ def test_initialization():
     assert env.batch_size == 4
 
 
+def test_clone(single_env: ReversiEnvironment):
+    """Tests that clone() returns a new environment with the same state."""
+    cloned_env = single_env.clone()
+    np.testing.assert_array_equal(single_env.get_state(), cloned_env.get_state())
+
+
 def test_reset_return_spec(single_env: ReversiEnvironment):
     """Tests that reset() returns a state with the correct shape and dtype."""
     # Act
