@@ -19,6 +19,7 @@ use reversi_core::{
 /// simultaneously using the Rayon library for parallel computation. It's suitable for
 /// training machine learning agents that require high throughput.
 #[pyclass]
+#[derive(Clone)]
 struct ReversiEnvironment {
     /// A vector of `Table`s, each representing the state of a single Reversi game.
     tables: Vec<Table>,
@@ -177,6 +178,11 @@ impl ReversiEnvironment {
             batch_size,
             seed,
         }
+    }
+
+    /// Clones the environment.
+    fn clone_env(&self) -> Self {
+        self.clone()
     }
 
     /// The number of games in the batch.

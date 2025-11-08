@@ -40,6 +40,10 @@ class ReversiEnvironment:
             raise ValueError("batch_size must be at least 1")
         self._env = _ReversiEnvironment(batch_size, seed)
 
+    def clone(self) -> "ReversiEnvironment":
+        """Create a clone of the environment."""
+        return self._env.clone_env()
+
     def reset(self) -> BoardState:
         """Reset all games to their initial state.
 
