@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 from pydantic_settings import (
     BaseSettings,
@@ -66,7 +68,9 @@ class Settings(BaseSettings):
     grpo: TreeGRPOConfig
 
     # Configuration file path
-    model_config = SettingsConfigDict(toml_file="config.toml")
+    model_config = SettingsConfigDict(
+        toml_file=Path(__file__).resolve().parent.parent / "config.toml"
+    )
 
     @classmethod
     def settings_customise_sources(

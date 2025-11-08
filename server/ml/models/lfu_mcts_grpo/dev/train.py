@@ -8,12 +8,12 @@ from accelerate.utils import ProjectConfiguration, set_seed
 from reversi import ReversiEnvironment
 from tqdm.rich import tqdm
 
-from .loss import compute_grpo_loss
-from .mcts import MCTS
-from .replay_buffer import Experience, ReplayBuffer
-from .reversizero_model.configuration_reversizero import ReversiZeroConfig
-from .reversizero_model.modeling_reversizero import ReversiZeroModel
-from .settings import Settings
+from mcts_grpo.loss import compute_grpo_loss
+from mcts_grpo.mcts import MCTS
+from mcts_grpo.model.configuration_reversizero import ReversiZeroConfig
+from mcts_grpo.model.modeling_reversizero import ReversiZeroModel
+from mcts_grpo.replay_buffer import Experience, ReplayBuffer
+from mcts_grpo.settings import Settings
 
 
 class Winner(Enum):
