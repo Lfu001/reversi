@@ -189,7 +189,7 @@ class TableState(BaseModel):
         The 4 channels are:
         - Channel 0: Positions of the dark disks (1.0 if disk exists, 0.0 otherwise)
         - Channel 1: Positions of the light disks (1.0 if disk exists, 0.0 otherwise)
-        - Channel 2: Current turn (1.0 for Dark, 0.0 for Light)
+        - Channel 2: Current turn (1.0 for Dark, -1.0 for Light)
         - Channel 3: Legal moves (1.0 if move is legal, 0.0 otherwise)
 
         Returns:
@@ -200,13 +200,15 @@ class TableState(BaseModel):
         # Get board as a numpy array (2, 8, 8) and copy to the output
         state[0, :2] = self.board.to_numpy()  # Dark and light disks
 
-        # Set turn plane (1.0 for Dark, 0.0 for Light)
+        # Set turn plane (1.0 for Dark, -1.0 for Light)
         if self.turn == DiskColor.DARK:
             state[0, 2, :, :] = 1.0
+        else:
+            state[0, 2, :, :] = -1.0
 
         # Set legal moves plane
         for pos in self.puttable_positions:
-            state[0, 3, pos.row, pos.col] = 1.0
+            state[0, 3, pos.row_idx, pos.col_idx] = 1.0
 
         return state
 
