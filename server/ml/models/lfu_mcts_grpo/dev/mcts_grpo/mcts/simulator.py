@@ -194,8 +194,7 @@ class MCTSSimulator:
 
         for i in range(batch_size):
             state = root_states[i]
-            state_key = state.tobytes()
-            policy, q_value = self.tree.get_policy_and_q_values(state_key)
+            policy, q_value = self.tree.get_policy_and_q_values(state)
             pis[i] = policy
             q_values[i] = q_value
 

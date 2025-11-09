@@ -57,13 +57,20 @@ class MCTSTree:
         self.visit_counts[state_key] += 1
 
     def get_policy_and_q_values(
-        self, state_key: bytes
+        self, state: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
         """ルートノードの方策とQ値を取得"""
+        state_key = state.tobytes()
         visit_counts = self.N[state_key]
         policy = (
             visit_counts / np.sum(visit_counts)
             if np.sum(visit_counts) > 0
             else visit_counts
         )
-        return policy, self.Q[state_key]
+
+        q_value = self.Q[state_key]
+        legal_moves = state[3].flatten()
+        unexplored_legal_mask = (visit_counts == 0) & (legal_moves == 1)
+        policy[unexplored_legal_mask] = -100.0
+
+        return policy, q_value
