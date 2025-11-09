@@ -112,7 +112,7 @@ class LossCalculator:
             return torch.tensor(0.0, device=pred_logits.device)
 
         current_batch_size = pred_logits.shape[0]
-        total_loss = 0.0
+        total_loss = torch.zeros((), device=pred_logits.device)
 
         log_probs = F.log_softmax(pred_logits.view(current_batch_size, -1), dim=1)
 
@@ -122,13 +122,29 @@ class LossCalculator:
             item_legal_moves = legal_moves[i].view(-1)
 
             legal_indices = torch.where(item_legal_moves > 0)[0]
-            if len(legal_indices) < 2:
+
+            # 1. 合法手のQ値を取得
+            legal_q = item_q_values[legal_indices]
+
+            # 2. mcts.py で設定したペナルティ値より大きいQ値を持つ
+            #    （＝探索済みの）インデックスだけを抽出する
+            #    (-99.0 は -100.0 よりも大きいことを意図した閾値)
+            explored_mask = legal_q > -99.0
+            explored_legal_indices = legal_indices[explored_mask]
+
+            # 3. 探索済みの合法手が2手未満（比較対象がいない）場合は、
+            #    このサンプルのGRPO損失は 0 とする
+            if len(explored_legal_indices) < 2:
                 continue
 
-            legal_q = item_q_values[legal_indices]
-            best_action_idx = legal_indices[torch.argmax(legal_q)]
+            # 4. 探索済みの手の中だけで Q_best と Q_suboptimal を決める
+            explored_legal_q = item_q_values[explored_legal_indices]
+            best_action_idx = explored_legal_indices[torch.argmax(explored_legal_q)]
 
-            suboptimal_indices = legal_indices[legal_indices != best_action_idx]
+            suboptimal_indices = explored_legal_indices[
+                explored_legal_indices != best_action_idx
+            ]
+
             if len(suboptimal_indices) == 0:
                 continue
 
@@ -143,7 +159,6 @@ class LossCalculator:
 
             loss = F.softplus(-(logp_best - logp_suboptimal)).mean()
             total_loss += loss
-
         return (
             total_loss / current_batch_size
             if current_batch_size > 0
