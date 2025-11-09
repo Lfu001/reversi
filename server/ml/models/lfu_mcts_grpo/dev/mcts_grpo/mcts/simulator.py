@@ -171,18 +171,19 @@ class MCTSSimulator:
         for i in range(batch_size):
             value = values_np[i]
             child_state = leaf_states[i]
+            child_player = self._get_player_from_state(child_state)
 
             for parent_state, action in reversed(paths[i]):
-                state_key = parent_state.tobytes()
-                self.tree.backup(state_key, action, value)
-
                 parent_player = self._get_player_from_state(parent_state)
-                child_player = self._get_player_from_state(child_state)
 
                 if parent_player != child_player:
                     value *= -1
 
+                state_key = parent_state.tobytes()
+                self.tree.backup(state_key, action, value)
+
                 child_state = parent_state
+                child_player = parent_player
 
     def _compute_final_outputs(
         self, root_states: np.ndarray, batch_size: int
