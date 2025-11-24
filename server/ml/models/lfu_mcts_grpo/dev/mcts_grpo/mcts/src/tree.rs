@@ -31,7 +31,7 @@ impl Tree {
         num_batches: usize,
         batch_size: usize,
         model: &M,
-        transposition_table: &mut TranspositionTable,
+        transposition_table: &TranspositionTable,
         puct_config: PuctConfig,
     ) -> Option<usize> {
         let strategy = PuctStrategy::new(puct_config);

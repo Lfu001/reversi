@@ -1,8 +1,11 @@
+#[derive(Debug, Clone)]
 pub struct Policy(pub [f64; 64]);
 
+#[derive(Debug, Clone)]
 pub struct Value(pub f64);
 
 /// A pair of a policy and a value.
+#[derive(Debug, Clone)]
 pub struct PolicyEvaluation {
     /// A policy.
     policy: Policy,

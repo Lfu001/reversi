@@ -1,28 +1,29 @@
-use crate::policy::PolicyEvaluation;
-use crate::state::State;
-use std::collections::HashMap;
+use crate::{policy::PolicyEvaluation, state::State};
+use std::{collections::HashMap, sync::RwLock};
 
 /// Transposition table for MCTS
 pub struct TranspositionTable {
-    table: HashMap<State, PolicyEvaluation>,
+    table: RwLock<HashMap<State, PolicyEvaluation>>,
 }
 
 impl TranspositionTable {
     /// Creates a new [`TranspositionTable`].
     pub fn new() -> Self {
         Self {
-            table: HashMap::new(),
+            table: RwLock::new(HashMap::new()),
         }
     }
 
     /// Adds a record.
-    pub fn add(&mut self, state: State, policy_evaluation: PolicyEvaluation) {
-        self.table.insert(state, policy_evaluation);
+    pub fn add(&self, state: State, policy_evaluation: PolicyEvaluation) {
+        let mut table = self.table.write().unwrap();
+        table.insert(state, policy_evaluation);
     }
 
     /// Returns a record.
-    pub fn get(&self, state: &State) -> Option<&PolicyEvaluation> {
-        self.table.get(state)
+    pub fn get(&self, state: &State) -> Option<PolicyEvaluation> {
+        let table = self.table.read().unwrap();
+        table.get(state).cloned()
     }
 }
 
@@ -43,20 +44,20 @@ mod tests {
     #[test]
     fn test_new() {
         let table = TranspositionTable::new();
-        assert!(table.table.is_empty());
+        assert!(table.table.read().unwrap().is_empty());
     }
 
     #[test]
     fn test_add() {
-        let mut table = TranspositionTable::new();
+        let table = TranspositionTable::new();
         let policy_evaluation = default_policy_evaluation();
         table.add(default_state(), policy_evaluation);
-        assert!(!table.table.is_empty());
+        assert!(!table.table.read().unwrap().is_empty());
     }
 
     #[test]
     fn test_get() {
-        let mut table = TranspositionTable::new();
+        let table = TranspositionTable::new();
         let policy_evaluation = default_policy_evaluation();
         table.add(default_state(), policy_evaluation);
         assert!(table.get(&default_state()).is_some());
