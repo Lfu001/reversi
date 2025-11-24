@@ -1689,6 +1689,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcts"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "num-traits",
+ "pyo3",
+ "rand 0.9.2",
+ "reversi-core",
+ "tokio",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"

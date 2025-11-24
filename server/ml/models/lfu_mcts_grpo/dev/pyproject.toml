@@ -17,3 +17,8 @@ dependencies = [
 
 [tool.uv.sources]
 reversi = { path = "../../../reversi-py" }
+
+[tool.uv.workspace]
+members = [
+    "mcts_grpo/mcts",
+]

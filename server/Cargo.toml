@@ -6,6 +6,7 @@ members = [
     "reversi-core",
     "game",
     "ml/reversi-py",
+    "ml/models/lfu_mcts_grpo/dev/mcts_grpo/mcts",
 ]
 default-members = [
     "common",

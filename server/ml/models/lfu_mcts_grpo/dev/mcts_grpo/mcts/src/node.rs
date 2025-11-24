@@ -1,0 +1,183 @@
+use crate::state::State;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::rc::Weak;
+
+/// Node in the MCTS tree
+pub struct Node {
+    // 親ノードへの参照。循環参照を防ぐために Weak を使う。
+    parent: Option<Weak<RefCell<Node>>>,
+    /// 子ノードのリスト。共有所有権（Rc）でノードへの強参照を持つ。
+    children: Vec<Rc<RefCell<Node>>>,
+    /// State of the game
+    state: State,
+    /// 訪問回数
+    visit_count: u32,
+    /// このノードに到達したアクション
+    action: Option<usize>,
+    /// ニューラルネットワークによる評価値の合計
+    sum_evaluation: f64,
+    /// ノードが展開されたかどうか
+    is_expanded: bool,
+}
+
+impl Node {
+    /// Creates a new [`Node`].
+    pub fn new(state: State, action: Option<usize>) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Node {
+            parent: None,
+            children: Vec::new(),
+            state,
+            visit_count: 0,
+            action,
+            sum_evaluation: 0.0,
+            is_expanded: false,
+        }))
+    }
+
+    /// Returns the state of this node.
+    pub fn state(&self) -> &State {
+        &self.state
+    }
+
+    /// Returns the parent of this node.
+    pub fn parent(&self) -> &Option<Weak<RefCell<Node>>> {
+        &self.parent
+    }
+
+    /// Sets the parent of this node.
+    pub fn set_parent(&mut self, parent: Option<Weak<RefCell<Node>>>) {
+        self.parent = parent;
+    }
+
+    /// Returns the children of this node.
+    pub fn children(&self) -> &Vec<Rc<RefCell<Node>>> {
+        &self.children
+    }
+
+    /// Returns a mutable reference to the children of this node.
+    pub fn children_mut(&mut self) -> &mut Vec<Rc<RefCell<Node>>> {
+        &mut self.children
+    }
+
+    /// Returns the visit count.
+    pub fn visit_count(&self) -> u32 {
+        self.visit_count
+    }
+
+    /// Sets the visit count.
+    pub fn set_visit_count(&mut self, count: u32) {
+        self.visit_count = count;
+    }
+
+    /// Increments the visit count.
+    pub fn increment_visit_count(&mut self) {
+        self.visit_count += 1;
+    }
+
+    /// Returns the action.
+    pub fn action(&self) -> Option<usize> {
+        self.action
+    }
+
+    /// Returns the sum of evaluations.
+    pub fn sum_evaluation(&self) -> f64 {
+        self.sum_evaluation
+    }
+
+    /// Adds to the sum of evaluations.
+    pub fn add_evaluation(&mut self, value: f64) {
+        self.sum_evaluation += value;
+    }
+
+    /// Returns whether the node is expanded.
+    pub fn is_expanded(&self) -> bool {
+        self.is_expanded
+    }
+
+    /// Sets the expanded flag.
+    pub fn set_expanded(&mut self, expanded: bool) {
+        self.is_expanded = expanded;
+    }
+
+    /// Returns the average value of the node.
+    pub fn average_value(&self) -> f64 {
+        if self.visit_count == 0 {
+            0.0 // todo: μ FPU
+        } else {
+            self.sum_evaluation / self.visit_count as f64
+        }
+    }
+
+    /// Adds a child node to the current node.
+    pub fn add_child(parent: &Rc<RefCell<Node>>, child: Rc<RefCell<Node>>) {
+        // 子ノードに親への弱参照を設定する
+        child.borrow_mut().set_parent(Some(Rc::downgrade(parent)));
+        // 親ノードに子への強参照を追加する
+        parent.borrow_mut().children.push(child);
+    }
+
+    /// Returns true if the node is a leaf node.
+    pub fn is_leaf(&self) -> bool {
+        self.children.is_empty()
+    }
+
+    /// Applies virtual loss (Virtual Mean).
+    /// Adds 1 to visit count and adds current average value to sum.
+    pub fn apply_virtual_loss(&mut self) {
+        let current_mean = self.average_value();
+        self.visit_count += 1;
+        self.sum_evaluation += current_mean;
+    }
+
+    /// Updates the node with the real value, replacing the virtual mean.
+    /// Assumes virtual loss was applied (visit count is already incremented).
+    pub fn update_with_real_value(&mut self, real_value: f64) {
+        // Remove the virtual mean contribution
+        // Since we added average_value() to sum, and visit_count was incremented.
+        // The current average_value() should be the same as before if we added the mean.
+        // So we subtract the current average_value().
+        let current_mean = self.average_value();
+        self.sum_evaluation -= current_mean;
+        self.sum_evaluation += real_value;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use common::{Bitboard, DiskColor};
+
+    fn default_state() -> State {
+        State::new(Bitboard::default(), DiskColor::Dark)
+    }
+
+    #[test]
+    fn test_new() {
+        let node = Node::new(default_state(), None);
+        assert!(node.borrow().parent().is_none());
+        assert!(node.borrow().children().is_empty());
+    }
+
+    #[test]
+    fn test_add_child() {
+        let node = Node::new(default_state(), None);
+        let child = Node::new(default_state(), None);
+        Node::add_child(&node, child);
+        assert!(node.borrow().children().len() == 1);
+    }
+
+    #[test]
+    fn test_is_leaf() {
+        let node = Node::new(default_state(), None);
+        assert!(node.borrow().is_leaf());
+    }
+
+    #[test]
+    fn test_is_not_leaf() {
+        let node = Node::new(default_state(), None);
+        let child = Node::new(default_state(), None);
+        Node::add_child(&node, child);
+        assert!(!node.borrow().is_leaf());
+    }
+}

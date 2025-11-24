@@ -1,0 +1,16 @@
+[package]
+name = "mcts"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+common = { version = "0.1.0", path = "../../../../../../common" }
+num-traits = { workspace = true }
+pyo3 = { workspace = true, features = ["extension-module", "abi3-py311"] }
+rand = { workspace = true }
+reversi-core = { version = "0.1.0", path = "../../../../../../reversi-core" }
+tokio = { workspace = true, features = ["full", "macros"] }

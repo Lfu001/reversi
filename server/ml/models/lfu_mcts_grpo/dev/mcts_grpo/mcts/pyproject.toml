@@ -1,0 +1,26 @@
+[project]
+name = "mcts"
+version = "0.1.0"
+description = "A python binding for MCTS written in rust"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+mcts = "mcts:main"
+
+[tool.maturin]
+module-name = "mcts._core"
+python-packages = ["mcts"]
+python-source = "src"
+
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "src/**/*.rs" },
+    { file = "Cargo.toml" },
+    { file = "Cargo.lock" },
+]
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"

@@ -27,7 +27,7 @@ use serde_with::{serde_as, DisplayFromStr};
 /// assert_eq!(bitboard.light_plane(), 0b00000000_00000000_00000000_00010000_00001000_00000000_00000000_00000000);
 /// ```
 #[serde_as]
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Bitboard {
     /// A bit representation of dark disks.
     #[serde_as(as = "DisplayFromStr")]
