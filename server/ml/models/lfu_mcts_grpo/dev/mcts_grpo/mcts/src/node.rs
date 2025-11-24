@@ -103,10 +103,50 @@ impl Node {
     /// Returns the average value of the node.
     pub fn average_value(&self) -> f64 {
         if self.visit_count == 0 {
-            0.0 // todo: μ FPU
+            // μFPU: Use average value of visited siblings
+            if let Some(parent_weak) = &self.parent {
+                if let Some(parent_rc) = parent_weak.upgrade() {
+                    // Note: We use try_borrow here because we might be borrowing the parent
+                    // in a context where it's already borrowed.
+                    if let Ok(parent) = parent_rc.try_borrow() {
+                        return parent.average_q_value_of_visited_children().unwrap_or(0.0);
+                    }
+                }
+            }
+            0.0
         } else {
-            self.sum_evaluation / self.visit_count as f64
+            self.q_value()
         }
+    }
+
+    /// Calculates the average Q-value of all visited children.
+    /// Returns None if there are no visited children.
+    pub fn average_q_value_of_visited_children(&self) -> Option<f64> {
+        let mut sum_q = 0.0;
+        let mut count = 0;
+        for child in &self.children {
+            // We use try_borrow to safely handle cases where a child might be currently borrowed
+            // (e.g., the child that called this method via its parent).
+            // RefCell allows multiple immutable borrows, so this is safe.
+            if let Ok(child_ref) = child.try_borrow() {
+                if child_ref.visit_count > 0 {
+                    sum_q += child_ref.q_value();
+                    count += 1;
+                }
+            }
+        }
+        if count > 0 {
+            Some(sum_q / count as f64)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the Q-value (average evaluation) based on visits.
+    /// Should only be called when visit_count > 0.
+    fn q_value(&self) -> f64 {
+        assert!(self.visit_count > 0);
+        self.sum_evaluation / self.visit_count as f64
     }
 
     /// Adds a child node to the current node.
@@ -179,5 +219,40 @@ mod tests {
         let child = Node::new(default_state(), None);
         Node::add_child(&node, child);
         assert!(!node.borrow().is_leaf());
+    }
+
+    #[test]
+    fn test_mu_fpu() {
+        // Create parent
+        let parent = Node::new(default_state(), None);
+
+        // Child 1: Visited, Value 0.8
+        let child1 = Node::new(default_state(), Some(1));
+        child1.borrow_mut().set_visit_count(10);
+        child1.borrow_mut().add_evaluation(8.0); // Avg = 0.8
+        Node::add_child(&parent, child1);
+
+        // Child 2: Visited, Value 0.4
+        let child2 = Node::new(default_state(), Some(2));
+        child2.borrow_mut().set_visit_count(5);
+        child2.borrow_mut().add_evaluation(2.0); // Avg = 0.4
+        Node::add_child(&parent, child2);
+
+        // Child 3: Unvisited
+        let child3 = Node::new(default_state(), Some(3));
+        Node::add_child(&parent, child3.clone());
+
+        // Check Child 3's value. Should be average of (0.8 + 0.4) / 2 = 0.6
+        assert!((child3.borrow().average_value() - 0.6).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_mu_fpu_no_visited_siblings() {
+        let parent = Node::new(default_state(), None);
+        let child = Node::new(default_state(), Some(1));
+        Node::add_child(&parent, child.clone());
+
+        // No visited siblings -> 0.0
+        assert_eq!(child.borrow().average_value(), 0.0);
     }
 }
