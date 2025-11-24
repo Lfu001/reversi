@@ -11,7 +11,7 @@ mcts = "mcts:main"
 [tool.maturin]
 module-name = "mcts._core"
 python-packages = ["mcts"]
-python-source = "src"
+python-source = "python"
 
 [tool.uv]
 cache-keys = [

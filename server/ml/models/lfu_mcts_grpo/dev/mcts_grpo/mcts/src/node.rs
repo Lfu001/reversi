@@ -5,17 +5,17 @@ use std::rc::Weak;
 
 /// Node in the MCTS tree
 pub struct Node {
-    // 親ノードへの参照。循環参照を防ぐために Weak を使う。
+    /// A parent of the node.
     parent: Option<Weak<RefCell<Node>>>,
-    /// 子ノードのリスト。共有所有権（Rc）でノードへの強参照を持つ。
+    /// Children of the node.
     children: Vec<Rc<RefCell<Node>>>,
-    /// State of the game
+    /// A state of the game.
     state: State,
-    /// 訪問回数
+    /// A visit count of the node.
     visit_count: u32,
-    /// このノードに到達したアクション
+    /// An action that led to this node.
     action: Option<usize>,
-    /// ニューラルネットワークによる評価値の合計
+    /// A sum of evaluations of the node.
     sum_evaluation: f64,
     /// ノードが展開されたかどうか
     is_expanded: bool,

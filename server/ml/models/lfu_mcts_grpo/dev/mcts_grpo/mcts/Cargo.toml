@@ -10,7 +10,9 @@ crate-type = ["cdylib"]
 [dependencies]
 common = { version = "0.1.0", path = "../../../../../../common" }
 num-traits = { workspace = true }
+numpy = { workspace = true }
 pyo3 = { workspace = true, features = ["extension-module", "abi3-py311"] }
 rand = { workspace = true }
+rand_distr = { workspace = true }
 reversi-core = { version = "0.1.0", path = "../../../../../../reversi-core" }
 tokio = { workspace = true, features = ["full", "macros"] }

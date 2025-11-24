@@ -1,7 +1,7 @@
 use crate::{
     inference::ModelEvaluator,
     node::Node,
-    selection::{PuctConfig, PuctStrategy, SelectionStrategy, select_best_child},
+    selection::{PuctConfig, PuctStrategy, select_best_child},
     state::State,
     transposition_table::TranspositionTable,
 };
@@ -42,7 +42,7 @@ impl Tree {
             // GetBatch
             // Loop until batch is full or we can't find more nodes
             while batch.len() < batch_size {
-                let res = self.batch_puct(&self.root, transposition_table, &strategy, true);
+                let res = self.batch_puct(&self.root, transposition_table, &strategy, true, true);
                 match res {
                     SearchResult::Miss(state) => {
                         batch.push(state);
@@ -82,7 +82,7 @@ impl Tree {
             // Since we added batch.len() items, we should run it that many times to ensure we cover them.
             // Note: batch_puct might find different paths if the tree changed, but usually it finds the same.
             for _ in 0..batch.len() {
-                self.batch_puct(&self.root, transposition_table, &strategy, false);
+                self.batch_puct(&self.root, transposition_table, &strategy, false, true);
             }
         }
 
@@ -94,12 +94,13 @@ impl Tree {
             .and_then(|c| c.borrow().action())
     }
 
-    fn batch_puct<S: SelectionStrategy>(
+    fn batch_puct(
         &self,
         node: &Rc<RefCell<Node>>,
         tt: &TranspositionTable,
-        strategy: &S,
+        strategy: &PuctStrategy,
         get_batch: bool,
+        is_root: bool,
     ) -> SearchResult {
         let mut node_ref = node.borrow_mut();
 
@@ -125,11 +126,14 @@ impl Tree {
                         node_ref.set_expanded(true);
                     } else {
                         // Terminal state
-                        // We should return the actual game result.
-                        // But PolicyEvaluation has a value.
-                        // If the state is terminal, the value in TT should be the game result.
-                        // (Assuming TT is populated correctly for terminal states or model predicts it)
+                        node_ref.set_expanded(true);
+                        // We can't get a batch item from a terminal node.
+                        return SearchResult::None;
                     }
+                } else {
+                    // Already expanded but still leaf -> Terminal
+                    // (Since if it had children, is_leaf would be false)
+                    return SearchResult::None;
                 }
 
                 let value = eval.value(); // Assuming Value(f64) is accessible. Value field is private?
@@ -177,13 +181,14 @@ impl Tree {
             strategy,
             tt,
             node_ref.state(),
+            is_root,
         );
 
         if let Some(idx) = best_idx {
             let child = node_ref.children()[idx].clone();
             drop(node_ref);
 
-            let res = self.batch_puct(&child, tt, strategy, get_batch);
+            let res = self.batch_puct(&child, tt, strategy, get_batch, false);
 
             // Backprop
             match res {
@@ -251,7 +256,11 @@ mod tests {
         let tree = Tree::new(root);
         let mut tt = TranspositionTable::new();
         let model = MockModel;
-        let config = PuctConfig { c_puct: 1.0 };
+        let config = PuctConfig {
+            c_puct: 1.0,
+            dirichlet_epsilon: 0.0,
+            dirichlet_alpha: 1.0,
+        };
 
         // Run search with 1 batch of size 2
         let action = tree.search(1, 2, &model, &mut tt, config);

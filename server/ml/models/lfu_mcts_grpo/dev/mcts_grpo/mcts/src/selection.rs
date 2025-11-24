@@ -1,4 +1,6 @@
-use crate::{node::Node, state::State, transposition_table::TranspositionTable};
+use crate::{
+    dirichlet::sample_dirichlet, node::Node, state::State, transposition_table::TranspositionTable,
+};
 use std::{cell::RefCell, rc::Rc};
 
 /// PUCT計算の設定
@@ -6,6 +8,10 @@ use std::{cell::RefCell, rc::Rc};
 pub struct PuctConfig {
     /// 探索の強さを調整する定数 (通常1.0〜2.0)
     pub c_puct: f64,
+    /// Dirichlet noise epsilon
+    pub dirichlet_epsilon: f64,
+    /// Dirichlet noise alpha
+    pub dirichlet_alpha: f64,
 }
 
 /// ノード選択戦略のトレイト
@@ -24,11 +30,9 @@ impl PuctStrategy {
         Self { config }
     }
 
-    /// Creates a new [`PuctStrategy`] with the given `c_puct`.
-    pub fn with_c_puct(c_puct: f64) -> Self {
-        Self {
-            config: PuctConfig { c_puct },
-        }
+    /// Returns the config
+    pub fn config(&self) -> &PuctConfig {
+        &self.config
     }
 }
 
@@ -46,25 +50,41 @@ impl SelectionStrategy for PuctStrategy {
 }
 
 /// 複数のノードから最適なものを選択
-pub fn select_best_child<S: SelectionStrategy>(
+pub fn select_best_child(
     children: &[Rc<RefCell<Node>>],
     parent_visit_count: u32,
-    strategy: &S,
+    strategy: &PuctStrategy,
     transposition_table: &TranspositionTable,
     parent_state: &State,
+    is_root: bool,
 ) -> Option<usize> {
     let policy_evaluation = transposition_table.get(parent_state)?;
+
+    let dirichlet_epsilon = strategy.config().dirichlet_epsilon;
+    let dirichlet_alpha = strategy.config().dirichlet_alpha;
+
+    let noise = if is_root && !children.is_empty() {
+        sample_dirichlet(dirichlet_alpha, children.len())
+    } else {
+        None
+    };
 
     children
         .iter()
         .enumerate()
         .map(|(idx, child)| {
             let child_ref = child.borrow();
-            let prior_probability = if let Some(action) = child_ref.action() {
+            let mut prior_probability = if let Some(action) = child_ref.action() {
                 policy_evaluation.policy().0[action]
             } else {
                 0.0
             };
+
+            if let Some(noise_vec) = &noise {
+                prior_probability = (1.0 - dirichlet_epsilon) * prior_probability
+                    + dirichlet_epsilon * noise_vec[idx];
+            }
+
             let score = strategy.calculate_score(&child_ref, parent_visit_count, prior_probability);
             (idx, score)
         })
@@ -99,7 +119,12 @@ mod tests {
 
     #[test]
     fn test_puct_basic() {
-        let strategy = PuctStrategy::with_c_puct(1.0);
+        let config = PuctConfig {
+            c_puct: 1.0,
+            dirichlet_epsilon: 0.0,
+            dirichlet_alpha: 1.0,
+        };
+        let strategy = PuctStrategy::new(config);
         let node = create_node(10, 0.5, Some(0));
         let prior_probability = 0.3;
 
@@ -113,7 +138,12 @@ mod tests {
 
     #[test]
     fn test_select_best_child() {
-        let strategy = PuctStrategy::with_c_puct(1.0);
+        let config = PuctConfig {
+            c_puct: 1.0,
+            dirichlet_epsilon: 0.0,
+            dirichlet_alpha: 1.0,
+        };
+        let strategy = PuctStrategy::new(config);
         let mut transposition_table = TranspositionTable::new();
         let parent_state = default_state();
 
@@ -137,6 +167,7 @@ mod tests {
             &strategy,
             &transposition_table,
             &parent_state,
+            false,
         );
 
         // Child 0: 0.7 + 1.0 * 0.2 * sqrt(15) / 11 = 0.7 + 0.07 = 0.77
