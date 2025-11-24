@@ -6,7 +6,7 @@ services:
       - server_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -26,7 +26,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -56,7 +56,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8081/health" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -71,9 +71,11 @@ services:
     depends_on:
       lfu_random:
         condition: service_healthy
+      lfu_max:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost/health" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -87,7 +89,21 @@ services:
       - proxy_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:80/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  lfu_max:
+    build:
+      context: ./server/ml
+      dockerfile: models/lfu_max/Dockerfile
+    container_name: reversi-lfu_max
+    networks:
+      - proxy_network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:80/health" ]
       interval: 10s
       timeout: 5s
       retries: 3

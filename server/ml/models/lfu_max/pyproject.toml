@@ -1,0 +1,19 @@
+[project]
+name = "lfu-max"
+version = "0.1.0"
+description = "A model that selects the move maximizing own stones."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.117.1",
+    "inference-kit",
+    "reversi"
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2"
+]
+
+[tool.uv.sources]
+inference-kit = { path = "../../inference_kit" }
+reversi = { path = "../../reversi-py" }

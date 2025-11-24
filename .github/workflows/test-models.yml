@@ -16,6 +16,7 @@ jobs:
       matrix:
         model: [
           'models/lfu_random',
+          'models/lfu_max',
         ]
     steps:
       - uses: actions/checkout@v4
