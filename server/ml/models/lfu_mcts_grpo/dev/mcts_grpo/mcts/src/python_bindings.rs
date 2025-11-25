@@ -107,8 +107,8 @@ impl MCTS {
             .build()
             .expect("Failed to create Tokio runtime");
 
-        let worker_batch_size = 32;
-        let (mut worker, sender) = Worker::new(worker_batch_size, callback);
+        let max_inference_batch_size = 32;
+        let (mut worker, sender) = Worker::new(max_inference_batch_size, callback);
 
         runtime.block_on(async {
             worker.start();
@@ -127,11 +127,17 @@ impl MCTS {
                     let root = Node::new(*state, None);
                     let tree = Tree::new(root);
 
-                    let internal_batch_size = 8;
-                    let num_batches =
-                        (num_simulations + internal_batch_size - 1) / internal_batch_size;
+                    let states_per_inference = 8;
+                    let num_inferences =
+                        (num_simulations + states_per_inference - 1) / states_per_inference;
 
-                    tree.search(num_batches, internal_batch_size, &py_model, tt, puct_config)
+                    tree.search(
+                        num_inferences,
+                        states_per_inference,
+                        &py_model,
+                        tt,
+                        puct_config,
+                    )
                 })
                 .collect()
         });

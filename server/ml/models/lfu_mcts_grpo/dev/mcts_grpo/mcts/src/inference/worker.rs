@@ -25,8 +25,8 @@ impl InferenceRequest {
 
 /// 推論ワーカーの状態管理と実行を担当する構造体
 pub struct Worker {
-    /// バッチサイズ
-    batch_size: usize,
+    /// 推論ワーカーが一度に処理できる推論リクエストの最大数
+    max_inference_batch_size: usize,
     /// リクエスト受信用の受信チャンネル
     rx: Option<mpsc::Receiver<InferenceRequest>>,
     /// ワーカーハンドル
@@ -37,12 +37,15 @@ pub struct Worker {
 
 impl Worker {
     /// 新しいWorkerを生成する
-    pub fn new(batch_size: usize, callback: Py<PyAny>) -> (Self, mpsc::Sender<InferenceRequest>) {
+    pub fn new(
+        max_inference_batch_size: usize,
+        callback: Py<PyAny>,
+    ) -> (Self, mpsc::Sender<InferenceRequest>) {
         let (tx, rx) = mpsc::channel(32);
 
         (
             Self {
-                batch_size,
+                max_inference_batch_size,
                 rx: Some(rx),
                 handle: None,
                 callback,
@@ -54,16 +57,20 @@ impl Worker {
     /// ワーカーを起動する
     pub fn start(&mut self) {
         let rx = self.rx.take().expect("Worker already started");
-        let batch_size = self.batch_size;
+        let max_inference_batch_size = self.max_inference_batch_size;
         let callback = Python::attach(|py| self.callback.clone_ref(py));
 
         self.handle = Some(tokio::spawn(async move {
-            let mut batch_requests = Vec::with_capacity(batch_size);
+            let mut batch_requests = Vec::with_capacity(max_inference_batch_size);
             let mut rx = rx; // Move rx into the task
 
             loop {
-                Self::collect_requests_until_batch_size(&mut rx, &mut batch_requests, batch_size)
-                    .await;
+                Self::collect_requests_until_batch_size(
+                    &mut rx,
+                    &mut batch_requests,
+                    max_inference_batch_size,
+                )
+                .await;
 
                 if !batch_requests.is_empty() {
                     Self::process_batch(&mut batch_requests, &callback).await;
@@ -74,11 +81,11 @@ impl Worker {
         }));
     }
 
-    /// バッチサイズに達するまでリクエストを収集する
+    /// max_inference_batch_sizeに達するまで推論リクエストを収集する
     async fn collect_requests_until_batch_size(
         rx: &mut mpsc::Receiver<InferenceRequest>,
         batch_requests: &mut Vec<InferenceRequest>,
-        batch_size: usize,
+        max_inference_batch_size: usize,
     ) {
         // 1. まず1つ目のリクエストを待つ (ブロッキング)
         if batch_requests.is_empty() {
@@ -93,12 +100,12 @@ impl Worker {
         // 明示的なノンブロッキング収集は不要。
         //
         // MCTSの探索では、複数のスレッドが並行して推論リクエストを送る。
-        // バッチサイズ(32)を埋めることでGPU/CPUの推論効率が向上する。
+        // max_inference_batch_size(32)を埋めることでGPU/CPUの推論効率が向上する。
         // しかし、リクエストが揃わない場合に待ちすぎるとレイテンシが悪化し、
         // 全体の探索速度(N/sec)が低下する。
         //
         // ベンチマーク結果 (16並行MCTS, 100シミュレーション/ツリー):
-        // - Tree::searchのinternal_batch_size=8により、バッチサイズは主に8前後
+        // - Tree::searchのstates_per_inference=8により、リクエストサイズは主に8前後
         // - 100μsのタイムアウトで、リクエストが連続する場合は即座に集約され、
         //   端数やリクエストが途切れた場合は待たずに処理開始
         // - スループット: ~30,000 req/sec, レイテンシ: ~3ms/state
@@ -109,7 +116,7 @@ impl Worker {
         let timeout = std::time::Duration::from_micros(100);
         let deadline = tokio::time::Instant::now() + timeout;
 
-        while batch_requests.len() < batch_size {
+        while batch_requests.len() < max_inference_batch_size {
             match tokio::time::timeout_at(deadline, rx.recv()).await {
                 Ok(Some(req)) => batch_requests.push(req),
                 Ok(None) => return, // チャンネル切断

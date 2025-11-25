@@ -28,20 +28,20 @@ impl Tree {
     /// Executes Batched MCTS search.
     pub fn search<M: ModelEvaluator>(
         &self,
-        num_batches: usize,
-        batch_size: usize,
+        num_inferences: usize,
+        states_per_inference: usize,
         model: &M,
         transposition_table: &TranspositionTable,
         puct_config: PuctConfig,
     ) -> Option<usize> {
         let strategy = PuctStrategy::new(puct_config);
 
-        for _ in 0..num_batches {
+        for _ in 0..num_inferences {
             let mut batch = Vec::new();
 
             // GetBatch
             // Loop until batch is full or we can't find more nodes
-            while batch.len() < batch_size {
+            while batch.len() < states_per_inference {
                 let res = self.batch_puct(&self.root, transposition_table, &strategy, true, true);
                 match res {
                     SearchResult::Miss(state) => {
