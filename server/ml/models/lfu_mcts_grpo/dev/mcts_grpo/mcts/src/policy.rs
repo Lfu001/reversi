@@ -1,10 +1,24 @@
+/// A probability distribution over all 64 possible board positions.
+///
+/// Represents the policy output from a neural network model, where each
+/// element is the probability of placing a disk at that position.
+/// The 64 positions correspond to an 8x8 Reversi board, indexed row-major.
 #[derive(Debug, Clone)]
 pub struct Policy(pub [f64; 64]);
 
+/// The estimated value of a game state from the current player's perspective.
+///
+/// Represents the value output from a neural network model, typically in
+/// the range \[-1.0, 1.0\], where positive values favor the current player
+/// and negative values favor the opponent.
 #[derive(Debug, Clone)]
 pub struct Value(pub f64);
 
-/// A pair of a policy and a value.
+/// A combined policy and value evaluation from a neural network model.
+///
+/// This struct pairs the move probability distribution (policy) with
+/// the position evaluation (value), representing a complete neural network
+/// prediction for a game state.
 #[derive(Debug, Clone)]
 pub struct PolicyEvaluation {
     /// A policy.

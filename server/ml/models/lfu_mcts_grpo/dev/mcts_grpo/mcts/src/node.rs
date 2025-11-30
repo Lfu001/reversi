@@ -17,12 +17,14 @@ pub struct Node {
     action: Option<usize>,
     /// A sum of evaluations of the node.
     sum_evaluation: f64,
-    /// ノードが展開されたかどうか
+    /// Whether this node has been expanded with child nodes.
     is_expanded: bool,
 }
 
 impl Node {
-    /// Creates a new [`Node`].
+    /// Creates a new [`Node`] with the given `state` and optional `action`.
+    ///
+    /// The `action` represents the move that led to this state, or `None` for the root node.
     pub fn new(state: State, action: Option<usize>) -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Node {
             parent: None,
@@ -45,7 +47,7 @@ impl Node {
         &self.parent
     }
 
-    /// Sets the parent of this node.
+    /// Sets the parent reference to the given weak pointer `parent`.
     pub fn set_parent(&mut self, parent: Option<Weak<RefCell<Node>>>) {
         self.parent = parent;
     }
@@ -65,7 +67,7 @@ impl Node {
         self.visit_count
     }
 
-    /// Sets the visit count.
+    /// Sets the visit count to the specified `count` value.
     pub fn set_visit_count(&mut self, count: u32) {
         self.visit_count = count;
     }
@@ -85,7 +87,7 @@ impl Node {
         self.sum_evaluation
     }
 
-    /// Adds to the sum of evaluations.
+    /// Adds the given `value` to the sum of evaluations.
     pub fn add_evaluation(&mut self, value: f64) {
         self.sum_evaluation += value;
     }
@@ -95,7 +97,7 @@ impl Node {
         self.is_expanded
     }
 
-    /// Sets the expanded flag.
+    /// Sets the expanded flag to the given `expanded` value.
     pub fn set_expanded(&mut self, expanded: bool) {
         self.is_expanded = expanded;
     }
@@ -120,7 +122,8 @@ impl Node {
     }
 
     /// Calculates the average Q-value of all visited children.
-    /// Returns None if there are no visited children.
+    ///
+    /// Returns `Some` with the average Q-value if there are visited children, or `None` if all children are unvisited.
     pub fn average_q_value_of_visited_children(&self) -> Option<f64> {
         let mut sum_q = 0.0;
         let mut count = 0;
@@ -143,17 +146,21 @@ impl Node {
     }
 
     /// Returns the Q-value (average evaluation) based on visits.
-    /// Should only be called when visit_count > 0.
+    ///
+    /// Panics if `visit_count` is 0. Should only be called after verifying the node has been visited.
     fn q_value(&self) -> f64 {
         assert!(self.visit_count > 0);
         self.sum_evaluation / self.visit_count as f64
     }
 
     /// Adds a child node to the current node.
+    ///
+    /// Establishes bidirectional linking: sets the `parent` weak reference in the `child`,
+    /// and adds the `child` strong reference to the `parent`'s children list.
     pub fn add_child(parent: &Rc<RefCell<Node>>, child: Rc<RefCell<Node>>) {
-        // 子ノードに親への弱参照を設定する
+        // Set weak reference to parent in the child node
         child.borrow_mut().set_parent(Some(Rc::downgrade(parent)));
-        // 親ノードに子への強参照を追加する
+        // Add strong reference to child in the parent node
         parent.borrow_mut().children.push(child);
     }
 
@@ -171,7 +178,9 @@ impl Node {
     }
 
     /// Updates the node with the real value, replacing the virtual mean.
-    /// Assumes virtual loss was applied (visit count is already incremented).
+    ///
+    /// Takes the actual evaluation `real_value` and replaces the virtual loss placeholder.
+    /// Assumes virtual loss was applied beforehand (visit count is already incremented).
     pub fn update_with_real_value(&mut self, real_value: f64) {
         // Remove the virtual mean contribution
         // Since we added average_value() to sum, and visit_count was incremented.

@@ -6,7 +6,7 @@ use crate::{
     selection::PuctConfig,
     state::State,
     transposition_table::TranspositionTable,
-    tree::Tree,
+    tree::{SearchResults, Tree},
 };
 use common::DiskColor;
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray4, ndarray::Array2};
@@ -162,20 +162,7 @@ impl MCTS {
 
     /// Runs MCTS simulations for a batch of states in parallel.
     ///
-    /// # Arguments
-    ///
-    /// * `py` - The Python GIL token.
-    /// * `rust_states` - A vector of `State` objects.
-    /// * `callback` - A Python callable for inference.
-    /// * `num_simulations` - Number of MCTS simulations per state.
-    /// * `puct_config` - PUCT configuration.
-    /// * `seed` - Optional random seed.
-    ///
-    /// # Returns
-    ///
-    /// A vector of tuples, where each tuple contains:
-    /// * `visit_counts` - A vector of visit counts for each action.
-    /// * `q_values` - A vector of Q-values for each action.
+    /// Returns a vector of SearchResults, one for each input state.
     fn run_mcts_batch(
         &self,
         py: Python<'_>,
@@ -184,7 +171,7 @@ impl MCTS {
         num_simulations: usize,
         puct_config: PuctConfig,
         seed: Option<u64>,
-    ) -> Vec<(Vec<u32>, Vec<f64>)> {
+    ) -> Vec<SearchResults> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -239,20 +226,10 @@ impl MCTS {
 
     /// Processes the MCTS results into numpy arrays.
     ///
-    /// # Arguments
-    ///
-    /// * `py` - The Python GIL token.
-    /// * `results` - A vector of tuples containing visit counts and Q-values.
-    /// * `batch_size` - The number of states in the batch.
-    ///
-    /// # Returns
-    ///
-    /// A tuple containing:
-    /// * `pi` - Policy distribution of shape (batch_size, 64).
-    /// * `q_values` - Q-values of shape (batch_size, 64).
+    /// Converts search results into policy distributions (pi) and Q-values as numpy arrays.
     fn process_results(
         py: Python<'_>,
-        results: Vec<(Vec<u32>, Vec<f64>)>,
+        results: Vec<SearchResults>,
         batch_size: usize,
     ) -> PyResult<(Py<PyArray2<f64>>, Py<PyArray2<f64>>)> {
         // Convert results into numpy arrays and normalize visit counts to pi
@@ -260,19 +237,19 @@ impl MCTS {
         let mut pi = vec![0.0f64; batch_size * 64];
         let mut q_values = vec![0.0f64; batch_size * 64];
 
-        for (i, (vc, qv)) in results.iter().enumerate() {
+        for (i, result) in results.iter().enumerate() {
             // Calculate total visits for normalization
-            let total_visits: u32 = vc.iter().sum();
+            let total_visits: u32 = result.visit_counts.iter().sum();
 
             for j in 0..64 {
                 // Normalize visit counts to get policy distribution
                 if total_visits > 0 {
-                    pi[i * 64 + j] = vc[j] as f64 / total_visits as f64;
+                    pi[i * 64 + j] = result.visit_counts[j] as f64 / total_visits as f64;
                 } else {
                     // If no visits, uniform distribution
                     pi[i * 64 + j] = 1.0 / 64.0;
                 }
-                q_values[i * 64 + j] = qv[j];
+                q_values[i * 64 + j] = result.q_values[j];
             }
         }
 

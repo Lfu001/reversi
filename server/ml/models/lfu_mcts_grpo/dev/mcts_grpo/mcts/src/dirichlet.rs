@@ -1,18 +1,13 @@
 use rand_distr::{Distribution, Gamma};
 
-/// Dirichletディストリビューションからサンプリング
+/// Samples from a Dirichlet distribution using the Gamma-based method.
 ///
-/// Dirichletディストリビューションは、Gammaディストリビューションを使って実装できます：
-/// X_i ~ Gamma(α_i, 1) のとき、Y_i = X_i / Σ(X_j) は Dirichlet(α_1, ..., α_n) に従う
+/// The Dirichlet distribution can be implemented using Gamma distributions:
+/// when X_i ~ Gamma(α_i, 1), then Y_i = X_i / Σ(X_j) follows Dirichlet(α_1, ..., α_n).
 ///
-/// # Arguments
-/// * `rng` - 乱数生成器への可変参照
-/// * `alpha` - Dirichletディストリビューションのαパラメータ（各次元で同じ値を使用）
-/// * `size` - サンプルのサイズ（次元数）
-///
-/// # Returns
-/// `Some(Vec<f64>)` - 正規化されたサンプル（合計が1になる）
-/// `None` - サンプリングに失敗した場合
+/// Takes a random number generator, an alpha parameter (same for all dimensions),
+/// and the dimensionality of the sample. Returns a normalized probability
+/// distribution (summing to 1.0) or `None` if sampling fails.
 pub fn sample_dirichlet(rng: &mut impl rand::Rng, alpha: f64, size: usize) -> Option<Vec<f64>> {
     if size == 0 {
         return Some(Vec::new());

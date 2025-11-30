@@ -7,14 +7,20 @@ use pyo3::prelude::*;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 
-/// 推論リクエストのデータ構造
+/// Data structure for an inference request.
 #[derive(Debug)]
 pub struct InferenceRequest {
+    /// Game states to be evaluated by the neural network.
     states: Vec<State>,
+    /// Channel to send back the evaluation results.
     response_tx: oneshot::Sender<Vec<PolicyEvaluation>>,
 }
 
 impl InferenceRequest {
+    /// Creates a new inference request with the given `states` and response channel.
+    ///
+    /// The `states` will be batched for neural network evaluation, and results
+    /// will be sent back through `response_tx`.
     pub fn new(states: Vec<State>, response_tx: oneshot::Sender<Vec<PolicyEvaluation>>) -> Self {
         Self {
             states,
@@ -23,20 +29,30 @@ impl InferenceRequest {
     }
 }
 
-/// 推論ワーカーの状態管理と実行を担当する構造体
+/// Manages and executes inference worker tasks.
+///
+/// The worker batches inference requests to improve GPU/CPU utilization efficiency.
 pub struct Worker {
-    /// 推論ワーカーが一度に処理できる推論リクエストの最大数
+    /// Maximum number of inference requests the worker can process at once.
+    /// Batching up to this size improves GPU throughput.
     max_inference_batch_size: usize,
-    /// リクエスト受信用の受信チャンネル
+    /// Receiving channel for incoming requests.
+    /// Set to `None` after the worker starts to prevent restarting.
     rx: Option<mpsc::Receiver<InferenceRequest>>,
-    /// ワーカーハンドル
+    /// Handle to the asynchronous worker task.
+    /// Used to await worker completion when stopping.
     handle: Option<tokio::task::JoinHandle<()>>,
-    /// Python callback for inference
+    /// Python callback function that performs neural network inference.
+    /// Called with batched game states.
     callback: Py<PyAny>,
 }
 
 impl Worker {
-    /// 新しいWorkerを生成する
+    /// Creates a new Worker instance with the specified batch size and callback.
+    ///
+    /// Takes `max_inference_batch_size` to configure batching behavior and a Python
+    /// `callback` function for neural network inference. Returns a tuple of the
+    /// [`Worker`] and a sender channel for submitting inference requests.
     pub fn new(
         max_inference_batch_size: usize,
         callback: Py<PyAny>,
@@ -54,7 +70,7 @@ impl Worker {
         )
     }
 
-    /// ワーカーを起動する
+    /// Starts the worker task.
     pub fn start(&mut self) {
         let rx = self.rx.take().expect("Worker already started");
         let max_inference_batch_size = self.max_inference_batch_size;
@@ -75,57 +91,64 @@ impl Worker {
                 if !batch_requests.is_empty() {
                     Self::process_batch(&mut batch_requests, &callback).await;
                 } else if rx.is_closed() {
-                    break; // すべての送信者がドロップされた場合
+                    break; // All senders have been dropped
                 }
             }
         }));
     }
 
-    /// max_inference_batch_sizeに達するまで推論リクエストを収集する
+    /// Collects inference requests until the batch size is reached.
+    ///
+    /// Waits for the first request, then collects additional requests within a timeout
+    /// window to fill the batch. The `rx` channel receives requests, `batch_requests`
+    /// accumulates them, and `max_inference_batch_size` sets the target batch size.
     async fn collect_requests_until_batch_size(
         rx: &mut mpsc::Receiver<InferenceRequest>,
         batch_requests: &mut Vec<InferenceRequest>,
         max_inference_batch_size: usize,
     ) {
-        // 1. まず1つ目のリクエストを待つ (ブロッキング)
+        // 1. First, wait for the initial request (blocking)
         if batch_requests.is_empty() {
             match rx.recv().await {
                 Some(req) => batch_requests.push(req),
-                None => return, // 送信者がすべてドロップされた
+                None => return, // All senders have been dropped
             }
         }
 
-        // 2. 残りのリクエストを収集 (タイムアウト付き)
-        // 既にチャンネルにあるリクエストは即座に取得されるため、
-        // 明示的なノンブロッキング収集は不要。
+        // 2. Collect remaining requests with timeout
+        // Requests already in the channel are immediately retrieved,
+        // so no explicit non-blocking collection is needed.
         //
-        // MCTSの探索では、複数のスレッドが並行して推論リクエストを送る。
-        // max_inference_batch_size(32)を埋めることでGPU/CPUの推論効率が向上する。
-        // しかし、リクエストが揃わない場合に待ちすぎるとレイテンシが悪化し、
-        // 全体の探索速度(N/sec)が低下する。
+        // In MCTS search, multiple threads send inference requests concurrently.
+        // Filling max_inference_batch_size(32) improves GPU/CPU inference efficiency.
+        // However, waiting too long when requests don't arrive degrades latency,
+        // reducing overall search speed (N/sec).
         //
-        // ベンチマーク結果 (16並行MCTS, 100シミュレーション/ツリー):
-        // - Tree::searchのstates_per_inference=8により、リクエストサイズは主に8前後
-        // - 100μsのタイムアウトで、リクエストが連続する場合は即座に集約され、
-        //   端数やリクエストが途切れた場合は待たずに処理開始
-        // - スループット: ~30,000 req/sec, レイテンシ: ~3ms/state
+        // Benchmark results (16 concurrent MCTS, 100 simulations/tree):
+        // - Tree::search's states_per_inference=8 results in requests of ~8 states
+        // - 100μs timeout allows immediate aggregation when requests are continuous,
+        //   and starts processing without waiting when requests taper off
+        // - Throughput: ~30,000 req/sec, Latency: ~3ms/state
         //
-        // Pythonの関数呼び出しやデータ変換のオーバーヘッド(数ms程度)と比較して、
-        // 100マイクロ秒(0.1ms)は無視できる程度だが、バッチ充填のチャンスを
-        // 確保できる時間として適切。
+        // Compared to Python function call and data conversion overhead (several ms),
+        // 100 microseconds (0.1ms) is negligible, but provides sufficient opportunity
+        // to fill the batch.
         let timeout = std::time::Duration::from_micros(100);
         let deadline = tokio::time::Instant::now() + timeout;
 
         while batch_requests.len() < max_inference_batch_size {
             match tokio::time::timeout_at(deadline, rx.recv()).await {
                 Ok(Some(req)) => batch_requests.push(req),
-                Ok(None) => return, // チャンネル切断
-                Err(_) => break,    // タイムアウト
+                Ok(None) => return, // Channel disconnected
+                Err(_) => break,    // Timeout
             }
         }
     }
 
-    /// バッチ処理を実行する
+    /// Processes a batch of inference requests by running inference and distributing results.
+    ///
+    /// Flattens states from all `batch_requests`, calls the Python `callback` for inference,
+    /// then distributes results back to each request's response channel.
     async fn process_batch(batch_requests: &mut Vec<InferenceRequest>, callback: &Py<PyAny>) {
         // Flatten all states from all requests
         let mut all_states = Vec::new();
@@ -151,7 +174,10 @@ impl Worker {
         }
     }
 
-    /// 推論を実行する
+    /// Runs neural network inference on a batch of states using the Python callback.
+    ///
+    /// Converts the `states` into a 4-channel input tensor, invokes the Python `callback`,
+    /// and parses the results into [`PolicyEvaluation`] objects.
     fn run_inference(states: &[State], callback: &Py<PyAny>) -> Vec<PolicyEvaluation> {
         Python::attach(|py| {
             let batch_size = states.len();
@@ -254,7 +280,9 @@ impl Worker {
         })
     }
 
-    /// ワーカーを停止する
+    /// Stops the worker and waits for it to complete.
+    ///
+    /// Awaits the worker task handle, ensuring clean shutdown.
     pub async fn stop(self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(handle) = self.handle {
             handle.await?;

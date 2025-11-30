@@ -3,29 +3,29 @@ use crate::{
 };
 use std::{cell::RefCell, rc::Rc};
 
-/// PUCT計算の設定
+/// Configuration for PUCT (Polynomial Upper Confidence Trees) calculation.
 #[derive(Debug, Clone, Copy)]
 pub struct PuctConfig {
-    /// 探索の強さを調整する定数 (通常1.0〜2.0)
+    /// Constant to adjust exploration strength (typically 1.0 to 2.0).
     pub c_puct: f64,
-    /// Dirichlet noise epsilon
+    /// Epsilon parameter for Dirichlet noise mixing at root node.
     pub dirichlet_epsilon: f64,
-    /// Dirichlet noise alpha
+    /// Alpha parameter for Dirichlet noise distribution.
     pub dirichlet_alpha: f64,
 }
 
-/// ノード選択戦略のトレイト
+/// Trait for node selection strategies in MCTS.
 pub trait SelectionStrategy {
     fn calculate_score(&self, node: &Node, parent_visit_count: u32, prior_probability: f64) -> f64;
 }
 
-/// PUCT選択戦略
+/// PUCT (Polynomial Upper Confidence Trees) selection strategy.
 pub struct PuctStrategy {
     config: PuctConfig,
 }
 
 impl PuctStrategy {
-    /// Creates a new [`PuctStrategy`].
+    /// Creates a new [`PuctStrategy`] with the given `config` parameters.
     pub fn new(config: PuctConfig) -> Self {
         Self { config }
     }
@@ -37,8 +37,11 @@ impl PuctStrategy {
 }
 
 impl SelectionStrategy for PuctStrategy {
-    /// PUCT値を計算
-    /// PUCT(s,a) = Q(s,a) + c_puct × P(s,a) × √(N(s)) / (1 + N(s,a))
+    /// Calculates the PUCT score for a node.
+    ///
+    /// Evaluates the given `node` using its Q-value and exploration term, considering
+    /// the `parent_visit_count` and action's `prior_probability` from the neural network policy.
+    /// Formula: PUCT(s,a) = Q(s,a) + c_puct × P(s,a) × √(N(s)) / (1 + N(s,a))
     fn calculate_score(&self, node: &Node, parent_visit_count: u32, prior_probability: f64) -> f64 {
         let q_value = node.average_value();
         let exploration_term =
@@ -49,7 +52,12 @@ impl SelectionStrategy for PuctStrategy {
     }
 }
 
-/// 複数のノードから最適なものを選択
+/// Selects the best child node from a list of candidates using PUCT strategy.
+///
+/// Evaluates all `children` nodes considering the `parent_visit_count`, applies the PUCT
+/// selection `strategy`, retrieves policy priors from `transposition_table` for `parent_state`,
+/// optionally adds Dirichlet noise if `is_root` is true, and uses `rng` for noise generation.
+/// Returns the index of the child with the highest PUCT score.
 pub fn select_best_child(
     children: &[Rc<RefCell<Node>>],
     parent_visit_count: u32,

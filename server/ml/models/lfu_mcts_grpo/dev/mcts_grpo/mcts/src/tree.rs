@@ -7,26 +7,47 @@ use crate::{
 };
 use std::{cell::RefCell, rc::Rc};
 
+/// Internal result type for batch PUCT traversal.
 enum SearchResult {
+    /// Transposition table miss - state needs neural network evaluation.
     Miss(State),
+    /// Transposition table hit - evaluation found, value returned.
     Hit(f64),
+    /// No valid search path (terminal state or fully explored).
     None,
 }
 
-/// MCTS tree
+/// Results from MCTS search containing visit counts and Q-values for all actions.
+///
+/// This struct provides the policy improvement (visit count distribution) and
+/// action values (Q-values) for all 64 possible board positions after running
+/// MCTS simulations.
+#[derive(Debug, Clone)]
+pub struct SearchResults {
+    /// Number of times each of the 64 actions was visited during search.
+    pub visit_counts: Vec<u32>,
+    /// Q-value (average reward) for each of the 64 actions.
+    pub q_values: Vec<f64>,
+}
+
+/// MCTS search tree.
 pub struct Tree {
-    /// Root node
+    /// Root node of the tree representing the initial game state.
     root: Rc<RefCell<Node>>,
 }
 
 impl Tree {
-    /// Creates a new [`Tree`].
+    /// Creates a new [`Tree`] with the specified `root` node.
     pub fn new(root: Rc<RefCell<Node>>) -> Self {
         Self { root }
     }
 
-    /// Executes Batched MCTS search.
-    /// Returns (visit_counts, q_values) for all 64 actions.
+    /// Executes batched MCTS search and returns visit counts and Q-values.
+    ///
+    /// Runs `num_inferences` batches, each collecting up to `states_per_inference` states
+    /// for evaluation. Uses the neural network `model` for state evaluation, caches results
+    /// in `transposition_table`, applies PUCT selection with `puct_config`, and uses `rng`
+    /// for Dirichlet noise at the root.
     pub fn search<M: ModelEvaluator>(
         &self,
         num_inferences: usize,
@@ -35,7 +56,7 @@ impl Tree {
         transposition_table: &TranspositionTable,
         puct_config: PuctConfig,
         rng: &mut impl rand::Rng,
-    ) -> (Vec<u32>, Vec<f64>) {
+    ) -> SearchResults {
         let strategy = PuctStrategy::new(puct_config);
 
         for _ in 0..num_inferences {
@@ -105,7 +126,10 @@ impl Tree {
             }
         }
 
-        (visit_counts, q_values)
+        SearchResults {
+            visit_counts,
+            q_values,
+        }
     }
 
     fn batch_puct(
@@ -282,10 +306,10 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
         // Run search with 2 batches of size 2 to ensure children are visited
-        let (visit_counts, _q_values) = tree.search(2, 2, &model, &mut tt, config, &mut rng);
+        let results = tree.search(2, 2, &model, &mut tt, config, &mut rng);
 
         // Should have some visits
-        let total_visits: u32 = visit_counts.iter().sum();
+        let total_visits: u32 = results.visit_counts.iter().sum();
         assert!(total_visits > 0);
 
         // Root should have visits
