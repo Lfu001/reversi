@@ -27,6 +27,12 @@ class MCTSConfig(BaseModel):
         description="Alpha parameter for Dirichlet distribution"
     )
     c_puct: float = Field(description="Exploration constant for PUCT algorithm")
+    max_inference_batch_size: int = Field(
+        description="Maximum batch size for inference worker"
+    )
+    states_per_inference: int = Field(
+        description="Number of states to process per inference call"
+    )
 
 
 class TrainingConfig(BaseModel):

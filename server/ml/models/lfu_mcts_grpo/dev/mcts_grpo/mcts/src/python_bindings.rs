@@ -9,7 +9,7 @@ use crate::{
     tree::Tree,
 };
 use common::DiskColor;
-use numpy::PyReadonlyArray4;
+use numpy::{IntoPyArray, PyArray2, PyReadonlyArray4, ndarray::Array2};
 use pyo3::prelude::*;
 use rayon::prelude::*;
 use tokio::sync::{mpsc, oneshot};
@@ -37,14 +37,18 @@ impl ModelEvaluator for PythonModel {
 #[pyclass(unsendable)]
 pub struct MCTS {
     transposition_table: TranspositionTable,
+    max_inference_batch_size: usize,
+    states_per_inference: usize,
 }
 
 #[pymethods]
 impl MCTS {
     #[new]
-    fn new() -> Self {
+    fn new(max_inference_batch_size: usize, states_per_inference: usize) -> Self {
         MCTS {
             transposition_table: TranspositionTable::new(),
+            max_inference_batch_size,
+            states_per_inference,
         }
     }
 
@@ -57,7 +61,7 @@ impl MCTS {
         dirichlet_epsilon: f64,
         dirichlet_alpha: f64,
         c_puct: f64,
-    ) -> PyResult<Vec<Option<usize>>> {
+    ) -> PyResult<(Py<PyArray2<f64>>, Py<PyArray2<f64>>)> {
         let states_array = states.as_array();
         let batch_size = states_array.shape()[0];
 
@@ -107,8 +111,7 @@ impl MCTS {
             .build()
             .expect("Failed to create Tokio runtime");
 
-        let max_inference_batch_size = 32;
-        let (mut worker, sender) = Worker::new(max_inference_batch_size, callback);
+        let (mut worker, sender) = Worker::new(self.max_inference_batch_size, callback);
 
         runtime.block_on(async {
             worker.start();
@@ -116,7 +119,7 @@ impl MCTS {
 
         let tt = &self.transposition_table;
 
-        let results: Vec<Option<usize>> = py.detach(|| {
+        let results: Vec<(Vec<u32>, Vec<f64>)> = py.detach(|| {
             rust_states
                 .par_iter()
                 .map(|state| {
@@ -127,13 +130,12 @@ impl MCTS {
                     let root = Node::new(*state, None);
                     let tree = Tree::new(root);
 
-                    let states_per_inference = 8;
-                    let num_inferences =
-                        (num_simulations + states_per_inference - 1) / states_per_inference;
+                    let num_inferences = (num_simulations + self.states_per_inference - 1)
+                        / self.states_per_inference;
 
                     tree.search(
                         num_inferences,
-                        states_per_inference,
+                        self.states_per_inference,
                         &py_model,
                         tt,
                         puct_config,
@@ -142,6 +144,38 @@ impl MCTS {
                 .collect()
         });
 
-        Ok(results)
+        // Convert results into numpy arrays and normalize visit counts to pi
+        // pi: [batch_size, 64], q_values: [batch_size, 64]
+        let mut pi = vec![0.0f64; batch_size * 64];
+        let mut q_values = vec![0.0f64; batch_size * 64];
+
+        for (i, (vc, qv)) in results.iter().enumerate() {
+            // Calculate total visits for normalization
+            let total_visits: u32 = vc.iter().sum();
+
+            for j in 0..64 {
+                // Normalize visit counts to get policy distribution
+                if total_visits > 0 {
+                    pi[i * 64 + j] = vc[j] as f64 / total_visits as f64;
+                } else {
+                    // If no visits, uniform distribution
+                    pi[i * 64 + j] = 1.0 / 64.0;
+                }
+                q_values[i * 64 + j] = qv[j];
+            }
+        }
+
+        // Convert to numpy arrays
+        let pi_array = Array2::from_shape_vec((batch_size, 64), pi)
+            .expect("Failed to create pi array")
+            .into_pyarray(py)
+            .unbind();
+
+        let q_values_array = Array2::from_shape_vec((batch_size, 64), q_values)
+            .expect("Failed to create q values array")
+            .into_pyarray(py)
+            .unbind();
+
+        Ok((pi_array, q_values_array))
     }
 }

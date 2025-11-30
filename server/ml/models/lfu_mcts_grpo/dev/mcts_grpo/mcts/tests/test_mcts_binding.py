@@ -41,7 +41,11 @@ def initial_states():
 
 def test_mcts_run(initial_states):
     """Test MCTS run with mock model."""
-    mcts_instance = mcts.MCTS()
+    # MCTS with explicit batch configuration
+    max_inference_batch_size = 32
+    states_per_inference = 8
+    # Use RustMCTS to test the low-level Rust binding
+    mcts_instance = mcts.RustMCTS(max_inference_batch_size, states_per_inference)
     model = MockModel()
 
     # MCTS parameters
@@ -50,8 +54,8 @@ def test_mcts_run(initial_states):
     dirichlet_alpha = 1.0
     c_puct = 1.0
 
-    # Run MCTS
-    actions = mcts_instance.run(
+    # Run MCTS - now returns (pi, q_values) where pi is already normalized
+    pi, q_values = mcts_instance.run(
         initial_states,
         model.inference,
         num_simulations,
@@ -60,9 +64,40 @@ def test_mcts_run(initial_states):
         c_puct,
     )
 
-    print(f"Best actions: {actions}")
+    print(f"Pi shape: {pi.shape}")
+    print(f"Q-values shape: {q_values.shape}")
+    print(f"Pi:\n{pi}")
+    print(f"Q-values:\n{q_values}")
 
     # Assertions
-    assert len(actions) == initial_states.shape[0]
-    for action in actions:
-        assert action is None or (0 <= action < 64)
+    batch_size = initial_states.shape[0]
+
+    # Check shapes
+    assert pi.shape == (batch_size, 64), (
+        f"Expected pi shape ({batch_size}, 64), got {pi.shape}"
+    )
+    assert q_values.shape == (batch_size, 64), (
+        f"Expected q_values shape ({batch_size}, 64), got {q_values.shape}"
+    )
+
+    # Check types (Rust returns f64, which becomes float64 in numpy)
+    assert pi.dtype == np.float64, f"Expected pi dtype float64, got {pi.dtype}"
+    assert q_values.dtype == np.float64, (
+        f"Expected q_values dtype float64, got {q_values.dtype}"
+    )
+
+    # Check that pi values are non-negative and sum to 1.0
+    assert np.all(pi >= 0), "Pi values should be non-negative"
+    assert np.all(pi <= 1), "Pi values should be at most 1.0"
+
+    # Check that each state's pi sums to approximately 1.0 (normalized distribution)
+    for i in range(batch_size):
+        pi_sum = pi[i].sum()
+        assert np.isclose(pi_sum, 1.0, atol=1e-6), (
+            f"State {i} pi sum is {pi_sum}, expected 1.0"
+        )
+
+        # Check that Q-values are finite
+        assert np.all(np.isfinite(q_values[i])), (
+            f"Q-values should be finite for state {i}"
+        )

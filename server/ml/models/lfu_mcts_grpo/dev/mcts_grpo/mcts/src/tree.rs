@@ -26,6 +26,7 @@ impl Tree {
     }
 
     /// Executes Batched MCTS search.
+    /// Returns (visit_counts, q_values) for all 64 actions.
     pub fn search<M: ModelEvaluator>(
         &self,
         num_inferences: usize,
@@ -33,7 +34,7 @@ impl Tree {
         model: &M,
         transposition_table: &TranspositionTable,
         puct_config: PuctConfig,
-    ) -> Option<usize> {
+    ) -> (Vec<u32>, Vec<f64>) {
         let strategy = PuctStrategy::new(puct_config);
 
         for _ in 0..num_inferences {
@@ -86,12 +87,23 @@ impl Tree {
             }
         }
 
-        // Return best action
+        // Build visit counts and Q-values arrays for all 64 actions
+        let mut visit_counts = vec![0u32; 64];
+        let mut q_values = vec![0.0f64; 64];
+
         let root = self.root.borrow();
-        root.children()
-            .iter()
-            .max_by(|a, b| a.borrow().visit_count().cmp(&b.borrow().visit_count()))
-            .and_then(|c| c.borrow().action())
+        for child in root.children() {
+            let child_ref = child.borrow();
+            if let Some(action) = child_ref.action() {
+                visit_counts[action] = child_ref.visit_count();
+                // Only compute Q-value if the child was visited
+                if child_ref.visit_count() > 0 {
+                    q_values[action] = child_ref.sum_evaluation() / child_ref.visit_count() as f64;
+                }
+            }
+        }
+
+        (visit_counts, q_values)
     }
 
     fn batch_puct(
@@ -263,10 +275,11 @@ mod tests {
         };
 
         // Run search with 1 batch of size 2
-        let action = tree.search(1, 2, &model, &mut tt, config);
+        let (visit_counts, _q_values) = tree.search(1, 2, &model, &mut tt, config);
 
-        // Should return an action
-        assert!(action.is_some());
+        // Should have some visits
+        let total_visits: u32 = visit_counts.iter().sum();
+        assert!(total_visits > 0);
 
         // Root should have visits
         assert!(tree.root.borrow().visit_count() > 0);

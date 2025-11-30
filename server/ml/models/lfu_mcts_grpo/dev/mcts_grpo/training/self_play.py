@@ -5,10 +5,10 @@ Self-Play実行
 
 import numpy as np
 import torch
+from mcts import MCTS
 from reversi import ReversiEnvironment
 from tqdm.rich import tqdm
 
-from ..mcts import MCTS
 from ..replay_buffer import ReplayBuffer
 from ..settings import Settings
 from .game_result import GameResultProcessor
@@ -33,7 +33,11 @@ class SelfPlayExecutor:
         self, iteration: int, model: torch.nn.Module, device: torch.device
     ):
         """Self-Playを実行してリプレイバッファにデータを追加"""
-        mcts = MCTS(self.settings.mcts)
+        # Initialize MCTS with config parameters
+        mcts = MCTS(
+            max_inference_batch_size=self.settings.mcts.max_inference_batch_size,
+            states_per_inference=self.settings.mcts.states_per_inference,
+        )
         model.eval()
 
         games_completed = 0
@@ -44,7 +48,15 @@ class SelfPlayExecutor:
 
         current_states = self.env.reset()
         while games_completed < self.settings.training.games_per_iteration:
-            pi, q_values = mcts.run_simulations(model, current_states, device)
+            pi, q_values = mcts.run_simulations(
+                model=model,
+                states=current_states,
+                device=device,
+                num_simulations=self.settings.mcts.num_simulations,
+                dirichlet_epsilon=self.settings.mcts.dirichlet_epsilon,
+                dirichlet_alpha=self.settings.mcts.dirichlet_alpha,
+                c_puct=self.settings.mcts.c_puct,
+            )
             next_states, dones = self.env.step_batch(pi, deterministic=False)
 
             for i in range(self.settings.training.batch_size):
