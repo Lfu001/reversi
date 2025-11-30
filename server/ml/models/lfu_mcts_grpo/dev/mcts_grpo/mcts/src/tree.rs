@@ -34,6 +34,7 @@ impl Tree {
         model: &M,
         transposition_table: &TranspositionTable,
         puct_config: PuctConfig,
+        rng: &mut impl rand::Rng,
     ) -> (Vec<u32>, Vec<f64>) {
         let strategy = PuctStrategy::new(puct_config);
 
@@ -43,7 +44,8 @@ impl Tree {
             // GetBatch
             // Loop until batch is full or we can't find more nodes
             while batch.len() < states_per_inference {
-                let res = self.batch_puct(&self.root, transposition_table, &strategy, true, true);
+                let res =
+                    self.batch_puct(&self.root, transposition_table, &strategy, true, true, rng);
                 match res {
                     SearchResult::Miss(state) => {
                         batch.push(state);
@@ -83,7 +85,7 @@ impl Tree {
             // Since we added batch.len() items, we should run it that many times to ensure we cover them.
             // Note: batch_puct might find different paths if the tree changed, but usually it finds the same.
             for _ in 0..batch.len() {
-                self.batch_puct(&self.root, transposition_table, &strategy, false, true);
+                self.batch_puct(&self.root, transposition_table, &strategy, false, true, rng);
             }
         }
 
@@ -113,6 +115,7 @@ impl Tree {
         strategy: &PuctStrategy,
         get_batch: bool,
         is_root: bool,
+        rng: &mut impl rand::Rng,
     ) -> SearchResult {
         let mut node_ref = node.borrow_mut();
 
@@ -194,13 +197,14 @@ impl Tree {
             tt,
             node_ref.state(),
             is_root,
+            rng,
         );
 
         if let Some(idx) = best_idx {
             let child = node_ref.children()[idx].clone();
             drop(node_ref);
 
-            let res = self.batch_puct(&child, tt, strategy, get_batch, false);
+            let res = self.batch_puct(&child, tt, strategy, get_batch, false, rng);
 
             // Backprop
             match res {
@@ -250,6 +254,8 @@ mod tests {
     use super::*;
     use crate::policy::{Policy, PolicyEvaluation, Value};
     use common::{Bitboard, DiskColor};
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
     struct MockModel;
     impl ModelEvaluator for MockModel {
@@ -274,8 +280,9 @@ mod tests {
             dirichlet_alpha: 1.0,
         };
 
-        // Run search with 1 batch of size 2
-        let (visit_counts, _q_values) = tree.search(1, 2, &model, &mut tt, config);
+        let mut rng = StdRng::seed_from_u64(42);
+        // Run search with 2 batches of size 2 to ensure children are visited
+        let (visit_counts, _q_values) = tree.search(2, 2, &model, &mut tt, config, &mut rng);
 
         // Should have some visits
         let total_visits: u32 = visit_counts.iter().sum();

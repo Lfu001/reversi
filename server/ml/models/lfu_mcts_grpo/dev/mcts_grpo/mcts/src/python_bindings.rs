@@ -11,6 +11,7 @@ use crate::{
 use common::DiskColor;
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray4, ndarray::Array2};
 use pyo3::prelude::*;
+use rand::{RngCore, SeedableRng, rngs::StdRng};
 use rayon::prelude::*;
 use tokio::sync::{mpsc, oneshot};
 
@@ -61,6 +62,7 @@ impl MCTS {
         dirichlet_epsilon: f64,
         dirichlet_alpha: f64,
         c_puct: f64,
+        seed: Option<u64>,
     ) -> PyResult<(Py<PyArray2<f64>>, Py<PyArray2<f64>>)> {
         let states_array = states.as_array();
         let batch_size = states_array.shape()[0];
@@ -122,7 +124,19 @@ impl MCTS {
         let results: Vec<(Vec<u32>, Vec<f64>)> = py.detach(|| {
             rust_states
                 .par_iter()
-                .map(|state| {
+                .enumerate()
+                .map(|(batch_idx, state)| {
+                    // Create RNG for this tree
+                    // If seed is provided, use seed + batch_idx for diversity
+                    // Otherwise, use rand::rng() (ThreadRng) directly
+                    let mut rng: Box<dyn RngCore> = if let Some(base_seed) = seed {
+                        Box::new(StdRng::seed_from_u64(
+                            base_seed.wrapping_add(batch_idx as u64),
+                        ))
+                    } else {
+                        Box::new(rand::rng())
+                    };
+
                     let py_model = PythonModel {
                         sender: sender.clone(),
                     };
@@ -139,6 +153,7 @@ impl MCTS {
                         &py_model,
                         tt,
                         puct_config,
+                        &mut rng,
                     )
                 })
                 .collect()

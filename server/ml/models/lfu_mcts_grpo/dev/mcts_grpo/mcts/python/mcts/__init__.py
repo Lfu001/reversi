@@ -3,7 +3,7 @@ MCTS Python Library
 Provides high-level Python interface to the Rust MCTS implementation.
 """
 
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 
@@ -41,6 +41,7 @@ class MCTS:
         dirichlet_epsilon: float,
         dirichlet_alpha: float,
         c_puct: float,
+        seed: Optional[int] = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Run MCTS simulations for a batch of states.
@@ -53,6 +54,7 @@ class MCTS:
             dirichlet_epsilon: Epsilon for Dirichlet noise
             dirichlet_alpha: Alpha parameter for Dirichlet distribution
             c_puct: Exploration constant for PUCT algorithm
+            seed: Random seed for reproducibility (optional)
 
         Returns:
             pi: Improved policy distributions, shape [B, num_actions]
@@ -77,6 +79,11 @@ class MCTS:
             try:
                 import torch
 
+                is_torch_available = True
+            except ImportError:
+                is_torch_available = False
+
+            if is_torch_available and device is not None:
                 with torch.no_grad():
                     # Convert to torch tensor
                     states_tensor = torch.from_numpy(batch_states).to(device)
@@ -84,11 +91,15 @@ class MCTS:
                     # Run model inference
                     policy_logits, value = model(states_tensor)
 
-                    # Convert back to numpy
-                    policy = policy_logits.cpu().numpy()
-                    value = value.cpu().numpy()
-            except ImportError:
-                # Fallback for non-PyTorch models
+                    # Convert back to numpy if needed
+                    if isinstance(policy_logits, torch.Tensor):
+                        policy = policy_logits.cpu().numpy()
+                        value = value.cpu().numpy()
+                    else:
+                        policy = policy_logits
+                        value = value
+            else:
+                # Fallback for non-PyTorch models or when device is None
                 policy, value = model(batch_states)
 
             return policy, value
@@ -102,6 +113,7 @@ class MCTS:
             dirichlet_epsilon,
             dirichlet_alpha,
             c_puct,
+            seed,
         )
 
         # Convert to float32 for consistency with PyTorch

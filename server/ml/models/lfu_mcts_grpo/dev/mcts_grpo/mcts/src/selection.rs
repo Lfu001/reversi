@@ -57,6 +57,7 @@ pub fn select_best_child(
     transposition_table: &TranspositionTable,
     parent_state: &State,
     is_root: bool,
+    rng: &mut impl rand::Rng,
 ) -> Option<usize> {
     let policy_evaluation = transposition_table.get(parent_state)?;
 
@@ -64,7 +65,7 @@ pub fn select_best_child(
     let dirichlet_alpha = strategy.config().dirichlet_alpha;
 
     let noise = if is_root && !children.is_empty() {
-        sample_dirichlet(dirichlet_alpha, children.len())
+        sample_dirichlet(rng, dirichlet_alpha, children.len())
     } else {
         None
     };
@@ -103,6 +104,8 @@ mod tests {
     use super::*;
     use crate::policy::{Policy, PolicyEvaluation, Value};
     use common::{Bitboard, DiskColor};
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
     fn default_state() -> State {
         State::new(Bitboard::default(), DiskColor::Dark)
@@ -144,7 +147,7 @@ mod tests {
             dirichlet_alpha: 1.0,
         };
         let strategy = PuctStrategy::new(config);
-        let mut transposition_table = TranspositionTable::new();
+        let transposition_table = TranspositionTable::new();
         let parent_state = default_state();
 
         let mut policy_arr = [0.0; 64];
@@ -161,6 +164,7 @@ mod tests {
             create_node(0, 0.0, Some(2)),  // P=0.3, Q=0.0, N=0
         ];
 
+        let mut rng = StdRng::seed_from_u64(42);
         let best = select_best_child(
             &children,
             15,
@@ -168,6 +172,7 @@ mod tests {
             &transposition_table,
             &parent_state,
             false,
+            &mut rng,
         );
 
         // Child 0: 0.7 + 1.0 * 0.2 * sqrt(15) / 11 = 0.7 + 0.07 = 0.77

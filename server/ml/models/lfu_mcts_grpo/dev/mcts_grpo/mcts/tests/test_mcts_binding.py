@@ -62,6 +62,7 @@ def test_mcts_run(initial_states):
         dirichlet_epsilon,
         dirichlet_alpha,
         c_puct,
+        None,  # seed
     )
 
     print(f"Pi shape: {pi.shape}")
@@ -101,3 +102,38 @@ def test_mcts_run(initial_states):
         assert np.all(np.isfinite(q_values[i])), (
             f"Q-values should be finite for state {i}"
         )
+
+
+def test_mcts_seed_argument(initial_states):
+    """Test that MCTS accepts a seed argument."""
+    max_inference_batch_size = 32
+    states_per_inference = 8
+    mcts_instance = mcts.MCTS(max_inference_batch_size, states_per_inference)
+    model = MockModel()
+
+    # MCTS parameters
+    num_simulations = 10
+    dirichlet_epsilon = 0.25
+    dirichlet_alpha = 1.0
+    c_puct = 1.0
+    seed = 42
+
+    # Run with seed
+    pi, q = mcts_instance.run_simulations(
+        model.inference,
+        initial_states,
+        None,  # device (not used by MockModel)
+        num_simulations,
+        dirichlet_epsilon,
+        dirichlet_alpha,
+        c_puct,
+        seed=seed,
+    )
+
+    # Check output shapes and validity
+    batch_size = initial_states.shape[0]
+    assert pi.shape == (batch_size, 64)
+    assert q.shape == (batch_size, 64)
+    assert np.all(pi >= 0)
+    assert np.all(pi <= 1)
+    assert np.all(np.isfinite(q))

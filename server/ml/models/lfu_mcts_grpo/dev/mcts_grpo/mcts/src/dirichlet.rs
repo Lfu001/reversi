@@ -1,5 +1,3 @@
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 use rand_distr::{Distribution, Gamma};
 
 /// Dirichletディストリビューションからサンプリング
@@ -8,21 +6,21 @@ use rand_distr::{Distribution, Gamma};
 /// X_i ~ Gamma(α_i, 1) のとき、Y_i = X_i / Σ(X_j) は Dirichlet(α_1, ..., α_n) に従う
 ///
 /// # Arguments
+/// * `rng` - 乱数生成器への可変参照
 /// * `alpha` - Dirichletディストリビューションのαパラメータ（各次元で同じ値を使用）
 /// * `size` - サンプルのサイズ（次元数）
 ///
 /// # Returns
 /// `Some(Vec<f64>)` - 正規化されたサンプル（合計が1になる）
 /// `None` - サンプリングに失敗した場合
-pub fn sample_dirichlet(alpha: f64, size: usize) -> Option<Vec<f64>> {
+pub fn sample_dirichlet(rng: &mut impl rand::Rng, alpha: f64, size: usize) -> Option<Vec<f64>> {
     if size == 0 {
         return Some(Vec::new());
     }
 
     let gamma = Gamma::new(alpha, 1.0).ok()?;
-    let mut rng = StdRng::seed_from_u64(0);
 
-    let samples: Vec<f64> = (0..size).map(|_| gamma.sample(&mut rng)).collect();
+    let samples: Vec<f64> = (0..size).map(|_| gamma.sample(rng)).collect();
     let sum: f64 = samples.iter().sum();
 
     if sum > 0.0 {
@@ -35,16 +33,20 @@ pub fn sample_dirichlet(alpha: f64, size: usize) -> Option<Vec<f64>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
     #[test]
     fn test_sample_dirichlet_empty() {
-        let result = sample_dirichlet(1.0, 0);
+        let mut rng = StdRng::seed_from_u64(42);
+        let result = sample_dirichlet(&mut rng, 1.0, 0);
         assert_eq!(result, Some(Vec::new()));
     }
 
     #[test]
     fn test_sample_dirichlet_single() {
-        let result = sample_dirichlet(1.0, 1);
+        let mut rng = StdRng::seed_from_u64(42);
+        let result = sample_dirichlet(&mut rng, 1.0, 1);
         assert!(result.is_some());
         let samples = result.unwrap();
         assert_eq!(samples.len(), 1);
@@ -53,7 +55,8 @@ mod tests {
 
     #[test]
     fn test_sample_dirichlet_multiple() {
-        let result = sample_dirichlet(1.0, 5);
+        let mut rng = StdRng::seed_from_u64(42);
+        let result = sample_dirichlet(&mut rng, 1.0, 5);
         assert!(result.is_some());
         let samples = result.unwrap();
         assert_eq!(samples.len(), 5);
@@ -71,8 +74,9 @@ mod tests {
     #[test]
     fn test_sample_dirichlet_distribution() {
         // Run multiple times to check consistency
+        let mut rng = StdRng::seed_from_u64(42);
         for _ in 0..10 {
-            let result = sample_dirichlet(0.3, 3);
+            let result = sample_dirichlet(&mut rng, 0.3, 3);
             assert!(result.is_some());
             let samples = result.unwrap();
             assert_eq!(samples.len(), 3);
