@@ -44,6 +44,12 @@ pub struct MCTS {
 
 #[pymethods]
 impl MCTS {
+    /// Creates a new MCTS instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_inference_batch_size` - The maximum batch size for inference requests.
+    /// * `states_per_inference` - The number of states to process per inference call.
     #[new]
     fn new(max_inference_batch_size: usize, states_per_inference: usize) -> Self {
         MCTS {
@@ -53,6 +59,24 @@ impl MCTS {
         }
     }
 
+    /// Runs MCTS simulations for a batch of states.
+    ///
+    /// # Arguments
+    ///
+    /// * `py` - The Python GIL token.
+    /// * `states` - A 4D numpy array of shape (batch_size, 2, 8, 8) representing the game states.
+    /// * `callback` - A Python callable for inference.
+    /// * `num_simulations` - Number of MCTS simulations per state.
+    /// * `dirichlet_epsilon` - Dirichlet noise epsilon.
+    /// * `dirichlet_alpha` - Dirichlet noise alpha.
+    /// * `c_puct` - PUCT constant.
+    /// * `seed` - Optional random seed.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// * `pi` - Policy distribution of shape (batch_size, 64).
+    /// * `q_values` - Q-values of shape (batch_size, 64).
     fn run(
         &self,
         py: Python<'_>,
@@ -67,7 +91,39 @@ impl MCTS {
         let states_array = states.as_array();
         let batch_size = states_array.shape()[0];
 
-        // Convert Tensor to States
+        let rust_states = Self::convert_to_rust_states(states_array);
+
+        let puct_config = PuctConfig {
+            c_puct,
+            dirichlet_epsilon,
+            dirichlet_alpha,
+        };
+
+        let results = self.run_mcts_batch(
+            py,
+            rust_states,
+            callback,
+            num_simulations,
+            puct_config,
+            seed,
+        );
+
+        Self::process_results(py, results, batch_size)
+    }
+}
+
+impl MCTS {
+    /// Converts a Python numpy array of states to a vector of Rust [`State`] objects.
+    ///
+    /// # Arguments
+    ///
+    /// * `states_array` - A 4D numpy array view of shape (batch_size, 2, 8, 8).
+    ///
+    /// # Returns
+    ///
+    /// A vector of [`State`] objects.
+    fn convert_to_rust_states(states_array: numpy::ndarray::ArrayView4<f32>) -> Vec<State> {
+        let batch_size = states_array.shape()[0];
         let mut rust_states = Vec::with_capacity(batch_size);
         for i in 0..batch_size {
             // Check turn from Channel 2 (index 2)
@@ -101,13 +157,34 @@ impl MCTS {
             let state = State::new(board, turn);
             rust_states.push(state);
         }
+        rust_states
+    }
 
-        let puct_config = PuctConfig {
-            c_puct,
-            dirichlet_epsilon,
-            dirichlet_alpha,
-        };
-
+    /// Runs MCTS simulations for a batch of states in parallel.
+    ///
+    /// # Arguments
+    ///
+    /// * `py` - The Python GIL token.
+    /// * `rust_states` - A vector of `State` objects.
+    /// * `callback` - A Python callable for inference.
+    /// * `num_simulations` - Number of MCTS simulations per state.
+    /// * `puct_config` - PUCT configuration.
+    /// * `seed` - Optional random seed.
+    ///
+    /// # Returns
+    ///
+    /// A vector of tuples, where each tuple contains:
+    /// * `visit_counts` - A vector of visit counts for each action.
+    /// * `q_values` - A vector of Q-values for each action.
+    fn run_mcts_batch(
+        &self,
+        py: Python<'_>,
+        rust_states: Vec<State>,
+        callback: Py<PyAny>,
+        num_simulations: usize,
+        puct_config: PuctConfig,
+        seed: Option<u64>,
+    ) -> Vec<(Vec<u32>, Vec<f64>)> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -121,7 +198,7 @@ impl MCTS {
 
         let tt = &self.transposition_table;
 
-        let results: Vec<(Vec<u32>, Vec<f64>)> = py.detach(|| {
+        py.detach(|| {
             rust_states
                 .par_iter()
                 .enumerate()
@@ -157,8 +234,27 @@ impl MCTS {
                     )
                 })
                 .collect()
-        });
+        })
+    }
 
+    /// Processes the MCTS results into numpy arrays.
+    ///
+    /// # Arguments
+    ///
+    /// * `py` - The Python GIL token.
+    /// * `results` - A vector of tuples containing visit counts and Q-values.
+    /// * `batch_size` - The number of states in the batch.
+    ///
+    /// # Returns
+    ///
+    /// A tuple containing:
+    /// * `pi` - Policy distribution of shape (batch_size, 64).
+    /// * `q_values` - Q-values of shape (batch_size, 64).
+    fn process_results(
+        py: Python<'_>,
+        results: Vec<(Vec<u32>, Vec<f64>)>,
+        batch_size: usize,
+    ) -> PyResult<(Py<PyArray2<f64>>, Py<PyArray2<f64>>)> {
         // Convert results into numpy arrays and normalize visit counts to pi
         // pi: [batch_size, 64], q_values: [batch_size, 64]
         let mut pi = vec![0.0f64; batch_size * 64];
