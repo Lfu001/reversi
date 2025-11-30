@@ -185,99 +185,120 @@ impl Worker {
                 return Vec::new();
             }
 
-            // Create input array [B, 4, 8, 8]
-            let mut input_data = Vec::with_capacity(batch_size * 4 * 8 * 8);
-
-            for state in states {
-                let board = state.board();
-                let turn = state.turn();
-                let legal_actions = state.legal_actions(); // indices 0-63, 64 for pass
-
-                // Channel 0: Dark disks
-                for r in 0..8 {
-                    for c in 0..8 {
-                        let pos =
-                            Position::new(Row::from_u8(r).unwrap(), Column::from_u8(c).unwrap());
-                        let bit_pos = BitPosition::from(pos).0;
-                        let val = if (board.dark_plane() & bit_pos) != 0 {
-                            1.0
-                        } else {
-                            0.0
-                        };
-                        input_data.push(val);
-                    }
-                }
-
-                // Channel 1: Light disks
-                for r in 0..8 {
-                    for c in 0..8 {
-                        let pos =
-                            Position::new(Row::from_u8(r).unwrap(), Column::from_u8(c).unwrap());
-                        let bit_pos = BitPosition::from(pos).0;
-                        let val = if (board.light_plane() & bit_pos) != 0 {
-                            1.0
-                        } else {
-                            0.0
-                        };
-                        input_data.push(val);
-                    }
-                }
-
-                // Channel 2: Turn (1.0 for Dark, -1.0 for Light)
-                let turn_val = if turn == DiskColor::Dark { 1.0 } else { -1.0 };
-                for _ in 0..64 {
-                    input_data.push(turn_val);
-                }
-
-                // Channel 3: Legal moves
-                let mut legal_map = [0.0; 64];
-                for &action in &legal_actions {
-                    if action < 64 {
-                        legal_map[action] = 1.0;
-                    }
-                }
-                input_data.extend_from_slice(&legal_map);
-            }
-
+            let input_data = Self::build_input_tensor(states);
             let input_array = PyArray::from_vec(py, input_data)
                 .reshape((batch_size, 4, 8, 8))
                 .expect("Failed to reshape input array");
 
-            // Call callback(input_array)
             let result = callback
                 .call1(py, (input_array,))
                 .expect("Failed to call callback");
 
-            // Extract result: (policy_batch, value_batch)
-            let result_tuple: (Py<PyAny>, Py<PyAny>) =
-                result.extract(py).expect("Failed to extract tuple");
-            let policy_obj = result_tuple.0;
-            let value_obj = result_tuple.1;
+            Self::parse_inference_results(py, result, batch_size)
+        })
+    }
 
-            let policy_array: &Bound<'_, PyArray<f64, numpy::Ix2>> = policy_obj
-                .downcast_bound(py)
-                .expect("Failed to downcast policy array");
-            let value_array: &Bound<'_, PyArray<f64, numpy::Ix2>> = value_obj
-                .downcast_bound(py)
-                .expect("Failed to downcast value array");
+    /// Builds a 4-channel input tensor from game states.
+    ///
+    /// Constructs a flat vector representing a \[B, 4, 8, 8\] tensor where:
+    /// - Channel 0: Dark disk positions
+    /// - Channel 1: Light disk positions
+    /// - Channel 2: Current turn (1.0 for Dark, -1.0 for Light)
+    /// - Channel 3: Legal move positions
+    fn build_input_tensor(states: &[State]) -> Vec<f64> {
+        let batch_size = states.len();
+        let mut input_data = Vec::with_capacity(batch_size * 4 * 8 * 8);
 
-            let policy_data = unsafe { policy_array.as_array() };
-            let value_data = unsafe { value_array.as_array() };
+        for state in states {
+            let board = state.board();
+            let turn = state.turn();
+            let legal_actions = state.legal_actions();
 
-            let mut evaluations = Vec::with_capacity(batch_size);
-
-            for i in 0..batch_size {
-                let mut policy_arr = [0.0; 64];
-                for j in 0..64 {
-                    policy_arr[j] = policy_data[[i, j]];
+            // Channel 0: Dark disks
+            for r in 0..8 {
+                for c in 0..8 {
+                    let pos = Position::new(Row::from_u8(r).unwrap(), Column::from_u8(c).unwrap());
+                    let bit_pos = BitPosition::from(pos).0;
+                    let val = if (board.dark_plane() & bit_pos) != 0 {
+                        1.0
+                    } else {
+                        0.0
+                    };
+                    input_data.push(val);
                 }
-                let value = value_data[[i, 0]];
-
-                evaluations.push(PolicyEvaluation::new(Policy(policy_arr), Value(value)));
             }
 
-            evaluations
-        })
+            // Channel 1: Light disks
+            for r in 0..8 {
+                for c in 0..8 {
+                    let pos = Position::new(Row::from_u8(r).unwrap(), Column::from_u8(c).unwrap());
+                    let bit_pos = BitPosition::from(pos).0;
+                    let val = if (board.light_plane() & bit_pos) != 0 {
+                        1.0
+                    } else {
+                        0.0
+                    };
+                    input_data.push(val);
+                }
+            }
+
+            // Channel 2: Turn (1.0 for Dark, -1.0 for Light)
+            let turn_val = if turn == DiskColor::Dark { 1.0 } else { -1.0 };
+            for _ in 0..64 {
+                input_data.push(turn_val);
+            }
+
+            // Channel 3: Legal moves
+            let mut legal_map = [0.0; 64];
+            for &action in &legal_actions {
+                if action < 64 {
+                    legal_map[action] = 1.0;
+                }
+            }
+            input_data.extend_from_slice(&legal_map);
+        }
+
+        input_data
+    }
+
+    /// Parses Python inference results into Rust PolicyEvaluation objects.
+    ///
+    /// Extracts policy and value arrays from the Python `result` tuple and converts
+    /// them into a vector of [`PolicyEvaluation`] objects, one per state in the batch.
+    fn parse_inference_results(
+        py: Python<'_>,
+        result: Py<PyAny>,
+        batch_size: usize,
+    ) -> Vec<PolicyEvaluation> {
+        // Extract result: (policy_batch, value_batch)
+        let result_tuple: (Py<PyAny>, Py<PyAny>) =
+            result.extract(py).expect("Failed to extract tuple");
+        let policy_obj = result_tuple.0;
+        let value_obj = result_tuple.1;
+
+        let policy_array: &Bound<'_, PyArray<f64, numpy::Ix2>> = policy_obj
+            .downcast_bound(py)
+            .expect("Failed to downcast policy array");
+        let value_array: &Bound<'_, PyArray<f64, numpy::Ix2>> = value_obj
+            .downcast_bound(py)
+            .expect("Failed to downcast value array");
+
+        let policy_data = unsafe { policy_array.as_array() };
+        let value_data = unsafe { value_array.as_array() };
+
+        let mut evaluations = Vec::with_capacity(batch_size);
+
+        for i in 0..batch_size {
+            let mut policy_arr = [0.0; 64];
+            for j in 0..64 {
+                policy_arr[j] = policy_data[[i, j]];
+            }
+            let value = value_data[[i, 0]];
+
+            evaluations.push(PolicyEvaluation::new(Policy(policy_arr), Value(value)));
+        }
+
+        evaluations
     }
 
     /// Stops the worker and waits for it to complete.
