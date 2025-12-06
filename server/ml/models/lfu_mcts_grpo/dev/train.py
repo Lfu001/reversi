@@ -2,9 +2,6 @@ import numpy as np
 import torch
 from accelerate import Accelerator
 from accelerate.utils import set_seed
-from reversi import ReversiEnvironment
-from tqdm.rich import tqdm
-
 from mcts_grpo.replay_buffer import ReplayBuffer
 from mcts_grpo.settings import Settings
 from mcts_grpo.training import (
@@ -12,6 +9,8 @@ from mcts_grpo.training import (
     SelfPlayExecutor,
     TrainingExecutor,
 )
+from reversi import ReversiEnvironment
+from tqdm.rich import tqdm
 
 
 def train():
@@ -21,6 +20,7 @@ def train():
     accelerator, device, model, optimizer, lr_scheduler, env, replay_buffer = (
         setup.initialize()
     )
+    accelerator.init_trackers("reversi-mcts-grpo", config=settings.model_dump())
 
     ongoing_games_data = [[] for _ in range(settings.training.batch_size)]
     num_iterations = (
