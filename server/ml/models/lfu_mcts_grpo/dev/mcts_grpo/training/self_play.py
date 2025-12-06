@@ -57,7 +57,9 @@ class SelfPlayExecutor:
                 dirichlet_alpha=self.settings.mcts.dirichlet_alpha,
                 c_puct=self.settings.mcts.c_puct,
             )
-            next_states, dones = self.env.step_batch(pi, deterministic=False)
+            # Reshape pi from (batch, 64) to (batch, 8, 8) for env.step_batch
+            pi_reshaped = pi.reshape(-1, 8, 8)
+            next_states, dones = self.env.step_batch(pi_reshaped, deterministic=False)
 
             for i in range(self.settings.training.batch_size):
                 self._record_step(i, current_states[i], pi[i], q_values[i])

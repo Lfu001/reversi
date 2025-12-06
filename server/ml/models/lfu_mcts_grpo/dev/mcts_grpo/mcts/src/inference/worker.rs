@@ -205,7 +205,7 @@ impl Worker {
     /// - Channel 1: Light disk positions
     /// - Channel 2: Current turn (1.0 for Dark, -1.0 for Light)
     /// - Channel 3: Legal move positions
-    fn build_input_tensor(states: &[State]) -> Vec<f64> {
+    fn build_input_tensor(states: &[State]) -> Vec<f32> {
         let batch_size = states.len();
         let mut input_data = Vec::with_capacity(batch_size * 4 * 8 * 8);
 
@@ -276,10 +276,10 @@ impl Worker {
         let policy_obj = result_tuple.0;
         let value_obj = result_tuple.1;
 
-        let policy_array: &Bound<'_, PyArray<f64, numpy::Ix2>> = policy_obj
+        let policy_array: &Bound<'_, PyArray<f32, numpy::Ix2>> = policy_obj
             .downcast_bound(py)
             .expect("Failed to downcast policy array");
-        let value_array: &Bound<'_, PyArray<f64, numpy::Ix2>> = value_obj
+        let value_array: &Bound<'_, PyArray<f32, numpy::Ix2>> = value_obj
             .downcast_bound(py)
             .expect("Failed to downcast value array");
 
@@ -289,11 +289,11 @@ impl Worker {
         let mut evaluations = Vec::with_capacity(batch_size);
 
         for i in 0..batch_size {
-            let mut policy_arr = [0.0; 64];
+            let mut policy_arr = [0.0f64; 64];
             for j in 0..64 {
-                policy_arr[j] = policy_data[[i, j]];
+                policy_arr[j] = policy_data[[i, j]] as f64;
             }
-            let value = value_data[[i, 0]];
+            let value = value_data[[i, 0]] as f64;
 
             evaluations.push(PolicyEvaluation::new(Policy(policy_arr), Value(value)));
         }

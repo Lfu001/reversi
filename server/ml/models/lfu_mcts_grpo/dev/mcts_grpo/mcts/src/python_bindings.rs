@@ -177,15 +177,16 @@ impl MCTS {
             .build()
             .expect("Failed to create Tokio runtime");
 
-        let (mut worker, sender) = Worker::new(self.max_inference_batch_size, callback);
+        // Keep the runtime alive by entering its context.
+        // This ensures tokio::spawn tasks run correctly even during py.detach.
+        let _guard = runtime.enter();
 
-        runtime.block_on(async {
-            worker.start();
-        });
+        let (mut worker, sender) = Worker::new(self.max_inference_batch_size, callback);
+        worker.start();
 
         let tt = &self.transposition_table;
 
-        py.detach(|| {
+        let results = py.detach(|| {
             rust_states
                 .par_iter()
                 .enumerate()
@@ -221,7 +222,18 @@ impl MCTS {
                     )
                 })
                 .collect()
-        })
+        });
+
+        // Drop the sender to signal the worker that no more requests will be sent.
+        // This allows the worker's loop to exit gracefully when checking rx.is_closed().
+        drop(sender);
+
+        // Wait for the worker to finish processing remaining requests and exit cleanly.
+        runtime.block_on(async {
+            let _ = worker.stop().await;
+        });
+
+        results
     }
 
     /// Processes the MCTS results into numpy arrays.

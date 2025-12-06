@@ -102,6 +102,11 @@ class MCTS:
                 # Fallback for non-PyTorch models or when device is None
                 policy, value = model(batch_states)
 
+            # Ensure correct shapes: policy should be (N, 64), value should be (N, 1)
+            batch_size = batch_states.shape[0]
+            policy = policy.reshape(batch_size, -1).astype(np.float32)
+            value = value.reshape(batch_size, -1).astype(np.float32)
+
             return policy, value
 
         # Run MCTS with the Rust implementation
