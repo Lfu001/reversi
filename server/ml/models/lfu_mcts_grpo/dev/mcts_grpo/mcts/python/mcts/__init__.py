@@ -91,13 +91,27 @@ class MCTS:
                     # Run model inference
                     policy_logits, value = model(states_tensor)
 
-                    # Convert back to numpy if needed
-                    if isinstance(policy_logits, torch.Tensor):
-                        policy = policy_logits.cpu().numpy()
-                        value = value.cpu().numpy()
-                    else:
-                        policy = policy_logits
-                        value = value
+                    # Apply legal move mask and softmax normalization
+                    # Channel 3 contains legal move positions (1.0 for legal, 0.0 for illegal)
+                    legal_mask = states_tensor[:, 3, :, :].reshape(-1, 64)
+                    illegal_mask = legal_mask == 0.0
+
+                    # Flatten policy logits to [batch, 64]
+                    policy_logits_flat = policy_logits.reshape(-1, 64)
+
+                    # Mask illegal moves with -inf and apply softmax
+                    policy_logits_flat.masked_fill_(illegal_mask, float("-inf"))
+                    policy_probs = torch.softmax(policy_logits_flat, dim=-1)
+
+                    # Handle fully illegal states (all -inf -> NaN after softmax)
+                    # Replace NaN with uniform distribution over all actions
+                    nan_mask = torch.isnan(policy_probs)
+                    if nan_mask.any():
+                        policy_probs.masked_fill_(nan_mask, 1.0 / 64.0)
+
+                    # Convert back to numpy
+                    policy = policy_probs.cpu().numpy()
+                    value = value.cpu().numpy()
             else:
                 # Fallback for non-PyTorch models or when device is None
                 policy, value = model(batch_states)

@@ -7,10 +7,15 @@ class MockModel:
     def inference(self, states):
         # states: [B, 4, 8, 8]
         batch_size = states.shape[0]
-        # Return random policy and value
-        policy = np.random.dirichlet(np.ones(64), size=batch_size).astype(np.float64)
-        value = np.random.uniform(-1, 1, size=(batch_size, 1)).astype(np.float64)
-        return policy, value
+        # Return normalized policy probabilities (shape: [batch, 64]) and value (shape: [batch, 1])
+        # Note: When testing RustMCTS directly (bypassing Python MCTS wrapper),
+        # the callback should return already-normalized probabilities since the
+        # mask+softmax is done in the Python MCTS wrapper
+        policy_probs = np.random.dirichlet(np.ones(64), size=batch_size).astype(
+            np.float32
+        )
+        value = np.random.uniform(-1, 1, size=(batch_size, 1)).astype(np.float32)
+        return policy_probs, value
 
 
 @pytest.fixture
@@ -137,3 +142,112 @@ def test_mcts_seed_argument(initial_states):
     assert np.all(pi >= 0)
     assert np.all(pi <= 1)
     assert np.all(np.isfinite(q))
+
+
+def test_policy_no_nan_with_legal_moves():
+    """Test that policy does not contain NaN when there are legal moves."""
+    import torch
+
+    batch_size = 4
+    # Create policy logits (random values)
+    policy_logits = torch.randn(batch_size, 8, 8)
+
+    # Create legal mask with some legal moves
+    legal_mask = torch.zeros(batch_size, 8, 8)
+    legal_mask[:, 2, 3] = 1.0  # Position (2,3) is legal
+    legal_mask[:, 3, 2] = 1.0  # Position (3,2) is legal
+    legal_mask[:, 4, 5] = 1.0  # Position (4,5) is legal
+    legal_mask[:, 5, 4] = 1.0  # Position (5,4) is legal
+
+    # Apply masking logic (same as in MCTS wrapper)
+    legal_mask_flat = legal_mask.reshape(-1, 64)
+    illegal_mask = legal_mask_flat == 0.0
+    policy_logits_flat = policy_logits.reshape(-1, 64)
+    policy_logits_flat.masked_fill_(illegal_mask, float("-inf"))
+    policy_probs = torch.softmax(policy_logits_flat, dim=-1)
+
+    # Check no NaN
+    assert not torch.isnan(policy_probs).any(), "Policy should not contain NaN"
+    # Check probabilities sum to 1
+    assert torch.allclose(
+        policy_probs.sum(dim=-1), torch.ones(batch_size), atol=1e-5
+    ), "Policy should sum to 1"
+    # Check only legal positions have non-zero probability
+    assert (policy_probs * illegal_mask.float()).sum() == 0, (
+        "Illegal moves should have zero probability"
+    )
+
+
+def test_policy_no_nan_with_no_legal_moves():
+    """Test that policy does not contain NaN when all moves are illegal (edge case)."""
+    import torch
+
+    batch_size = 2
+    # Create policy logits
+    policy_logits = torch.randn(batch_size, 8, 8)
+
+    # All moves are illegal (terminal state)
+    legal_mask = torch.zeros(batch_size, 8, 8)
+
+    # Apply masking logic
+    legal_mask_flat = legal_mask.reshape(-1, 64)
+    illegal_mask = legal_mask_flat == 0.0
+    policy_logits_flat = policy_logits.reshape(-1, 64)
+    policy_logits_flat.masked_fill_(illegal_mask, float("-inf"))
+    policy_probs = torch.softmax(policy_logits_flat, dim=-1)
+
+    # After softmax of all -inf, we get NaN - apply the fallback
+    nan_mask = torch.isnan(policy_probs)
+    if nan_mask.any():
+        policy_probs.masked_fill_(nan_mask, 1.0 / 64.0)
+
+    # Check no NaN after fallback
+    assert not torch.isnan(policy_probs).any(), (
+        "Policy should not contain NaN after fallback"
+    )
+    # Check probabilities are valid (sum to ~1)
+    assert torch.allclose(
+        policy_probs.sum(dim=-1), torch.ones(batch_size), atol=1e-5
+    ), "Policy should sum to 1"
+
+
+def test_policy_probabilities_only_on_legal_moves():
+    """Test that probability mass is only on legal moves."""
+    import torch
+
+    batch_size = 3
+    policy_logits = torch.randn(batch_size, 8, 8)
+
+    # Create different legal masks for each batch item
+    legal_mask = torch.zeros(batch_size, 8, 8)
+    legal_mask[0, 0, 0] = 1.0  # Only one legal move for batch 0
+    legal_mask[1, 3, 3] = 1.0  # Only one legal move for batch 1
+    legal_mask[1, 4, 4] = 1.0  # Two legal moves for batch 1
+    legal_mask[2, :, :] = 0.0  # No legal moves for batch 2 (terminal)
+
+    # Apply masking
+    legal_mask_flat = legal_mask.reshape(-1, 64)
+    illegal_mask = legal_mask_flat == 0.0
+    policy_logits_flat = policy_logits.reshape(-1, 64)
+    policy_logits_flat.masked_fill_(illegal_mask, float("-inf"))
+    policy_probs = torch.softmax(policy_logits_flat, dim=-1)
+
+    # Handle NaN for terminal state
+    nan_mask = torch.isnan(policy_probs)
+    if nan_mask.any():
+        policy_probs.masked_fill_(nan_mask, 1.0 / 64.0)
+
+    # Check batch 0: only position 0 should have probability 1.0
+    assert torch.isclose(policy_probs[0, 0], torch.tensor(1.0), atol=1e-5), (
+        "Single legal move should have probability 1.0"
+    )
+
+    # Check batch 1: positions 27 (3*8+3) and 36 (4*8+4) should have all probability
+    assert policy_probs[1, 27] > 0, "Legal move at (3,3) should have positive prob"
+    assert policy_probs[1, 36] > 0, "Legal move at (4,4) should have positive prob"
+    assert torch.isclose(
+        policy_probs[1, 27] + policy_probs[1, 36], torch.tensor(1.0), atol=1e-5
+    ), "Probability should sum to 1 for legal moves only"
+
+    # Check no NaN in any batch
+    assert not torch.isnan(policy_probs).any(), "No NaN values should exist"
