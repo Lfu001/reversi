@@ -1,7 +1,4 @@
-use crate::{
-    dirichlet::sample_dirichlet, node::Node, state::State, transposition_table::TranspositionTable,
-};
-use std::{cell::RefCell, rc::Rc};
+use crate::{dirichlet::sample_dirichlet, node::Node, transposition_table::TranspositionTable};
 
 /// Configuration for PUCT (Polynomial Upper Confidence Trees) calculation.
 #[derive(Debug, Clone, Copy)]
@@ -54,20 +51,21 @@ impl SelectionStrategy for PuctStrategy {
 
 /// Selects the best child node from a list of candidates using PUCT strategy.
 ///
-/// Evaluates all `children` nodes considering the `parent_visit_count`, applies the PUCT
-/// selection `strategy`, retrieves policy priors from `transposition_table` for `parent_state`,
-/// optionally adds Dirichlet noise if `is_root` is true, and uses `rng` for noise generation.
+/// Evaluates all child nodes of `parent_node` using the PUCT selection `strategy`,
+/// retrieves policy priors from `transposition_table` for the parent's state,
+/// optionally adds Dirichlet noise to legal actions if `is_root` is true,
+/// and uses `rng` for noise generation.
 /// Returns the index of the child with the highest PUCT score.
 pub fn select_best_child(
-    children: &[Rc<RefCell<Node>>],
-    parent_visit_count: u32,
+    parent_node: &Node,
     strategy: &PuctStrategy,
     transposition_table: &TranspositionTable,
-    parent_state: &State,
     is_root: bool,
     rng: &mut impl rand::Rng,
 ) -> Option<usize> {
-    let policy_evaluation = transposition_table.get(parent_state)?;
+    let policy_evaluation = transposition_table.get(parent_node.state())?;
+    let children = parent_node.children();
+    let parent_visit_count = parent_node.visit_count();
 
     let dirichlet_epsilon = strategy.config().dirichlet_epsilon;
     let dirichlet_alpha = strategy.config().dirichlet_alpha;
@@ -107,13 +105,14 @@ pub fn select_best_child(
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
-
     use super::*;
-    use crate::policy::{Policy, PolicyEvaluation, Value};
+    use crate::{
+        policy::{Policy, PolicyEvaluation, Value},
+        state::State,
+    };
     use common::{Bitboard, DiskColor};
-    use rand::SeedableRng;
-    use rand::rngs::StdRng;
+    use rand::{SeedableRng, rngs::StdRng};
+    use std::{cell::RefCell, rc::Rc};
 
     fn default_state() -> State {
         State::new(Bitboard::default(), DiskColor::Dark)
@@ -166,19 +165,23 @@ mod tests {
         let value = Value(0.0);
         transposition_table.add(parent_state.clone(), PolicyEvaluation::new(policy, value));
 
-        let children = vec![
-            create_node(10, 0.7, Some(0)), // P=0.2, Q=0.7, N=10
-            create_node(5, 0.4, Some(1)),  // P=0.5, Q=0.4, N=5
-            create_node(0, 0.0, Some(2)),  // P=0.3, Q=0.0, N=0
-        ];
+        // Create parent node
+        let parent = Node::new(parent_state, None);
+        parent.borrow_mut().set_visit_count(15);
+
+        // Create and add children to parent
+        let child0 = create_node(10, 0.7, Some(0)); // P=0.2, Q=0.7, N=10
+        let child1 = create_node(5, 0.4, Some(1)); // P=0.5, Q=0.4, N=5
+        let child2 = create_node(0, 0.0, Some(2)); // P=0.3, Q=0.0, N=0
+        Node::add_child(&parent, child0);
+        Node::add_child(&parent, child1);
+        Node::add_child(&parent, child2);
 
         let mut rng = StdRng::seed_from_u64(42);
         let best = select_best_child(
-            &children,
-            15,
+            &parent.borrow(),
             &strategy,
             &transposition_table,
-            &parent_state,
             false,
             &mut rng,
         );

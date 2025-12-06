@@ -214,15 +214,7 @@ impl Tree {
         }
 
         // Selection
-        let best_idx = select_best_child(
-            node_ref.children(),
-            node_ref.visit_count(),
-            strategy,
-            tt,
-            node_ref.state(),
-            is_root,
-            rng,
-        );
+        let best_idx = select_best_child(&node_ref, strategy, tt, is_root, rng);
 
         if let Some(idx) = best_idx {
             let child = node_ref.children()[idx].clone();
