@@ -61,14 +61,15 @@ class SelfPlayExecutor:
             pi_reshaped = pi.reshape(-1, 8, 8)
             next_states, dones = self.env.step_batch(pi_reshaped, deterministic=False)
 
+            current_done_count = 0
             for i in range(self.settings.training.batch_size):
                 self._record_step(i, current_states[i], pi[i], q_values[i])
 
                 if dones[i]:
                     games_completed += 1
-                    pbar.update(1)
                     self._process_game_end(i, next_states[i])
-
+                    current_done_count += 1
+            pbar.update(current_done_count)
             current_states = self.env.reset_indices(np.where(dones)[0])
 
         pbar.close()
