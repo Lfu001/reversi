@@ -120,20 +120,13 @@ impl Worker {
         // so no explicit non-blocking collection is needed.
         //
         // In MCTS search, multiple threads send inference requests concurrently.
-        // Filling max_inference_batch_size(32) improves GPU/CPU inference efficiency.
+        // Filling max_inference_batch_size improves GPU/CPU inference efficiency.
         // However, waiting too long when requests don't arrive degrades latency,
         // reducing overall search speed (N/sec).
         //
-        // Benchmark results (16 concurrent MCTS, 100 simulations/tree):
-        // - Tree::search's states_per_inference=8 results in requests of ~8 states
-        // - 100μs timeout allows immediate aggregation when requests are continuous,
-        //   and starts processing without waiting when requests taper off
-        // - Throughput: ~30,000 req/sec, Latency: ~3ms/state
-        //
-        // Compared to Python function call and data conversion overhead (several ms),
-        // 100 microseconds (0.1ms) is negligible, but provides sufficient opportunity
-        // to fill the batch.
-        let timeout = std::time::Duration::from_micros(100);
+        // 1ms timeout allows more requests to accumulate when 512 parallel trees
+        // are sending inference requests concurrently, improving batch utilization.
+        let timeout = std::time::Duration::from_millis(5);
         let deadline = tokio::time::Instant::now() + timeout;
 
         while batch_requests.len() < max_inference_batch_size {
