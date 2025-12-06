@@ -28,21 +28,9 @@ impl State {
         self.turn
     }
 
-    /// Returns a list of legal actions (indices 0-63 for Put, 64 for Pass).
+    /// Returns a list of legal actions.
     pub fn legal_actions(&self) -> Vec<usize> {
         let puttable = get_puttable_positions(&self.board, self.turn);
-
-        // if puttable.is_empty() {
-        //     // Check if opponent can move (if so, Pass is legal)
-        //     let opponent = self.turn.opposite();
-        //     let opponent_puttable = get_puttable_positions(&self.board, opponent);
-        //     if !opponent_puttable.is_empty() {
-        //         return vec![64]; // Pass
-        //     } else {
-        //         return vec![]; // Game Over
-        //     }
-        // }
-
         puttable.to_vec().iter().map(|p| usize::from(*p)).collect()
     }
 
@@ -52,9 +40,7 @@ impl State {
         table.set_board(self.board);
         table.set_turn(self.turn);
 
-        let action = if action_idx == 64 {
-            Action::PassTurn(self.turn)
-        } else {
+        let action = {
             let row = Row::from_u8((action_idx / 8) as u8).unwrap();
             let col = Column::from_u8((action_idx % 8) as u8).unwrap();
             Action::PutDisk(PutConfig::new(self.turn, Position::new(row, col)))
