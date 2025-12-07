@@ -40,6 +40,8 @@ pub struct MCTS {
     transposition_table: TranspositionTable,
     max_inference_batch_size: usize,
     states_per_inference: usize,
+    runtime: tokio::runtime::Runtime,
+    thread_pool: rayon::ThreadPool,
 }
 
 #[pymethods]
@@ -52,10 +54,26 @@ impl MCTS {
     /// * `states_per_inference` - The number of states to process per inference call.
     #[new]
     fn new(max_inference_batch_size: usize, states_per_inference: usize) -> Self {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create Tokio runtime");
+
+        // Create a dedicated thread pool for MCTS simulations.
+        // We need enough threads to ensure that we can fill an inference batch
+        // without deadlocking (waiting for other threads to produce more requests).
+        // 512 is the typical number of games per iteration.
+        let thread_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(512)
+            .build()
+            .expect("Failed to create Rayon thread pool");
+
         MCTS {
             transposition_table: TranspositionTable::new(),
             max_inference_batch_size,
             states_per_inference,
+            runtime,
+            thread_pool,
         }
     }
 
@@ -172,14 +190,9 @@ impl MCTS {
         puct_config: PuctConfig,
         seed: Option<u64>,
     ) -> Vec<SearchResults> {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create Tokio runtime");
-
         // Keep the runtime alive by entering its context.
         // This ensures tokio::spawn tasks run correctly even during py.detach.
-        let _guard = runtime.enter();
+        let _guard = self.runtime.enter();
 
         let (mut worker, sender) = Worker::new(self.max_inference_batch_size, callback);
         worker.start();
@@ -187,41 +200,43 @@ impl MCTS {
         let tt = &self.transposition_table;
 
         let results = py.detach(|| {
-            rust_states
-                .par_iter()
-                .enumerate()
-                .map(|(batch_idx, state)| {
-                    // Create RNG for this tree
-                    // If seed is provided, use seed + batch_idx for diversity
-                    // Otherwise, use rand::rng() (ThreadRng) directly
-                    let mut rng: Box<dyn RngCore> = if let Some(base_seed) = seed {
-                        Box::new(StdRng::seed_from_u64(
-                            base_seed.wrapping_add(batch_idx as u64),
-                        ))
-                    } else {
-                        Box::new(rand::rng())
-                    };
+            self.thread_pool.install(|| {
+                rust_states
+                    .par_iter()
+                    .enumerate()
+                    .map(|(batch_idx, state)| {
+                        // Create RNG for this tree
+                        // If seed is provided, use seed + batch_idx for diversity
+                        // Otherwise, use rand::rng() (ThreadRng) directly
+                        let mut rng: Box<dyn RngCore> = if let Some(base_seed) = seed {
+                            Box::new(StdRng::seed_from_u64(
+                                base_seed.wrapping_add(batch_idx as u64),
+                            ))
+                        } else {
+                            Box::new(rand::rng())
+                        };
 
-                    let py_model = PythonModel {
-                        sender: sender.clone(),
-                    };
+                        let py_model = PythonModel {
+                            sender: sender.clone(),
+                        };
 
-                    let root = Node::new(*state, None);
-                    let tree = Tree::new(root);
+                        let root = Node::new(*state, None);
+                        let tree = Tree::new(root);
 
-                    let num_inferences = (num_simulations + self.states_per_inference - 1)
-                        / self.states_per_inference;
+                        let num_inferences = (num_simulations + self.states_per_inference - 1)
+                            / self.states_per_inference;
 
-                    tree.search(
-                        num_inferences,
-                        self.states_per_inference,
-                        &py_model,
-                        tt,
-                        puct_config,
-                        &mut rng,
-                    )
-                })
-                .collect()
+                        tree.search(
+                            num_inferences,
+                            self.states_per_inference,
+                            &py_model,
+                            tt,
+                            puct_config,
+                            &mut rng,
+                        )
+                    })
+                    .collect()
+            })
         });
 
         // Drop the sender to signal the worker that no more requests will be sent.
@@ -229,7 +244,7 @@ impl MCTS {
         drop(sender);
 
         // Wait for the worker to finish processing remaining requests and exit cleanly.
-        runtime.block_on(async {
+        self.runtime.block_on(async {
             let _ = worker.stop().await;
         });
 

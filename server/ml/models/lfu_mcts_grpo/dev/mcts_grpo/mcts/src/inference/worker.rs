@@ -57,7 +57,7 @@ impl Worker {
         max_inference_batch_size: usize,
         callback: Py<PyAny>,
     ) -> (Self, mpsc::Sender<InferenceRequest>) {
-        let (tx, rx) = mpsc::channel(32);
+        let (tx, rx) = mpsc::channel(1024);
 
         (
             Self {
@@ -107,10 +107,16 @@ impl Worker {
         batch_requests: &mut Vec<InferenceRequest>,
         max_inference_batch_size: usize,
     ) {
-        // 1. First, wait for the initial request (blocking)
+        // Calculate current accumulated states
+        let mut current_states_count: usize = batch_requests.iter().map(|r| r.states.len()).sum();
+
+        // 1. First, wait for the initial request (blocking) IF empty
         if batch_requests.is_empty() {
             match rx.recv().await {
-                Some(req) => batch_requests.push(req),
+                Some(req) => {
+                    current_states_count += req.states.len();
+                    batch_requests.push(req);
+                }
                 None => return, // All senders have been dropped
             }
         }
@@ -129,9 +135,12 @@ impl Worker {
         let timeout = std::time::Duration::from_millis(5);
         let deadline = tokio::time::Instant::now() + timeout;
 
-        while batch_requests.len() < max_inference_batch_size {
+        while current_states_count < max_inference_batch_size {
             match tokio::time::timeout_at(deadline, rx.recv()).await {
-                Ok(Some(req)) => batch_requests.push(req),
+                Ok(Some(req)) => {
+                    current_states_count += req.states.len();
+                    batch_requests.push(req);
+                }
                 Ok(None) => return, // Channel disconnected
                 Err(_) => break,    // Timeout
             }
