@@ -22,6 +22,7 @@ actix-ws = "0.3.0"
 async-trait = "0.1.89"
 base64 = "0.22.1"
 common = { version = "0.1.0", path = "common" }
+dashmap = "6.1.0"
 env_logger = "0.11.8"
 fastrand = "2.3.0"
 futures-util = "0.3.31"

@@ -6,7 +6,7 @@
 //! inference calls and significantly improves MCTS performance.
 
 use crate::{policy::PolicyEvaluation, state::State};
-use std::{collections::HashMap, sync::RwLock};
+use dashmap::DashMap;
 
 /// A thread-safe cache for storing neural network evaluations of game states.
 ///
@@ -15,17 +15,17 @@ use std::{collections::HashMap, sync::RwLock};
 /// This is particularly important in batched MCTS where multiple trees may
 /// encounter the same game positions.
 ///
-/// Thread safety is provided through `RwLock`, allowing concurrent reads
-/// while ensuring exclusive writes.
+/// Thread safety is provided through `DashMap` (sharded concurrent hash map),
+/// which significantly reduces lock contention compared to `RwLock<HashMap>`.
 pub struct TranspositionTable {
-    table: RwLock<HashMap<State, PolicyEvaluation>>,
+    table: DashMap<State, PolicyEvaluation>,
 }
 
 impl TranspositionTable {
     /// Creates a new [`TranspositionTable`].
     pub fn new() -> Self {
         Self {
-            table: RwLock::new(HashMap::new()),
+            table: DashMap::new(),
         }
     }
 
@@ -35,18 +35,15 @@ impl TranspositionTable {
     /// This method is thread-safe and can be called concurrently from multiple
     /// MCTS trees.
     pub fn add(&self, state: State, policy_evaluation: PolicyEvaluation) {
-        let mut table = self.table.write().unwrap();
-        table.insert(state, policy_evaluation);
+        self.table.insert(state, policy_evaluation);
     }
 
     /// Retrieves a previously stored evaluation for a game state.
     ///
     /// Returns `None` if no evaluation has been stored for this state.
-    /// This method acquires a read lock, allowing concurrent lookups
-    /// from multiple threads.
     pub fn get(&self, state: &State) -> Option<PolicyEvaluation> {
-        let table = self.table.read().unwrap();
-        table.get(state).cloned()
+        // DashMap returns a Ref, but we need owned data (PolicyEvaluation is small/cloneable)
+        self.table.get(state).map(|r| r.value().clone())
     }
 }
 
@@ -67,7 +64,7 @@ mod tests {
     #[test]
     fn test_new() {
         let table = TranspositionTable::new();
-        assert!(table.table.read().unwrap().is_empty());
+        assert!(table.table.is_empty());
     }
 
     #[test]
@@ -75,7 +72,7 @@ mod tests {
         let table = TranspositionTable::new();
         let policy_evaluation = default_policy_evaluation();
         table.add(default_state(), policy_evaluation);
-        assert!(!table.table.read().unwrap().is_empty());
+        assert!(!table.table.is_empty());
     }
 
     #[test]
