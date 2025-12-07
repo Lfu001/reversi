@@ -1,7 +1,7 @@
 # Model architecture settings
 [model]
-num_channels = 128
-num_residual_blocks = 8
+num_channels = 64
+num_residual_blocks = 5
 
 # MCTS settings
 [mcts]
@@ -9,21 +9,21 @@ num_simulations = 800
 dirichlet_epsilon = 0.25
 dirichlet_alpha = 0.3
 c_puct = 1.25
-max_inference_batch_size = 1024
-states_per_inference = 32
+max_inference_batch_size = 2048
+states_per_inference = 8
 
 # Training settings
 [training]
-batch_size = 512
-replay_buffer_size = 600_000
+batch_size = 256
+replay_buffer_size = 100_000
 learning_rate = 3e-4
-weight_decay = 1e-2
-total_training_steps = 3_000
-games_per_iteration = 512
-training_steps_per_iteration = 60
-lambda_value = 3.0
+weight_decay = 1e-4
+total_training_steps = 6_000
+games_per_iteration = 256
+training_steps_per_iteration = 100
+lambda_value = 1.0
 
 # Tree-GRPO settings
 [grpo]
-lambda_grpo = 5.0
+lambda_grpo = 1.5
 grpo_num_pairs = 16
