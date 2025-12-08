@@ -156,10 +156,18 @@ impl Tree {
                         // We can't get a batch item from a terminal node.
                         return SearchResult::None;
                     } else {
-                        for &action in &current_state.legal_actions() {
-                            let next_state = current_state.apply(action);
-                            let child = Node::new(next_state, Some(action));
-                            Node::add_child(node, child);
+                        let children: Vec<_> = current_state
+                            .legal_actions()
+                            .iter()
+                            .map(|&action| {
+                                let next_state = current_state.apply(action);
+                                let child = Node::new(next_state, Some(action));
+                                child.borrow_mut().set_parent(Some(Rc::downgrade(node)));
+                                child
+                            })
+                            .collect();
+                        for child in children {
+                            node_ref.children_mut().push(child);
                         }
                         node_ref.set_expanded(true);
                     }

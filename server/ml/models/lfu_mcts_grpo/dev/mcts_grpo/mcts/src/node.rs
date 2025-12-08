@@ -52,6 +52,11 @@ impl Node {
         &self.children
     }
 
+    /// Returns a mutable reference to the children of this node.
+    pub fn children_mut(&mut self) -> &mut Vec<Rc<RefCell<Node>>> {
+        &mut self.children
+    }
+
     /// Returns the visit count.
     pub fn visit_count(&self) -> u32 {
         self.visit_count
@@ -138,17 +143,6 @@ impl Node {
         self.sum_evaluation / self.visit_count as f64
     }
 
-    /// Adds a child node to the current node.
-    ///
-    /// Establishes bidirectional linking: sets the `parent` weak reference in the `child`,
-    /// and adds the `child` strong reference to the `parent`'s children list.
-    pub fn add_child(parent: &Rc<RefCell<Node>>, child: Rc<RefCell<Node>>) {
-        // Set weak reference to parent in the child node
-        child.borrow_mut().set_parent(Some(Rc::downgrade(parent)));
-        // Add strong reference to child in the parent node
-        parent.borrow_mut().children.push(child);
-    }
-
     /// Returns true if the node is a leaf node.
     pub fn is_leaf(&self) -> bool {
         self.children.is_empty()
@@ -194,6 +188,16 @@ mod tests {
         /// Sets the visit count to the specified `count` value.
         pub fn set_visit_count(&mut self, count: u32) {
             self.visit_count = count;
+        }
+        /// Adds a child node to the current node.
+        ///
+        /// Establishes bidirectional linking: sets the `parent` weak reference in the `child`,
+        /// and adds the `child` strong reference to the `parent`'s children list.
+        pub fn add_child(parent: &Rc<RefCell<Node>>, child: Rc<RefCell<Node>>) {
+            // Set weak reference to parent in the child node
+            child.borrow_mut().set_parent(Some(Rc::downgrade(parent)));
+            // Add strong reference to child in the parent node
+            parent.borrow_mut().children.push(child);
         }
     }
 
