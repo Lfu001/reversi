@@ -64,7 +64,6 @@ impl MCTS {
         // without deadlocking (waiting for other threads to produce more requests).
         // 512 is the typical number of games per iteration.
         let thread_pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(512)
             .build()
             .expect("Failed to create Rayon thread pool");
 
