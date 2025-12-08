@@ -169,7 +169,7 @@ impl Worker {
         for (req, size) in batch_requests.drain(..).zip(request_sizes) {
             let end_idx = start_idx + size;
             let req_results = all_results[start_idx..end_idx].to_vec();
-            if let Err(_) = req.response_tx.send(req_results) {
+            if req.response_tx.send(req_results).is_err() {
                 eprintln!("⚠️ Warning: Client dropped the response channel.");
             }
             start_idx = end_idx;

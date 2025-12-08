@@ -149,25 +149,19 @@ impl Tree {
                 // Hit
                 // Expand if needed
                 if !node_ref.is_expanded() {
-                    let legal_actions = node_ref.state().legal_actions();
-                    // If no legal actions, it's terminal (or pass).
-                    // legal_actions handles pass (returns 64).
-                    // If empty, it's game over.
-                    if !legal_actions.is_empty() {
-                        for &action in &legal_actions {
-                            let next_state = node_ref.state().apply(action);
-                            let child = Node::new(next_state, Some(action));
-
-                            // Manually add child to avoid double borrow of parent (node)
-                            child.borrow_mut().set_parent(Some(Rc::downgrade(node)));
-                            node_ref.children_mut().push(child);
-                        }
-                        node_ref.set_expanded(true);
-                    } else {
+                    let current_state = node_ref.state();
+                    if current_state.is_terminal() {
                         // Terminal state
                         node_ref.set_expanded(true);
                         // We can't get a batch item from a terminal node.
                         return SearchResult::None;
+                    } else {
+                        for &action in &current_state.legal_actions() {
+                            let next_state = current_state.apply(action);
+                            let child = Node::new(next_state, Some(action));
+                            Node::add_child(node, child);
+                        }
+                        node_ref.set_expanded(true);
                     }
                 } else {
                     // Already expanded but still leaf -> Terminal
@@ -288,7 +282,7 @@ mod tests {
         let state = State::new(Bitboard::default(), DiskColor::Dark);
         let root = Node::new(state, None);
         let tree = Tree::new(root);
-        let mut tt = TranspositionTable::new();
+        let tt = TranspositionTable::new();
         let model = MockModel;
         let config = PuctConfig {
             c_puct: 1.0,
@@ -298,7 +292,7 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(42);
         // Run search with 2 batches of size 2 to ensure children are visited
-        let results = tree.search(2, 2, &model, &mut tt, config, &mut rng);
+        let results = tree.search(2, 2, &model, &tt, config, &mut rng);
 
         // Should have some visits
         let total_visits: u32 = results.visit_counts.iter().sum();

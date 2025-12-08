@@ -7,9 +7,9 @@ from typing import Any, Optional
 
 import numpy as np
 
-from ._core import MCTS as _RustMCTS
+from ._core import Mcts as _RustMcts
 
-__all__ = ["MCTS", "RustMCTS"]
+__all__ = ["MCTS", "RustMcts"]
 
 
 class MCTS:
@@ -30,7 +30,7 @@ class MCTS:
         """
         self.max_inference_batch_size = max_inference_batch_size
         self.states_per_inference = states_per_inference
-        self._rust_mcts = _RustMCTS(max_inference_batch_size, states_per_inference)
+        self._rust_mcts = _RustMcts(max_inference_batch_size, states_per_inference)
 
     def run_simulations(
         self,
@@ -141,4 +141,4 @@ class MCTS:
 
 # Low-level API: Direct access to Rust implementation
 # For advanced users who want full control and don't need the convenience wrapper
-RustMCTS = _RustMCTS
+RustMcts = _RustMcts

@@ -58,7 +58,7 @@ mod tests {
 
         // Check that all samples are between 0 and 1
         for &sample in &samples {
-            assert!(sample >= 0.0 && sample <= 1.0);
+            assert!((0.0..=1.0).contains(&sample));
         }
 
         // Check that the sum is approximately 1

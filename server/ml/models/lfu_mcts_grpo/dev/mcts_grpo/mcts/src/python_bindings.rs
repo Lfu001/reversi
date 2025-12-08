@@ -24,7 +24,7 @@ impl ModelEvaluator for PythonModel {
         let (response_tx, response_rx) = oneshot::channel();
         let request = InferenceRequest::new(states.to_vec(), response_tx);
 
-        if let Err(_) = self.sender.blocking_send(request) {
+        if self.sender.blocking_send(request).is_err() {
             panic!("Failed to send inference request to worker");
         }
 
@@ -36,7 +36,7 @@ impl ModelEvaluator for PythonModel {
 }
 
 #[pyclass(unsendable)]
-pub struct MCTS {
+pub struct Mcts {
     transposition_table: TranspositionTable,
     max_inference_batch_size: usize,
     states_per_inference: usize,
@@ -45,7 +45,7 @@ pub struct MCTS {
 }
 
 #[pymethods]
-impl MCTS {
+impl Mcts {
     /// Creates a new MCTS instance.
     ///
     /// # Arguments
@@ -67,7 +67,7 @@ impl MCTS {
             .build()
             .expect("Failed to create Rayon thread pool");
 
-        MCTS {
+        Mcts {
             transposition_table: TranspositionTable::new(),
             max_inference_batch_size,
             states_per_inference,
@@ -129,7 +129,7 @@ impl MCTS {
     }
 }
 
-impl MCTS {
+impl Mcts {
     /// Converts a Python numpy array of states to a vector of Rust [`State`] objects.
     ///
     /// # Arguments
@@ -222,8 +222,7 @@ impl MCTS {
                         let root = Node::new(*state, None);
                         let tree = Tree::new(root);
 
-                        let num_inferences = (num_simulations + self.states_per_inference - 1)
-                            / self.states_per_inference;
+                        let num_inferences = num_simulations.div_ceil(self.states_per_inference);
 
                         tree.search(
                             num_inferences,

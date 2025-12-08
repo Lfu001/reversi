@@ -42,11 +42,6 @@ impl Node {
         &self.state
     }
 
-    /// Returns the parent of this node.
-    pub fn parent(&self) -> &Option<Weak<RefCell<Node>>> {
-        &self.parent
-    }
-
     /// Sets the parent reference to the given weak pointer `parent`.
     pub fn set_parent(&mut self, parent: Option<Weak<RefCell<Node>>>) {
         self.parent = parent;
@@ -57,19 +52,9 @@ impl Node {
         &self.children
     }
 
-    /// Returns a mutable reference to the children of this node.
-    pub fn children_mut(&mut self) -> &mut Vec<Rc<RefCell<Node>>> {
-        &mut self.children
-    }
-
     /// Returns the visit count.
     pub fn visit_count(&self) -> u32 {
         self.visit_count
-    }
-
-    /// Sets the visit count to the specified `count` value.
-    pub fn set_visit_count(&mut self, count: u32) {
-        self.visit_count = count;
     }
 
     /// Increments the visit count.
@@ -106,13 +91,13 @@ impl Node {
     pub fn average_value(&self) -> f64 {
         if self.visit_count == 0 {
             // μFPU: Use average value of visited siblings
-            if let Some(parent_weak) = &self.parent {
-                if let Some(parent_rc) = parent_weak.upgrade() {
-                    // Note: We use try_borrow here because we might be borrowing the parent
-                    // in a context where it's already borrowed.
-                    if let Ok(parent) = parent_rc.try_borrow() {
-                        return parent.average_q_value_of_visited_children().unwrap_or(0.0);
-                    }
+            if let Some(parent_weak) = &self.parent
+                && let Some(parent_rc) = parent_weak.upgrade()
+            {
+                // Note: We use try_borrow here because we might be borrowing the parent
+                // in a context where it's already borrowed.
+                if let Ok(parent) = parent_rc.try_borrow() {
+                    return parent.average_q_value_of_visited_children().unwrap_or(0.0);
                 }
             }
             0.0
@@ -131,11 +116,11 @@ impl Node {
             // We use try_borrow to safely handle cases where a child might be currently borrowed
             // (e.g., the child that called this method via its parent).
             // RefCell allows multiple immutable borrows, so this is safe.
-            if let Ok(child_ref) = child.try_borrow() {
-                if child_ref.visit_count > 0 {
-                    sum_q += child_ref.q_value();
-                    count += 1;
-                }
+            if let Ok(child_ref) = child.try_borrow()
+                && child_ref.visit_count > 0
+            {
+                sum_q += child_ref.q_value();
+                count += 1;
             }
         }
         if count > 0 {
@@ -199,6 +184,17 @@ mod tests {
 
     fn default_state() -> State {
         State::new(Bitboard::default(), DiskColor::Dark)
+    }
+
+    impl Node {
+        /// Returns the parent of this node.
+        pub fn parent(&self) -> &Option<Weak<RefCell<Node>>> {
+            &self.parent
+        }
+        /// Sets the visit count to the specified `count` value.
+        pub fn set_visit_count(&mut self, count: u32) {
+            self.visit_count = count;
+        }
     }
 
     #[test]

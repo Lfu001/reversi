@@ -12,6 +12,6 @@ use pyo3::prelude::*;
 
 #[pymodule]
 fn _core(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<python_bindings::MCTS>()?;
+    m.add_class::<python_bindings::Mcts>()?;
     Ok(())
 }

@@ -163,7 +163,7 @@ mod tests {
         policy_arr[2] = 0.3;
         let policy = Policy(policy_arr);
         let value = Value(0.0);
-        transposition_table.add(parent_state.clone(), PolicyEvaluation::new(policy, value));
+        transposition_table.add(parent_state, PolicyEvaluation::new(policy, value));
 
         // Create parent node
         let parent = Node::new(parent_state, None);

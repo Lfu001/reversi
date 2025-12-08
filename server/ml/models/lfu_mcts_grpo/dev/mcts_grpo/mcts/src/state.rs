@@ -1,7 +1,6 @@
 use common::{Action, Bitboard, Column, DiskColor, Position, PutConfig, Row, Table};
 use num_traits::FromPrimitive;
 use reversi_core::action::get_puttable_positions;
-use reversi_core::state::DiskColorExt;
 
 /// State of the game.
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]

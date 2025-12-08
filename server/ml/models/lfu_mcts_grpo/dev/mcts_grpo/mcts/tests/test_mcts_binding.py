@@ -50,7 +50,7 @@ def test_mcts_run(initial_states):
     max_inference_batch_size = 32
     states_per_inference = 8
     # Use RustMCTS to test the low-level Rust binding
-    mcts_instance = mcts.RustMCTS(max_inference_batch_size, states_per_inference)
+    mcts_instance = mcts.RustMcts(max_inference_batch_size, states_per_inference)
     model = MockModel()
 
     # MCTS parameters
