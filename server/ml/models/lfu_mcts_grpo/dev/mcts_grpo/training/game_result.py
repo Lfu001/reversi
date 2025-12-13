@@ -27,7 +27,7 @@ class GameResultProcessor:
         self.replay_buffer = replay_buffer
 
     def process_game_history(
-        self, game_history: list[dict[str, np.ndarray]], winner: int
+        self, game_history: list[dict[str, np.ndarray]], winner: Winner
     ):
         """ゲーム履歴を逆順で処理し、各局面のoutcomeを計算"""
         for experience_data in reversed(game_history):
@@ -41,7 +41,7 @@ class GameResultProcessor:
                 )
             )
 
-    def _compute_outcome(self, state: np.ndarray, winner: int) -> float:
+    def _compute_outcome(self, state: np.ndarray, winner: Winner) -> float:
         """局面の手番プレイヤーから見たoutcomeを計算"""
         is_dark_turn = np.all(state[2] > 0)
 
@@ -56,7 +56,7 @@ class GameResultProcessor:
             return -1.0
 
     @staticmethod
-    def determine_winner(terminal_state: np.ndarray) -> int:
+    def determine_winner(terminal_state: np.ndarray) -> Winner:
         """終局盤面から勝者を判定"""
         num_dark = np.sum(terminal_state[0])
         num_light = np.sum(terminal_state[1])
