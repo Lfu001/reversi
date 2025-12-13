@@ -18,3 +18,6 @@ rand_distr = { workspace = true }
 rayon = { workspace = true }
 reversi-core = { version = "0.1.0", path = "../../../../../../reversi-core" }
 tokio = { workspace = true, features = ["full", "macros"] }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.5"
