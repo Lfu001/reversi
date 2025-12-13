@@ -84,7 +84,7 @@ class MCTS:
                 is_torch_available = False
 
             if is_torch_available and device is not None:
-                with torch.no_grad():
+                with torch.inference_mode():
                     # Convert to torch tensor
                     states_tensor = torch.from_numpy(batch_states).to(device)
 
