@@ -1,27 +1,48 @@
 use rand_distr::{Distribution, Gamma};
 
-/// Samples from a Dirichlet distribution using the Gamma-based method.
+/// Dirichlet distribution using the Gamma-based method.
 ///
-/// The Dirichlet distribution can be implemented using Gamma distributions:
-/// when X_i ~ Gamma(α_i, 1), then Y_i = X_i / Σ(X_j) follows Dirichlet(α_1, ..., α_n).
-///
-/// Takes a random number generator, an alpha parameter (same for all dimensions),
-/// and the dimensionality of the sample. Returns a normalized probability
-/// distribution (summing to 1.0) or `None` if sampling fails.
-pub fn sample_dirichlet(rng: &mut impl rand::Rng, alpha: f64, size: usize) -> Option<Vec<f64>> {
-    if size == 0 {
-        return Some(Vec::new());
+/// When `X_i ~ Gamma(α_i, 1)`, then `Y_i = X_i / Σ(X_j)` follows Dirichlet(α_1, ..., α_n).
+pub struct Dirichlet {
+    /// Gamma distribution with alpha parameter.
+    gamma: Gamma<f64>,
+    /// Buffer for storing samples.
+    buffer: Vec<f64>,
+}
+
+impl Dirichlet {
+    /// Creates a new [`Dirichlet`].
+    pub fn new(alpha: f64, buffer_capacity: usize) -> Self {
+        Self {
+            gamma: Gamma::new(alpha, 1.0).unwrap(),
+            buffer: Vec::with_capacity(buffer_capacity),
+        }
     }
 
-    let gamma = Gamma::new(alpha, 1.0).ok()?;
+    /// Samples from the Dirichlet distribution.
+    ///
+    /// Returns `None` if `size` is 0.
+    pub fn sample(&mut self, rng: &mut impl rand::Rng, size: usize) -> Option<&[f64]> {
+        if size == 0 {
+            return Some(&[]);
+        }
 
-    let samples: Vec<f64> = (0..size).map(|_| gamma.sample(rng)).collect();
-    let sum: f64 = samples.iter().sum();
+        self.buffer.clear();
+        let mut l1_norm = 0.0;
+        for _ in 0..size {
+            let gamma_sample = self.gamma.sample(rng);
+            self.buffer.push(gamma_sample);
+            l1_norm += gamma_sample;
+        }
 
-    if sum > 0.0 {
-        Some(samples.into_iter().map(|x| x / sum).collect())
-    } else {
-        None
+        if l1_norm > 0.0 {
+            for element in self.buffer.iter_mut() {
+                *element /= l1_norm;
+            }
+            Some(&self.buffer)
+        } else {
+            None
+        }
     }
 }
 
@@ -34,14 +55,17 @@ mod tests {
     #[test]
     fn test_sample_dirichlet_empty() {
         let mut rng = StdRng::seed_from_u64(42);
-        let result = sample_dirichlet(&mut rng, 1.0, 0);
-        assert_eq!(result, Some(Vec::new()));
+        let mut distribution = Dirichlet::new(1.0, 0);
+        let result = distribution.sample(&mut rng, 0);
+        let expected = vec![];
+        assert_eq!(result, Some(expected.as_slice()));
     }
 
     #[test]
     fn test_sample_dirichlet_single() {
         let mut rng = StdRng::seed_from_u64(42);
-        let result = sample_dirichlet(&mut rng, 1.0, 1);
+        let mut distribution = Dirichlet::new(1.0, 1);
+        let result = distribution.sample(&mut rng, 1);
         assert!(result.is_some());
         let samples = result.unwrap();
         assert_eq!(samples.len(), 1);
@@ -51,13 +75,14 @@ mod tests {
     #[test]
     fn test_sample_dirichlet_multiple() {
         let mut rng = StdRng::seed_from_u64(42);
-        let result = sample_dirichlet(&mut rng, 1.0, 5);
+        let mut distribution = Dirichlet::new(1.0, 5);
+        let result = distribution.sample(&mut rng, 5);
         assert!(result.is_some());
         let samples = result.unwrap();
         assert_eq!(samples.len(), 5);
 
         // Check that all samples are between 0 and 1
-        for &sample in &samples {
+        for &sample in samples {
             assert!((0.0..=1.0).contains(&sample));
         }
 
@@ -71,7 +96,8 @@ mod tests {
         // Run multiple times to check consistency
         let mut rng = StdRng::seed_from_u64(42);
         for _ in 0..10 {
-            let result = sample_dirichlet(&mut rng, 0.3, 3);
+            let mut distribution = Dirichlet::new(0.3, 3);
+            let result = distribution.sample(&mut rng, 3);
             assert!(result.is_some());
             let samples = result.unwrap();
             assert_eq!(samples.len(), 3);

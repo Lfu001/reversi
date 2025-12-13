@@ -1,4 +1,4 @@
-use crate::{dirichlet::sample_dirichlet, node::Node, transposition_table::TranspositionTable};
+use crate::{dirichlet::Dirichlet, node::Node, transposition_table::TranspositionTable};
 
 /// Configuration for PUCT (Polynomial Upper Confidence Trees) calculation.
 #[derive(Debug, Clone, Copy)]
@@ -49,58 +49,73 @@ impl SelectionStrategy for PuctStrategy {
     }
 }
 
-/// Selects the best child node from a list of candidates using PUCT strategy.
-///
-/// Evaluates all child nodes of `parent_node` using the PUCT selection `strategy`,
-/// retrieves policy priors from `transposition_table` for the parent's state,
-/// optionally adds Dirichlet noise to legal actions if `is_root` is true,
-/// and uses `rng` for noise generation.
-/// Returns the index of the child with the highest PUCT score.
-pub fn select_best_child(
-    parent_node: &Node,
-    strategy: &PuctStrategy,
-    transposition_table: &TranspositionTable,
-    is_root: bool,
-    rng: &mut impl rand::Rng,
-) -> Option<usize> {
-    let policy_evaluation = transposition_table.get(parent_node.state())?;
-    let children = parent_node.children();
-    let parent_visit_count = parent_node.visit_count();
+pub struct ChildSelection {
+    /// Dirichlet distribution for noise generation.
+    dirichlet_distribution: Dirichlet,
+}
 
-    let dirichlet_epsilon = strategy.config().dirichlet_epsilon;
-    let dirichlet_alpha = strategy.config().dirichlet_alpha;
+impl ChildSelection {
+    /// Creates a new [`ChildSelection`] with the given `dirichlet_alpha` parameter.
+    pub fn new(dirichlet_alpha: f64) -> Self {
+        Self {
+            dirichlet_distribution: Dirichlet::new(dirichlet_alpha, 33),
+        }
+    }
 
-    let noise = if is_root && !children.is_empty() {
-        sample_dirichlet(rng, dirichlet_alpha, children.len())
-    } else {
-        None
-    };
+    /// Selects the best child node from a list of candidates using PUCT strategy.
+    ///
+    /// Evaluates all child nodes of `parent_node` using the PUCT selection `strategy`,
+    /// retrieves policy priors from `transposition_table` for the parent's state,
+    /// optionally adds Dirichlet noise to legal actions if `is_root` is true,
+    /// and uses `rng` for noise generation.
+    /// Returns the index of the child with the highest PUCT score.
+    pub fn select_best_child(
+        &mut self,
+        parent_node: &Node,
+        strategy: &PuctStrategy,
+        transposition_table: &TranspositionTable,
+        is_root: bool,
+        rng: &mut impl rand::Rng,
+    ) -> Option<usize> {
+        let policy_evaluation = transposition_table.get(parent_node.state())?;
+        let children = parent_node.children();
+        let parent_visit_count = parent_node.visit_count();
 
-    children
-        .iter()
-        .enumerate()
-        .map(|(idx, child)| {
-            let child_ref = child.borrow();
-            let mut prior_probability = if let Some(action) = child_ref.action() {
-                policy_evaluation.policy().0[action]
-            } else {
-                0.0
-            };
+        let dirichlet_epsilon = strategy.config().dirichlet_epsilon;
 
-            if let Some(noise_vec) = &noise {
-                prior_probability = (1.0 - dirichlet_epsilon) * prior_probability
-                    + dirichlet_epsilon * noise_vec[idx];
-            }
+        let noise = if is_root && !children.is_empty() {
+            self.dirichlet_distribution.sample(rng, children.len())
+        } else {
+            None
+        };
 
-            let score = strategy.calculate_score(&child_ref, parent_visit_count, prior_probability);
-            (idx, score)
-        })
-        .max_by(|(_, score_a), (_, score_b)| {
-            score_a
-                .partial_cmp(score_b)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(|(idx, _)| idx)
+        children
+            .iter()
+            .enumerate()
+            .map(|(idx, child)| {
+                let child_ref = child.borrow();
+                let mut prior_probability = if let Some(action) = child_ref.action() {
+                    policy_evaluation.policy().0[action]
+                } else {
+                    0.0
+                };
+
+                if let Some(noise_vec) = &noise {
+                    prior_probability = (1.0 - dirichlet_epsilon) * prior_probability
+                        + dirichlet_epsilon * noise_vec[idx];
+                }
+
+                let score =
+                    strategy.calculate_score(&child_ref, parent_visit_count, prior_probability);
+                (idx, score)
+            })
+            .max_by(|(_, score_a), (_, score_b)| {
+                score_a
+                    .partial_cmp(score_b)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(idx, _)| idx)
+    }
 }
 
 #[cfg(test)]
@@ -178,7 +193,8 @@ mod tests {
         Node::add_child(&parent, child2);
 
         let mut rng = StdRng::seed_from_u64(42);
-        let best = select_best_child(
+        let mut selection = ChildSelection::new(strategy.config().dirichlet_alpha);
+        let best = selection.select_best_child(
             &parent.borrow(),
             &strategy,
             &transposition_table,

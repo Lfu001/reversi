@@ -41,9 +41,12 @@ impl TranspositionTable {
     /// Retrieves a previously stored evaluation for a game state.
     ///
     /// Returns `None` if no evaluation has been stored for this state.
-    pub fn get(&self, state: &State) -> Option<PolicyEvaluation> {
+    pub fn get(
+        &self,
+        state: &State,
+    ) -> Option<dashmap::mapref::one::Ref<'_, State, PolicyEvaluation>> {
         // DashMap returns a Ref, but we need owned data (PolicyEvaluation is small/cloneable)
-        self.table.get(state).map(|r| r.value().clone())
+        self.table.get(state)
     }
 }
 

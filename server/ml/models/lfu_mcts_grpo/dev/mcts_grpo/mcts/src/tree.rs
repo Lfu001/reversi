@@ -1,7 +1,7 @@
 use crate::{
     inference::ModelEvaluator,
     node::Node,
-    selection::{PuctConfig, PuctStrategy, select_best_child},
+    selection::{ChildSelection, PuctConfig, PuctStrategy},
     state::State,
     transposition_table::TranspositionTable,
 };
@@ -58,15 +58,22 @@ impl Tree {
         rng: &mut impl rand::Rng,
     ) -> SearchResults {
         let strategy = PuctStrategy::new(puct_config);
-
+        let mut child_selection = ChildSelection::new(puct_config.dirichlet_alpha);
+        let mut batch = Vec::with_capacity(states_per_inference);
         for _ in 0..num_inferences {
-            let mut batch = Vec::new();
-
+            batch.clear();
             // GetBatch
             // Loop until batch is full or we can't find more nodes
             while batch.len() < states_per_inference {
-                let res =
-                    self.batch_puct(&self.root, transposition_table, &strategy, true, true, rng);
+                let res = self.batch_puct(
+                    &self.root,
+                    transposition_table,
+                    &strategy,
+                    &mut child_selection,
+                    true,
+                    true,
+                    rng,
+                );
                 match res {
                     SearchResult::Miss(state) => {
                         batch.push(state);
@@ -106,7 +113,15 @@ impl Tree {
             // Since we added batch.len() items, we should run it that many times to ensure we cover them.
             // Note: batch_puct might find different paths if the tree changed, but usually it finds the same.
             for _ in 0..batch.len() {
-                self.batch_puct(&self.root, transposition_table, &strategy, false, true, rng);
+                self.batch_puct(
+                    &self.root,
+                    transposition_table,
+                    &strategy,
+                    &mut child_selection,
+                    false,
+                    true,
+                    rng,
+                );
             }
         }
 
@@ -137,6 +152,7 @@ impl Tree {
         node: &Rc<RefCell<Node>>,
         tt: &TranspositionTable,
         strategy: &PuctStrategy,
+        child_selection: &mut ChildSelection,
         get_batch: bool,
         is_root: bool,
         rng: &mut impl rand::Rng,
@@ -171,17 +187,16 @@ impl Tree {
                         }
                         node_ref.set_expanded(true);
                     }
+                    drop(node_ref); // Release borrow
                 } else {
                     // Already expanded but still leaf -> Terminal
                     // (Since if it had children, is_leaf would be false)
                     return SearchResult::None;
                 }
 
-                let value = eval.value(); // Assuming Value(f64) is accessible. Value field is private?
+                let value = eval.value().value(); // Assuming Value(f64) is accessible. Value field is private?
                 // Need to make Value field public or add getter in PolicyEvaluation.
                 // Assuming I fixed PolicyEvaluation or will fix it.
-
-                drop(node_ref); // Release borrow
 
                 // Update stats
                 if get_batch {
@@ -216,13 +231,13 @@ impl Tree {
         }
 
         // Selection
-        let best_idx = select_best_child(&node_ref, strategy, tt, is_root, rng);
+        let best_idx = child_selection.select_best_child(&node_ref, strategy, tt, is_root, rng);
 
         if let Some(idx) = best_idx {
             let child = node_ref.children()[idx].clone();
             drop(node_ref);
 
-            let res = self.batch_puct(&child, tt, strategy, get_batch, false, rng);
+            let res = self.batch_puct(&child, tt, strategy, child_selection, get_batch, false, rng);
 
             // Backprop
             match res {
