@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from accelerate import Accelerator
-from accelerate.utils import set_seed
+from accelerate.utils import release_memory, set_seed
 from mcts_grpo.replay_buffer import ReplayBuffer
 from mcts_grpo.settings import Settings
 from mcts_grpo.training import (
@@ -62,6 +62,8 @@ def _run_iteration(
     """1つのイテレーション（Self-Play + Training）を実行"""
     executor = SelfPlayExecutor(settings, env, replay_buffer, ongoing_games_data)
     executor.run_self_play(iteration, model, device)
+
+    release_memory()
 
     trainer = TrainingExecutor(
         settings, accelerator, device, model, optimizer, lr_scheduler
