@@ -117,16 +117,15 @@ impl ReversiEnvironment {
     }
 
     /// Convert the current state of the environment to a 1D vector.
-    fn get_state_vec(tables: &[Table]) -> Vec<f32> {
+    fn get_state_vec(tables: &[Table]) -> Vec<i8> {
         // Pre-allocate a vector with the exact required capacity for performance.
-        let mut state_vec = Vec::with_capacity(tables.len() * 4 * 8 * 8);
-        state_vec.resize(tables.len() * 4 * 8 * 8, 0.0);
+        let mut state_vec = vec![0; tables.len() * 4 * 8 * 8];
 
         for (batch_idx, table) in tables.iter().enumerate() {
             let turn = table.turn();
             let board = table.board();
             let puttable_positions = get_puttable_positions(board, turn);
-            let turn_val = if turn == DiskColor::Dark { 1.0 } else { -1.0 };
+            let turn_val = if turn == DiskColor::Dark { 1 } else { -1 };
 
             let idx_offset = batch_idx * 256;
 
@@ -137,14 +136,14 @@ impl ReversiEnvironment {
                 let idx = idx_offset + i;
                 let mask = 1u64 << (63 - i);
                 if dark_plane & mask != 0 {
-                    state_vec[idx] = 1.0;
+                    state_vec[idx] = 1;
                 }
                 if light_plane & mask != 0 {
-                    state_vec[idx + 64] = 1.0;
+                    state_vec[idx + 64] = 1;
                 }
                 state_vec[idx + 128] = turn_val;
                 if puttable_positions.0 & mask != 0 {
-                    state_vec[idx + 192] = 1.0;
+                    state_vec[idx + 192] = 1;
                 }
             }
         }
@@ -168,9 +167,9 @@ impl ReversiEnvironment {
 /// A tuple containing the results of a batch step of the environment.
 ///
 /// The tuple contains two elements:
-/// - The next state of the environment as a `Py<PyArray4<f32>>`.
+/// - The next state of the environment as a `Py<PyArray4<i8>>`.
 /// - A boolean array indicating whether each game in the batch has finished as a `Py<PyArray1<bool>>`.
-type StepBatchResult = (Py<PyArray4<f32>>, Py<PyArray1<bool>>);
+type StepBatchResult = (Py<PyArray4<i8>>, Py<PyArray1<bool>>);
 
 #[pymethods]
 impl ReversiEnvironment {
@@ -205,8 +204,8 @@ impl ReversiEnvironment {
     /// This is typically called at the beginning of a new training episode.
     ///
     /// # Returns
-    /// A `Py<PyArray4<f32>>` representing the initial state of the batch.
-    fn reset(&mut self, py: Python<'_>) -> PyResult<Py<PyArray4<f32>>> {
+    /// A `Py<PyArray4<i8>>` representing the initial state of the batch.
+    fn reset(&mut self, py: Python<'_>) -> PyResult<Py<PyArray4<i8>>> {
         self.tables.fill_with(Table::default);
         self.dones.fill(false);
         self.get_state(py)
@@ -216,11 +215,7 @@ impl ReversiEnvironment {
     ///
     /// # Arguments
     /// * `indices` - A slice of indices of the games to reset.
-    fn reset_indices(
-        &mut self,
-        py: Python<'_>,
-        indices: Vec<usize>,
-    ) -> PyResult<Py<PyArray4<f32>>> {
+    fn reset_indices(&mut self, py: Python<'_>, indices: Vec<usize>) -> PyResult<Py<PyArray4<i8>>> {
         for index in indices {
             if index >= self.batch_size {
                 continue;
@@ -235,11 +230,11 @@ impl ReversiEnvironment {
     ///
     /// The state is represented as a 4-dimensional numpy array with shape
     /// `(batch_size, 4, 8, 8)`. The four channels are:
-    /// - Channel 0: Positions of the dark disks (1.0 if disk exists, 0.0 otherwise).
-    /// - Channel 1: Positions of the light disks (1.0 if disk exists, 0.0 otherwise).
-    /// - Channel 2: A plane indicating the current turn (1.0 for Dark, -1.0 for Light).
-    /// - Channel 3: A plane indicating all legal moves for the current player (1.0 if move is legal, 0.0 otherwise).
-    fn get_state(&self, py: Python<'_>) -> PyResult<Py<PyArray4<f32>>> {
+    /// - Channel 0: Positions of the dark disks (1 if disk exists, 0 otherwise).
+    /// - Channel 1: Positions of the light disks (1 if disk exists, 0 otherwise).
+    /// - Channel 2: A plane indicating the current turn (1 for Dark, -1 for Light).
+    /// - Channel 3: A plane indicating all legal moves for the current player (1 if move is legal, 0 otherwise).
+    fn get_state(&self, py: Python<'_>) -> PyResult<Py<PyArray4<i8>>> {
         let state_vec = ReversiEnvironment::get_state_vec(&self.tables);
         let array = PyArray::from_vec(py, state_vec);
         Ok(array.reshape((self.batch_size, 4, 8, 8))?.into())
@@ -251,9 +246,9 @@ impl ReversiEnvironment {
     #[staticmethod]
     fn get_next_state(
         py: Python<'_>,
-        state: PyReadonlyArray3<f32>,
+        state: PyReadonlyArray3<i8>,
         action: usize,
-    ) -> PyResult<Py<PyArray3<f32>>> {
+    ) -> PyResult<Py<PyArray3<i8>>> {
         let state_array = state.as_array();
 
         if state_array.shape() != [4, 8, 8] {
@@ -266,7 +261,7 @@ impl ReversiEnvironment {
         let mut table = Table::default();
 
         // Convert the state to the internal representation
-        table.set_turn(if state_array[[2, 0, 0]] > 0.0 {
+        table.set_turn(if state_array[[2, 0, 0]] > 0 {
             DiskColor::Dark
         } else {
             DiskColor::Light
@@ -278,10 +273,10 @@ impl ReversiEnvironment {
                 let dark = state_array[[0, row as usize, col as usize]];
                 let light = state_array[[1, row as usize, col as usize]];
                 let bit = 1 << (63 - (row * 8 + col));
-                if dark > 0.5 {
+                if dark == 1 {
                     dark_plane |= bit;
                 }
-                if light > 0.5 {
+                if light == 1 {
                     light_plane |= bit;
                 }
             }

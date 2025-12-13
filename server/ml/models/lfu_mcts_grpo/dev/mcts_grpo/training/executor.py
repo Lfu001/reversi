@@ -67,7 +67,7 @@ class TrainingExecutor:
     def _prepare_batch(self, experiences: list[Experience]) -> dict[str, torch.Tensor]:
         """経験データをテンソルに変換"""
         states = torch.from_numpy(np.stack([e.state for e in experiences])).to(
-            self.device
+            device=self.device, dtype=torch.float32
         )
         pis = torch.from_numpy(np.stack([e.pi for e in experiences])).to(self.device)
         outcomes = torch.tensor(
