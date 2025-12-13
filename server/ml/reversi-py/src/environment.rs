@@ -1,7 +1,7 @@
 use common::{
     position, Action, BitPosition, Bitboard, Column, DiskColor, Position, PutConfig, Row, Table,
 };
-use ndarray::{s, Array};
+use ndarray::s;
 use num_traits::FromPrimitive;
 use numpy::{prelude::*, PyArray, PyArray1, PyArray3, PyArray4, PyReadonlyArray3};
 use pyo3::prelude::*;
@@ -61,7 +61,7 @@ impl ReversiEnvironment {
         let actions_array = actions.as_array();
 
         // Process each game state in parallel using Rayon.
-        let results: Vec<_> = self
+        let current_dones: Vec<bool> = self
             .tables
             .par_iter_mut()
             .zip(self.dones.par_iter_mut())
@@ -107,14 +107,11 @@ impl ReversiEnvironment {
                     Err(err) => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(err)),
                 }
             })
-            .collect();
-
-        // Collect results from all threads. If any thread returned an error, propagate it.
-        let current_dones: Vec<bool> = results.into_iter().collect::<Result<_, _>>()?;
+            .collect::<Result<_, _>>()?;
 
         // Get the new state of all games and return the results to Python.
         let next_states = self.get_state(py)?;
-        let dones_array = Array::from_vec(current_dones).into_pyarray(py);
+        let dones_array = current_dones.into_pyarray(py);
 
         Ok((next_states, dones_array.into()))
     }
@@ -153,6 +150,18 @@ impl ReversiEnvironment {
         }
 
         state_vec
+    }
+
+    /// Selects a position from the puttable positions based on the given index.
+    fn select_position(puttable_positions: PuttablePositions, index: usize) -> BitPosition {
+        let mut reversed_mask = puttable_positions.0.reverse_bits();
+        for _ in 0..index {
+            reversed_mask &= reversed_mask.wrapping_sub(1); // clear the least significant bit (e.g. 0b1010 -> 0b1000)
+        }
+        // After the loop, temp_mask contains the selected bit as the least significant bit.
+        // Extract only the least significant bit (LSB) (clear all other bits).
+        let selected_bit_mask = reversed_mask & reversed_mask.wrapping_neg();
+        BitPosition(selected_bit_mask.reverse_bits())
     }
 }
 
@@ -198,8 +207,8 @@ impl ReversiEnvironment {
     /// # Returns
     /// A `Py<PyArray4<f32>>` representing the initial state of the batch.
     fn reset(&mut self, py: Python<'_>) -> PyResult<Py<PyArray4<f32>>> {
-        self.tables = (0..self.batch_size).map(|_| Table::default()).collect();
-        self.dones = vec![false; self.batch_size];
+        self.tables.fill_with(Table::default);
+        self.dones.fill(false);
         self.get_state(py)
     }
 
@@ -338,23 +347,22 @@ impl ReversiEnvironment {
         // Define the action selection strategy: sample from the probability distribution.
         let selector = |puttable_positions: PuttablePositions,
                         game_actions: &ndarray::ArrayView2<'_, f32>| {
-            let puttable_positions_vec = puttable_positions.to_vec();
-            let weights: Vec<f32> = puttable_positions_vec
-                .iter()
-                .map(|pos| game_actions[[pos.row() as usize, pos.column() as usize]])
-                .collect();
+            let weights = puttable_positions
+                .clone()
+                .into_iter()
+                .map(|pos| game_actions[[pos.row() as usize, pos.column() as usize]]);
 
             // Create a weighted distribution for sampling.
-            match WeightedIndex::new(&weights) {
+            match WeightedIndex::new(weights) {
                 Ok(dist) => {
                     // Create a thread-local random number generator.
                     let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
                     // Sample an index from the distribution and return the corresponding position.
                     let idx = dist.sample(&mut rng);
-                    BitPosition::from(puttable_positions_vec[idx])
+                    Self::select_position(puttable_positions, idx)
                 }
                 // Fallback: if all legal moves have zero probability, just pick the first one.
-                Err(_) => BitPosition::from(puttable_positions_vec[0]),
+                Err(_) => Self::select_position(puttable_positions, 0),
             }
         };
 
@@ -383,9 +391,8 @@ impl ReversiEnvironment {
                         game_actions: &ndarray::ArrayView2<'_, f32>| {
             // Find the position with the maximum probability among all legal moves.
             // The `unwrap()` calls are safe because this closure is only called when `puttable_positions` is not empty.
-            let position = *puttable_positions
-                .to_vec()
-                .iter()
+            let position = puttable_positions
+                .into_iter()
                 .max_by(|&a, &b| {
                     let prob_a = game_actions[[a.row() as usize, a.column() as usize]];
                     let prob_b = game_actions[[b.row() as usize, b.column() as usize]];
@@ -404,4 +411,142 @@ impl ReversiEnvironment {
 fn _core(m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<ReversiEnvironment>()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    mod select_position_normal {
+        use super::*;
+
+        #[test]
+        fn test_select_position_single_bit_at_0() {
+            let mask = PuttablePositions(0b1);
+            let index = 0;
+            let expected = BitPosition(0b1);
+
+            let result = ReversiEnvironment::select_position(mask, index);
+
+            assert_eq!(result.0, expected.0);
+        }
+
+        #[test]
+        fn test_select_position_single_bit_at_63() {
+            let mask = PuttablePositions(1u64 << 63);
+            let index = 0;
+            let expected = BitPosition(1u64 << 63);
+
+            let result = ReversiEnvironment::select_position(mask, index);
+
+            assert_eq!(result.0, expected.0);
+        }
+
+        #[test]
+        fn test_select_position_multiple_msb() {
+            let mask = PuttablePositions(0b10110);
+            let index = 0;
+            let expected = BitPosition(0b10000);
+
+            let result = ReversiEnvironment::select_position(mask, index);
+
+            assert_eq!(result.0, expected.0);
+        }
+
+        #[test]
+        fn test_select_position_multiple_middle() {
+            let mask = PuttablePositions(0b10110);
+            let index = 1;
+            let expected = BitPosition(0b100);
+
+            let result = ReversiEnvironment::select_position(mask, index);
+
+            assert_eq!(result.0, expected.0);
+        }
+
+        #[test]
+        fn test_select_position_multiple_lsb() {
+            let mask = PuttablePositions(0b10110);
+            let index = 2;
+            let expected = BitPosition(0b10);
+
+            let result = ReversiEnvironment::select_position(mask, index);
+
+            assert_eq!(result.0, expected.0);
+        }
+
+        #[test]
+        fn test_select_position_all_ones_middle() {
+            let mask = PuttablePositions(u64::MAX);
+            let index = 32;
+            let expected = BitPosition(1u64 << (63 - 32));
+
+            let result = ReversiEnvironment::select_position(mask, index);
+
+            assert_eq!(result.0, expected.0);
+        }
+    }
+
+    mod select_position_boundary {
+        use super::*;
+
+        #[test]
+        fn test_select_position_min_index() {
+            let mask = PuttablePositions(0b110100);
+            let index = 0;
+            let expected = BitPosition(0b100000);
+
+            let result = ReversiEnvironment::select_position(mask, index);
+
+            assert_eq!(result.0, expected.0);
+        }
+
+        #[test]
+        fn test_select_position_max_index() {
+            let mask = PuttablePositions(0b110100);
+            let index = 2;
+            let expected = BitPosition(0b100);
+
+            let result = ReversiEnvironment::select_position(mask, index);
+
+            assert_eq!(result.0, expected.0);
+        }
+    }
+
+    mod select_position_error {
+        use super::*;
+
+        #[test]
+        fn test_select_position_mask_is_zero() {
+            let mask = PuttablePositions(0);
+            let index = 0;
+            let expected = BitPosition(0);
+
+            let result = ReversiEnvironment::select_position(mask, index);
+
+            assert_eq!(result.0, expected.0);
+        }
+
+        #[test]
+        fn test_select_position_index_out_of_bounds_by_one() {
+            let mask = PuttablePositions(0b1010);
+            let index = 2;
+            let expected = BitPosition(0);
+
+            let result = ReversiEnvironment::select_position(mask, index);
+
+            assert_eq!(result.0, expected.0);
+        }
+
+        #[test]
+        fn test_select_position_index_out_of_bounds_by_large_number() {
+            let mask = PuttablePositions(1u64 << 5);
+            let index = 10;
+            let expected = BitPosition(0);
+
+            let result = ReversiEnvironment::select_position(mask, index);
+
+            assert_eq!(result.0, expected.0);
+        }
+    }
 }

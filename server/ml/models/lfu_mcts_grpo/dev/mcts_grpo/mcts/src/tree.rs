@@ -165,23 +165,19 @@ impl Tree {
                 // Hit
                 // Expand if needed
                 if !node_ref.is_expanded() {
-                    let current_state = node_ref.state();
+                    let current_state = *node_ref.state();
                     if current_state.is_terminal() {
                         // Terminal state
                         node_ref.set_expanded(true);
                         // We can't get a batch item from a terminal node.
                         return SearchResult::None;
                     } else {
-                        let children: Vec<_> = current_state
-                            .legal_actions()
-                            .iter()
-                            .map(|&action| {
-                                let next_state = current_state.apply(action);
-                                let child = Node::new(next_state, Some(action));
-                                child.borrow_mut().set_parent(Some(Rc::downgrade(node)));
-                                child
-                            })
-                            .collect();
+                        let children = current_state.legal_actions().map(|action| {
+                            let next_state = current_state.apply(action);
+                            let child = Node::new(next_state, Some(action));
+                            child.borrow_mut().set_parent(Some(Rc::downgrade(node)));
+                            child
+                        });
                         for child in children {
                             node_ref.children_mut().push(child);
                         }

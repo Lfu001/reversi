@@ -81,15 +81,15 @@ impl Worker {
             let mut rx = rx; // Move rx into the task
 
             loop {
-                Self::collect_requests_until_batch_size(
+                let states_count = Self::collect_requests_until_batch_size(
                     &mut rx,
                     &mut batch_requests,
                     max_inference_batch_size,
                 )
                 .await;
 
-                if !batch_requests.is_empty() {
-                    Self::process_batch(&mut batch_requests, &callback).await;
+                if states_count > 0 {
+                    Self::process_batch(&mut batch_requests, states_count, &callback).await;
                 } else if rx.is_closed() {
                     break; // All senders have been dropped
                 }
@@ -106,18 +106,16 @@ impl Worker {
         rx: &mut mpsc::Receiver<InferenceRequest>,
         batch_requests: &mut Vec<InferenceRequest>,
         max_inference_batch_size: usize,
-    ) {
-        // Calculate current accumulated states
-        let mut current_states_count: usize = batch_requests.iter().map(|r| r.states.len()).sum();
-
+    ) -> usize {
         // 1. First, wait for the initial request (blocking) IF empty
+        let mut current_states_count: usize = 0;
         if batch_requests.is_empty() {
             match rx.recv().await {
                 Some(req) => {
                     current_states_count += req.states.len();
                     batch_requests.push(req);
                 }
-                None => return, // All senders have been dropped
+                None => return current_states_count, // All senders have been dropped
             }
         }
 
@@ -141,38 +139,37 @@ impl Worker {
                     current_states_count += req.states.len();
                     batch_requests.push(req);
                 }
-                Ok(None) => return, // Channel disconnected
-                Err(_) => break,    // Timeout
+                Ok(None) => return current_states_count, // Channel disconnected
+                Err(_) => break,                         // Timeout
             }
         }
+
+        current_states_count
     }
 
     /// Processes a batch of inference requests by running inference and distributing results.
     ///
     /// Flattens states from all `batch_requests`, calls the Python `callback` for inference,
     /// then distributes results back to each request's response channel.
-    async fn process_batch(batch_requests: &mut Vec<InferenceRequest>, callback: &Py<PyAny>) {
+    async fn process_batch(
+        batch_requests: &mut Vec<InferenceRequest>,
+        states_count: usize,
+        callback: &Py<PyAny>,
+    ) {
         // Flatten all states from all requests
-        let mut all_states = Vec::new();
-        let mut request_sizes = Vec::with_capacity(batch_requests.len());
-
-        for req in batch_requests.iter() {
-            request_sizes.push(req.states.len());
-            all_states.extend_from_slice(&req.states);
-        }
+        let all_states = batch_requests.iter().flat_map(|req| req.states.iter());
 
         // Run inference on the combined batch
-        let all_results = Self::run_inference(&all_states, callback);
+        let all_results = Self::run_inference(all_states, states_count, callback);
 
         // Distribute results back to requests
         let mut start_idx = 0;
-        for (req, size) in batch_requests.drain(..).zip(request_sizes) {
-            let end_idx = start_idx + size;
-            let req_results = all_results[start_idx..end_idx].to_vec();
+        for req in batch_requests.drain(..) {
+            let req_results = all_results[start_idx..start_idx + req.states.len()].to_vec();
             if req.response_tx.send(req_results).is_err() {
                 eprintln!("⚠️ Warning: Client dropped the response channel.");
             }
-            start_idx = end_idx;
+            start_idx += req.states.len();
         }
     }
 
@@ -180,14 +177,18 @@ impl Worker {
     ///
     /// Converts the `states` into a 4-channel input tensor, invokes the Python `callback`,
     /// and parses the results into [`PolicyEvaluation`] objects.
-    fn run_inference(states: &[State], callback: &Py<PyAny>) -> Vec<PolicyEvaluation> {
+    fn run_inference<'a>(
+        states: impl Iterator<Item = &'a State>,
+        states_count: usize,
+        callback: &Py<PyAny>,
+    ) -> Vec<PolicyEvaluation> {
         Python::attach(|py| {
-            let batch_size = states.len();
+            let batch_size = states_count;
             if batch_size == 0 {
-                return Vec::new();
+                return Vec::with_capacity(0);
             }
 
-            let input_data = Self::build_input_tensor(states);
+            let input_data = Self::build_input_tensor(states, batch_size);
             let input_array = PyArray::from_vec(py, input_data)
                 .reshape((batch_size, 4, 8, 8))
                 .expect("Failed to reshape input array");
@@ -207,8 +208,10 @@ impl Worker {
     /// - Channel 1: Light disk positions
     /// - Channel 2: Current turn (1.0 for Dark, -1.0 for Light)
     /// - Channel 3: Legal move positions
-    fn build_input_tensor(states: &[State]) -> Vec<f32> {
-        let batch_size = states.len();
+    fn build_input_tensor<'a>(
+        states: impl Iterator<Item = &'a State>,
+        batch_size: usize,
+    ) -> Vec<f32> {
         let mut input_data = Vec::with_capacity(batch_size * 4 * 8 * 8);
 
         for state in states {
@@ -252,7 +255,7 @@ impl Worker {
 
             // Channel 3: Legal moves
             let mut legal_map = [0.0; 64];
-            for &action in &legal_actions {
+            for action in legal_actions {
                 if action < 64 {
                     legal_map[action] = 1.0;
                 }

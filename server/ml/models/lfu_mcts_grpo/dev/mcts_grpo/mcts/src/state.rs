@@ -28,9 +28,9 @@ impl State {
     }
 
     /// Returns a list of legal actions.
-    pub fn legal_actions(&self) -> Vec<usize> {
+    pub fn legal_actions(&self) -> impl Iterator<Item = usize> + use<> {
         let puttable = get_puttable_positions(&self.board, self.turn);
-        puttable.to_vec().iter().map(|p| usize::from(*p)).collect()
+        puttable.into_iter().map(usize::from)
     }
 
     /// Applies an action and returns the new state.
@@ -57,8 +57,8 @@ impl State {
 
     /// Checks if the state is terminal.
     pub fn is_terminal(&self) -> bool {
-        // Controller::is_game_over is private, so use legal_actions instead
-        self.legal_actions().is_empty()
+        let puttable = get_puttable_positions(&self.board, self.turn);
+        puttable.is_empty()
     }
 }
 
