@@ -84,6 +84,9 @@ class ReversiEnvironment:
         Returns:
             Next game state with shape (4, 8, 8) after applying the action.
         """
+        # Ensure state is of the correct int8 dtype for the Rust extension.
+        if state.dtype != np.int8:
+            state = state.astype(np.int8)
         return _ReversiEnvironment.get_next_state(state, action)
 
     def step_batch(
