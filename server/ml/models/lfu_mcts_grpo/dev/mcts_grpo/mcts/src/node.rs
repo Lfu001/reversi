@@ -47,6 +47,11 @@ impl Node {
         self.parent = parent;
     }
 
+    /// Returns the parent of this node.
+    pub fn parent(&self) -> Option<Weak<RefCell<Node>>> {
+        self.parent.clone()
+    }
+
     /// Returns the children of this node.
     pub fn children(&self) -> &Vec<Rc<RefCell<Node>>> {
         &self.children
@@ -181,10 +186,6 @@ mod tests {
     }
 
     impl Node {
-        /// Returns the parent of this node.
-        pub fn parent(&self) -> &Option<Weak<RefCell<Node>>> {
-            &self.parent
-        }
         /// Sets the visit count to the specified `count` value.
         pub fn set_visit_count(&mut self, count: u32) {
             self.visit_count = count;

@@ -5,9 +5,11 @@ use crate::{
     state::State,
     transposition_table::TranspositionTable,
 };
+use common::DiskColor;
 use std::{cell::RefCell, rc::Rc};
 
 /// Internal result type for batch PUCT traversal.
+#[derive(Debug)]
 enum SearchResult {
     /// Transposition table miss - state needs neural network evaluation.
     Miss(State),
@@ -81,16 +83,9 @@ impl Tree {
                     SearchResult::Hit(_) => {
                         // Hit means we found a node in TT (or terminal).
                         // We updated the tree stats in batch_puct.
-                        // We continue to try to fill the batch.
-                        // However, if the tree is small, we might hit the same nodes repeatedly?
-                        // If we hit a node in TT, we expanded it.
-                        // Next time we might go deeper.
-                        // So it's fine.
                     }
                     SearchResult::None => {
                         // No more nodes to explore (e.g. game over or fully explored)
-                        // If batch is empty, we stop.
-                        // If batch has items, we process them.
                         break;
                     }
                 }
@@ -110,8 +105,6 @@ impl Tree {
 
             // Re-traverse to update stats (fix virtual loss)
             // We run batch_puct (get_batch=false) for each item we added.
-            // Since we added batch.len() items, we should run it that many times to ensure we cover them.
-            // Note: batch_puct might find different paths if the tree changed, but usually it finds the same.
             for _ in 0..batch.len() {
                 self.batch_puct(
                     &self.root,
@@ -190,22 +183,35 @@ impl Tree {
                     return SearchResult::None;
                 }
 
-                let value = eval.value().value(); // Assuming Value(f64) is accessible. Value field is private?
-                // Need to make Value field public or add getter in PolicyEvaluation.
-                // Assuming I fixed PolicyEvaluation or will fix it.
+                let value = eval.value().value();
+
+                // Determine if we should negate the value (Turn Alternation)
+                // We need to re-borrow the node because the mutable borrow `node_ref` was dropped above.
+                let node_ref = node.borrow();
+
+                let parent_turn = get_parent_turn(&node_ref);
+
+                let current_turn = node_ref.state().turn();
+
+                // Drop borrow
+                drop(node_ref);
+
+                let value_for_parent = if parent_turn != current_turn {
+                    -value
+                } else {
+                    value
+                };
 
                 // Update stats
                 if get_batch {
                     // Standard update
-                    self.update_stats(node, value, false);
+                    self.update_stats(node, value_for_parent, false);
                 } else {
                     // PutBatch: Fixing virtual loss
-                    // We assume we are revisiting a node that had virtual loss applied.
-                    // So we update with real value replacing virtual.
-                    node.borrow_mut().update_with_real_value(value);
+                    node.borrow_mut().update_with_real_value(value_for_parent);
                 }
 
-                return SearchResult::Hit(value);
+                return SearchResult::Hit(value_for_parent);
             } else {
                 // Miss
                 if get_batch {
@@ -217,10 +223,6 @@ impl Tree {
                     self.update_stats(node, 0.0, true);
                     return SearchResult::Miss(state);
                 } else {
-                    // PutBatch mode but missed TT.
-                    // This means we strayed into a node not in TT.
-                    // We can't evaluate it.
-                    // Just return None.
                     return SearchResult::None;
                 }
             }
@@ -242,27 +244,32 @@ impl Tree {
                 }
                 SearchResult::Hit(val) => {
                     if get_batch {
-                        // Standard update
                         let mut n = node.borrow_mut();
                         n.increment_visit_count();
                         n.add_evaluation(val);
                     } else {
-                        // PutBatch: Fixing virtual loss
+                        // PutBatch
                         node.borrow_mut().update_with_real_value(val);
                     }
+
+                    // Prepare return value for Grandparent
+                    let node_ref = node.borrow();
+                    let current_turn = node_ref.state().turn();
+
+                    let parent_turn = get_parent_turn(&node_ref);
+
+                    let val_for_gp = if parent_turn != current_turn {
+                        -val
+                    } else {
+                        val
+                    };
+
+                    return SearchResult::Hit(val_for_gp);
                 }
                 SearchResult::None => {}
             }
             res
         } else {
-            // No children (Terminal?)
-            // If leaf check failed (it wasn't leaf), but no children?
-            // This happens if is_expanded=true but children list is empty (Game Over).
-            // In that case, we should return the value of the state.
-            // But we don't have it unless we check TT or calculate it.
-            // If it's terminal, TT should have it?
-            // Or we calculate it on the fly?
-            // For now return None.
             SearchResult::None
         }
     }
@@ -278,46 +285,200 @@ impl Tree {
     }
 }
 
+fn get_parent_turn(node: &Node) -> DiskColor {
+    node.parent()
+        .and_then(|pw| pw.upgrade())
+        .and_then(|prc| prc.try_borrow().ok().map(|p| p.state().turn()))
+        .unwrap_or_else(|| node.state().turn())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::policy::{Policy, PolicyEvaluation, Value};
+    use crate::policy::{PolicyEvaluation, Value};
     use common::{Bitboard, DiskColor};
     use rand::SeedableRng;
     use rand::rngs::StdRng;
 
-    struct MockModel;
-    impl ModelEvaluator for MockModel {
-        fn infer(&self, states: &[State]) -> Vec<PolicyEvaluation> {
-            states
-                .iter()
-                .map(|_| PolicyEvaluation::new(Policy([1.0 / 64.0; 64]), Value(0.5)))
-                .collect()
+    #[cfg(test)]
+    mod tests_utils {
+        use super::*;
+        use crate::policy::{Policy, PolicyEvaluation, Value};
+        use crate::state::State;
+        use common::Bitboard;
+
+        pub fn create_default_config() -> PuctConfig {
+            PuctConfig {
+                c_puct: 1.0,
+                dirichlet_epsilon: 0.0,
+                dirichlet_alpha: 1.0,
+            }
+        }
+
+        pub fn create_mock_policy() -> Policy {
+            Policy([1.0 / 64.0; 64])
+        }
+
+        /// Helper to create a bitboard with specific positions occupied.
+        /// indices are 0-63.
+        pub fn bitboard_with_stones(dark: &[usize], light: &[usize]) -> Bitboard {
+            let mut d = 0u64;
+            let mut l = 0u64;
+            for &idx in dark {
+                d |= 1 << idx;
+            }
+            for &idx in light {
+                l |= 1 << idx;
+            }
+            Bitboard::new(d, l)
+        }
+
+        pub struct MockValModel {
+            pub val: f64,
+        }
+
+        impl ModelEvaluator for MockValModel {
+            fn infer(&self, states: &[State]) -> Vec<PolicyEvaluation> {
+                states
+                    .iter()
+                    .map(|_| PolicyEvaluation::new(create_mock_policy(), Value(self.val)))
+                    .collect()
+            }
         }
     }
 
     #[test]
     fn test_search() {
+        use tests_utils::*;
+        // (1) Setup
         let state = State::new(Bitboard::default(), DiskColor::Dark);
         let root = Node::new(state, None);
-        let tree = Tree::new(root);
+        let tree = Tree::new(root.clone());
         let tt = TranspositionTable::new();
-        let model = MockModel;
-        let config = PuctConfig {
-            c_puct: 1.0,
-            dirichlet_epsilon: 0.0,
-            dirichlet_alpha: 1.0,
-        };
-
+        let model = MockValModel { val: 0.5 };
+        let config = create_default_config();
         let mut rng = StdRng::seed_from_u64(42);
-        // Run search with 2 batches of size 2 to ensure children are visited
-        let results = tree.search(2, 2, &model, &tt, config, &mut rng);
 
-        // Should have some visits
-        let total_visits: u32 = results.visit_counts.iter().sum();
-        assert!(total_visits > 0);
+        // (2) Execution
+        tree.search(2, 2, &model, &tt, config, &mut rng);
 
-        // Root should have visits
-        assert!(tree.root.borrow().visit_count() > 0);
+        // (3) Assertion
+        assert!(root.borrow().visit_count() > 0);
+    }
+
+    #[test]
+    fn test_value_propagation_inversion() {
+        use tests_utils::*;
+        // (1) Setup: Parent (Dark) -> Child (Light). Standard turn alternation.
+        let parent_state = State::new(Bitboard::default(), DiskColor::Dark);
+        let parent = Node::new(parent_state, None);
+
+        let child_state = State::new(Bitboard::default(), DiskColor::Light);
+        let child = Node::new(child_state, Some(0));
+        Node::add_child(&parent, child);
+
+        let tree = Tree::new(parent.clone());
+        let tt = TranspositionTable::new();
+        tt.add(
+            parent_state,
+            PolicyEvaluation::new(create_mock_policy(), Value(0.0)),
+        );
+
+        let model = MockValModel { val: 0.8 }; // Child (Light) evaluated at 0.8
+        let config = create_default_config();
+        let mut rng = StdRng::seed_from_u64(42);
+
+        // (2) Execution
+        tree.search(1, 1, &model, &tt, config, &mut rng);
+
+        // (3) Assertion: Parent (Dark) should see -0.8
+        let val = parent.borrow().average_value();
+        assert!((val - (-0.8)).abs() < 1e-6, "Expected -0.8, got {}", val);
+    }
+
+    #[test]
+    fn test_turn_skip_propagation() {
+        use tests_utils::*;
+        // (1) Setup: Parent (Dark) -> Child (Dark). Turn skip case.
+        let parent_state = State::new(Bitboard::default(), DiskColor::Dark);
+        let parent = Node::new(parent_state, None);
+
+        // Use distinct bitboard for child to trigger inference
+        let child_bb = bitboard_with_stones(&[0], &[1]); // H8 Dark, H7 White
+        let child_state = State::new(child_bb, DiskColor::Dark);
+        let child = Node::new(child_state, Some(0));
+        Node::add_child(&parent, child);
+
+        let tree = Tree::new(parent.clone());
+        let tt = TranspositionTable::new();
+        tt.add(
+            parent_state,
+            PolicyEvaluation::new(create_mock_policy(), Value(0.0)),
+        );
+
+        let model = MockValModel { val: 0.8 }; // Child (Dark) evaluated at 0.8
+        let config = create_default_config();
+        let mut rng = StdRng::seed_from_u64(42);
+
+        // (2) Execution
+        tree.search(1, 1, &model, &tt, config, &mut rng);
+
+        // (3) Assertion: Parent (Dark) should see 0.8 (no inversion)
+        let val = parent.borrow().average_value();
+        assert!((val - 0.8).abs() < 1e-6, "Expected 0.8, got {}", val);
+    }
+
+    #[test]
+    fn test_three_generation_propagation() {
+        use tests_utils::*;
+        // (1) Setup: Grandparent (Dark) -> Parent (Light) -> Child (Dark)
+        // Turn: Dark -> Light -> Dark (Alternating)
+        let gp_state = State::new(Bitboard::default(), DiskColor::Dark);
+        let gp = Node::new(gp_state, None);
+
+        let p_state = State::new(Bitboard::default(), DiskColor::Light);
+        let p = Node::new(p_state, Some(0));
+        Node::add_child(&gp, p.clone());
+
+        let c_bb = bitboard_with_stones(&[0], &[1]);
+        let c_state = State::new(c_bb, DiskColor::Dark);
+        let c = Node::new(c_state, Some(1));
+        Node::add_child(&p, c);
+
+        let tree = Tree::new(gp.clone());
+        let tt = TranspositionTable::new();
+        // Root must be in TT for selection
+        tt.add(
+            gp_state,
+            PolicyEvaluation::new(create_mock_policy(), Value(0.0)),
+        );
+        // Parent must be in TT for selection to its child
+        tt.add(
+            p_state,
+            PolicyEvaluation::new(create_mock_policy(), Value(0.0)),
+        );
+
+        let model = MockValModel { val: 0.8 }; // Child (Dark) evaluated at 0.8
+        let config = create_default_config();
+        let mut rng = StdRng::seed_from_u64(42);
+
+        // (2) Execution: Need at least 1 search directed to the leaf
+        tree.search(1, 1, &model, &tt, config, &mut rng);
+
+        // (3) Assertion
+        let gp_val = gp.borrow().average_value();
+        let p_val = p.borrow().average_value();
+
+        // Child (Dark) 0.8 -> Parent (Light) -0.8 -> Grandparent (Dark) 0.8
+        assert!(
+            (p_val - (-0.8)).abs() < 1e-6,
+            "Parent expected -0.8, got {}",
+            p_val
+        );
+        assert!(
+            (gp_val - 0.8).abs() < 1e-6,
+            "Grandparent expected 0.8, got {}",
+            gp_val
+        );
     }
 }
