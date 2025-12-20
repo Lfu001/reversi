@@ -58,6 +58,7 @@ impl Tree {
         transposition_table: &TranspositionTable,
         puct_config: PuctConfig,
         rng: &mut impl rand::Rng,
+        pbar: Option<indicatif::ProgressBar>,
     ) -> SearchResults {
         let strategy = PuctStrategy::new(puct_config);
         let mut child_selection = ChildSelection::new(puct_config.dirichlet_alpha);
@@ -115,6 +116,10 @@ impl Tree {
                     true,
                     rng,
                 );
+            }
+
+            if let Some(pb) = &pbar {
+                pb.inc(1);
             }
         }
 
@@ -360,7 +365,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         // (2) Execution
-        tree.search(2, 2, &model, &tt, config, &mut rng);
+        tree.search(2, 2, &model, &tt, config, &mut rng, None);
 
         // (3) Assertion
         assert!(root.borrow().visit_count() > 0);
@@ -389,7 +394,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         // (2) Execution
-        tree.search(1, 1, &model, &tt, config, &mut rng);
+        tree.search(1, 1, &model, &tt, config, &mut rng, None);
 
         // (3) Assertion: Parent (Dark) should see -0.8
         let val = parent.borrow().average_value();
@@ -421,7 +426,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         // (2) Execution
-        tree.search(1, 1, &model, &tt, config, &mut rng);
+        tree.search(1, 1, &model, &tt, config, &mut rng, None);
 
         // (3) Assertion: Parent (Dark) should see 0.8 (no inversion)
         let val = parent.borrow().average_value();
@@ -463,7 +468,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(42);
 
         // (2) Execution: Need at least 1 search directed to the leaf
-        tree.search(1, 1, &model, &tt, config, &mut rng);
+        tree.search(1, 1, &model, &tt, config, &mut rng, None);
 
         // (3) Assertion
         let gp_val = gp.borrow().average_value();

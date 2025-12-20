@@ -10,7 +10,7 @@ from mcts_grpo.training import (
     TrainingExecutor,
 )
 from reversi import ReversiEnvironment
-from tqdm.rich import tqdm
+from tqdm import tqdm
 
 
 def train():
@@ -28,7 +28,9 @@ def train():
         // settings.training.training_steps_per_iteration
     )
 
-    for iteration in tqdm(range(num_iterations), desc="Iteration"):
+    for iteration in tqdm(
+        range(num_iterations), desc="Iteration", disable=not accelerator.is_main_process
+    ):
         _run_iteration(
             iteration,
             settings,

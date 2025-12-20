@@ -9,10 +9,12 @@ use crate::{
     tree::{SearchResults, Tree},
 };
 use common::DiskColor;
+use indicatif::ProgressBar;
 use numpy::{IntoPyArray, PyArray2, PyReadonlyArray4, ndarray::Array2};
 use pyo3::prelude::*;
 use rand::{RngCore, SeedableRng, rngs::StdRng};
 use rayon::prelude::*;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::{mpsc, oneshot};
 
 struct PythonModel {
@@ -42,6 +44,7 @@ pub struct Mcts {
     states_per_inference: usize,
     runtime: tokio::runtime::Runtime,
     thread_pool: rayon::ThreadPool,
+    simulation_count: AtomicUsize,
 }
 
 #[pymethods]
@@ -73,6 +76,7 @@ impl Mcts {
             states_per_inference,
             runtime,
             thread_pool,
+            simulation_count: AtomicUsize::new(0),
         }
     }
 
@@ -197,6 +201,19 @@ impl Mcts {
         worker.start();
 
         let tt = &self.transposition_table;
+        let num_inferences = num_simulations.div_ceil(self.states_per_inference);
+        let current_sim = self.simulation_count.fetch_add(1, Ordering::SeqCst);
+
+        // Aggregate progress bar for all trees in the batch
+        let pbar = ProgressBar::new((rust_states.len() * num_inferences) as u64);
+        pbar.set_draw_target(indicatif::ProgressDrawTarget::stderr_with_hz(5));
+        pbar.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template("[{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                .expect("Failed to create progress style")
+                .progress_chars("#>-"),
+        );
+        pbar.set_message(format!("MCTS Batch Search (Step {})", current_sim));
 
         let results = py.detach(|| {
             self.thread_pool.install(|| {
@@ -204,6 +221,7 @@ impl Mcts {
                     .par_iter()
                     .enumerate()
                     .map(|(batch_idx, state)| {
+                        let pbar = pbar.clone();
                         // Create RNG for this tree
                         // If seed is provided, use seed + batch_idx for diversity
                         // Otherwise, use rand::rng() (ThreadRng) directly
@@ -222,8 +240,6 @@ impl Mcts {
                         let root = Node::new(*state, None);
                         let tree = Tree::new(root);
 
-                        let num_inferences = num_simulations.div_ceil(self.states_per_inference);
-
                         tree.search(
                             num_inferences,
                             self.states_per_inference,
@@ -231,11 +247,14 @@ impl Mcts {
                             tt,
                             puct_config,
                             &mut rng,
+                            Some(pbar),
                         )
                     })
                     .collect()
             })
         });
+
+        pbar.finish_with_message(format!("MCTS Batch Search (Step {}) Finished", current_sim));
 
         // Drop the sender to signal the worker that no more requests will be sent.
         // This allows the worker's loop to exit gracefully when checking rx.is_closed().

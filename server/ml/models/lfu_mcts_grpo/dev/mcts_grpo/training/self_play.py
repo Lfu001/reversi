@@ -7,7 +7,6 @@ import numpy as np
 import torch
 from mcts import MCTS
 from reversi import ReversiEnvironment
-from tqdm.rich import tqdm
 
 from ..replay_buffer import ReplayBuffer
 from ..settings import Settings
@@ -41,10 +40,6 @@ class SelfPlayExecutor:
         model.eval()
 
         games_completed = 0
-        pbar = tqdm(
-            total=self.settings.training.games_per_iteration,
-            desc=f"[Iter {iteration + 1}] Self-Play",
-        )
 
         current_states = self.env.reset()
         while games_completed < self.settings.training.games_per_iteration:
@@ -69,10 +64,7 @@ class SelfPlayExecutor:
                     games_completed += 1
                     self._process_game_end(i, next_states[i])
                     current_done_count += 1
-            pbar.update(current_done_count)
             current_states = self.env.reset_indices(np.where(dones)[0])
-
-        pbar.close()
 
     def _record_step(
         self, game_idx: int, state: np.ndarray, pi: np.ndarray, q_values: np.ndarray

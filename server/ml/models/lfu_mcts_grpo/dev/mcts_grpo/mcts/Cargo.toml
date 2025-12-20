@@ -10,6 +10,7 @@ crate-type = ["cdylib"]
 [dependencies]
 common = { version = "0.1.0", path = "../../../../../../common" }
 dashmap = { workspace = true }
+indicatif = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true }
 pyo3 = { workspace = true, features = ["extension-module", "abi3-py311"] }
