@@ -1,12 +1,12 @@
 use crate::{
     inference::ModelEvaluator,
     inference::worker::{InferenceRequest, Worker},
-    node::Node,
     policy::PolicyEvaluation,
+    search::{SearchResults, get_move_second},
     selection::PuctConfig,
     state::State,
     transposition_table::TranspositionTable,
-    tree::{SearchResults, Tree},
+    tree::Tree,
 };
 use common::DiskColor;
 use indicatif::ProgressBar;
@@ -62,10 +62,6 @@ impl Mcts {
             .build()
             .expect("Failed to create Tokio runtime");
 
-        // Create a dedicated thread pool for MCTS simulations.
-        // We need enough threads to ensure that we can fill an inference batch
-        // without deadlocking (waiting for other threads to produce more requests).
-        // 512 is the typical number of games per iteration.
         let thread_pool = rayon::ThreadPoolBuilder::new()
             .build()
             .expect("Failed to create Rayon thread pool");
@@ -135,20 +131,10 @@ impl Mcts {
 
 impl Mcts {
     /// Converts a Python numpy array of states to a vector of Rust [`State`] objects.
-    ///
-    /// # Arguments
-    ///
-    /// * `states_array` - A 4D numpy array view of shape (batch_size, 2, 8, 8).
-    ///
-    /// # Returns
-    ///
-    /// A vector of [`State`] objects.
     fn convert_to_rust_states(states_array: numpy::ndarray::ArrayView4<f32>) -> Vec<State> {
         let batch_size = states_array.shape()[0];
         let mut rust_states = Vec::with_capacity(batch_size);
         for i in 0..batch_size {
-            // Check turn from Channel 2 (index 2)
-            // state[i, 2, 0, 0]
             let turn_val = states_array[[i, 2, 0, 0]];
             let turn = if turn_val > 0.0 {
                 DiskColor::Dark
@@ -182,8 +168,6 @@ impl Mcts {
     }
 
     /// Runs MCTS simulations for a batch of states in parallel.
-    ///
-    /// Returns a vector of SearchResults, one for each input state.
     fn run_mcts_batch(
         &self,
         py: Python<'_>,
@@ -193,8 +177,6 @@ impl Mcts {
         puct_config: PuctConfig,
         seed: Option<u64>,
     ) -> Vec<SearchResults> {
-        // Keep the runtime alive by entering its context.
-        // This ensures tokio::spawn tasks run correctly even during py.detach.
         let _guard = self.runtime.enter();
 
         let (mut worker, sender) = Worker::new(self.max_inference_batch_size, callback);
@@ -204,7 +186,6 @@ impl Mcts {
         let num_inferences = num_simulations.div_ceil(self.states_per_inference);
         let current_sim = self.simulation_count.fetch_add(1, Ordering::SeqCst);
 
-        // Aggregate progress bar for all trees in the batch
         let pbar = ProgressBar::new((rust_states.len() * num_inferences) as u64);
         pbar.set_draw_target(indicatif::ProgressDrawTarget::stderr_with_hz(5));
         pbar.set_style(
@@ -222,9 +203,6 @@ impl Mcts {
                     .enumerate()
                     .map(|(batch_idx, state)| {
                         let pbar = pbar.clone();
-                        // Create RNG for this tree
-                        // If seed is provided, use seed + batch_idx for diversity
-                        // Otherwise, use rand::rng() (ThreadRng) directly
                         let mut rng: Box<dyn RngCore> = if let Some(base_seed) = seed {
                             Box::new(StdRng::seed_from_u64(
                                 base_seed.wrapping_add(batch_idx as u64),
@@ -237,10 +215,10 @@ impl Mcts {
                             sender: sender.clone(),
                         };
 
-                        let root = Node::new(*state, None);
-                        let tree = Tree::new(root);
+                        let mut tree = Tree::new(*state);
 
-                        tree.search(
+                        get_move_second(
+                            &mut tree,
                             num_inferences,
                             self.states_per_inference,
                             &py_model,
@@ -256,11 +234,8 @@ impl Mcts {
 
         pbar.finish_with_message(format!("MCTS Batch Search (Step {}) Finished", current_sim));
 
-        // Drop the sender to signal the worker that no more requests will be sent.
-        // This allows the worker's loop to exit gracefully when checking rx.is_closed().
         drop(sender);
 
-        // Wait for the worker to finish processing remaining requests and exit cleanly.
         self.runtime.block_on(async {
             let _ = worker.stop().await;
         });
@@ -269,35 +244,27 @@ impl Mcts {
     }
 
     /// Processes the MCTS results into numpy arrays.
-    ///
-    /// Converts search results into policy distributions (pi) and Q-values as numpy arrays.
     fn process_results(
         py: Python<'_>,
         results: Vec<SearchResults>,
         batch_size: usize,
     ) -> PyResult<(Py<PyArray2<f64>>, Py<PyArray2<f64>>)> {
-        // Convert results into numpy arrays and normalize visit counts to pi
-        // pi: [batch_size, 64], q_values: [batch_size, 64]
         let mut pi = vec![0.0f64; batch_size * 64];
         let mut q_values = vec![0.0f64; batch_size * 64];
 
         for (i, result) in results.iter().enumerate() {
-            // Calculate total visits for normalization
             let total_visits: u32 = result.visit_counts.iter().sum();
 
             for j in 0..64 {
-                // Normalize visit counts to get policy distribution
                 if total_visits > 0 {
                     pi[i * 64 + j] = result.visit_counts[j] as f64 / total_visits as f64;
                 } else {
-                    // If no visits, uniform distribution
                     pi[i * 64 + j] = 1.0 / 64.0;
                 }
                 q_values[i * 64 + j] = result.q_values[j];
             }
         }
 
-        // Convert to numpy arrays
         let pi_array = Array2::from_shape_vec((batch_size, 64), pi)
             .expect("Failed to create pi array")
             .into_pyarray(py)

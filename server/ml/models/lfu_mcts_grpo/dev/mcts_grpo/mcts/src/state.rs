@@ -1,6 +1,7 @@
 use common::{Action, Bitboard, Column, DiskColor, Position, PutConfig, Row, Table};
 use num_traits::FromPrimitive;
 use reversi_core::action::get_puttable_positions;
+use std::cmp::Ordering;
 
 /// State of the game.
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
@@ -57,8 +58,30 @@ impl State {
 
     /// Checks if the state is terminal.
     pub fn is_terminal(&self) -> bool {
-        let puttable = get_puttable_positions(&self.board, self.turn);
-        puttable.is_empty()
+        get_puttable_positions(&self.board, DiskColor::Dark).is_empty()
+            && get_puttable_positions(&self.board, DiskColor::Light).is_empty()
+    }
+
+    /// Returns the terminal value for the current player.
+    pub fn terminal_value(&self) -> Result<f64, String> {
+        if !self.is_terminal() {
+            return Err(String::from("State is not terminal"));
+        }
+
+        let dark_count = self.board.dark_plane().count_ones();
+        let light_count = self.board.light_plane().count_ones();
+
+        let winner_value = match dark_count.cmp(&light_count) {
+            Ordering::Greater => 1.0, // Dark wins
+            Ordering::Less => -1.0,   // Light wins
+            Ordering::Equal => 0.0,
+        };
+
+        if self.turn == DiskColor::Dark {
+            Ok(winner_value)
+        } else {
+            Ok(-winner_value)
+        }
     }
 }
 

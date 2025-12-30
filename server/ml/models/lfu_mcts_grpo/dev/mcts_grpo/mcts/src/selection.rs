@@ -1,4 +1,8 @@
-use crate::{dirichlet::Dirichlet, node::Node, transposition_table::TranspositionTable};
+//! Node selection strategies for MCTS.
+
+use crate::arena::{Arena, NodeId};
+use crate::dirichlet::Dirichlet;
+use crate::transposition_table::TranspositionTable;
 
 /// Configuration for PUCT (Polynomial Upper Confidence Trees) calculation.
 #[derive(Debug, Clone, Copy)]
@@ -9,11 +13,6 @@ pub struct PuctConfig {
     pub dirichlet_epsilon: f64,
     /// Alpha parameter for Dirichlet noise distribution.
     pub dirichlet_alpha: f64,
-}
-
-/// Trait for node selection strategies in MCTS.
-pub trait SelectionStrategy {
-    fn calculate_score(&self, node: &Node, parent_visit_count: u32, prior_probability: f64) -> f64;
 }
 
 /// PUCT (Polynomial Upper Confidence Trees) selection strategy.
@@ -27,30 +26,31 @@ impl PuctStrategy {
         Self { config }
     }
 
-    /// Returns the config
+    /// Returns the config.
     pub fn config(&self) -> &PuctConfig {
         &self.config
     }
-}
 
-impl SelectionStrategy for PuctStrategy {
-    /// Calculates the PUCT score for a node.
+    /// Calculates the PUCT score for a child node.
     ///
-    /// Evaluates the given `node` using its Q-value and exploration term, considering
-    /// the `parent_visit_count` and action's `prior_probability` from the neural network policy.
     /// Formula: PUCT(s,a) = Q(s,a) + c_puct × P(s,a) × √(N(s)) / (1 + N(s,a))
-    fn calculate_score(&self, node: &Node, parent_visit_count: u32, prior_probability: f64) -> f64 {
-        let q_value = node.average_value();
+    pub fn calculate_score(
+        &self,
+        q_value: f64,
+        visit_count: u32,
+        parent_visit_count: u32,
+        prior_probability: f64,
+    ) -> f64 {
         let exploration_term =
             self.config.c_puct * prior_probability * (parent_visit_count as f64).sqrt()
-                / (1.0 + node.visit_count() as f64);
+                / (1.0 + visit_count as f64);
 
         q_value + exploration_term
     }
 }
 
+/// Child selection with Dirichlet noise support.
 pub struct ChildSelection {
-    /// Dirichlet distribution for noise generation.
     dirichlet_distribution: Dirichlet,
 }
 
@@ -62,39 +62,43 @@ impl ChildSelection {
         }
     }
 
-    /// Selects the best child node from a list of candidates using PUCT strategy.
+    /// Selects the best child node using PUCT strategy.
     ///
-    /// Evaluates all child nodes of `parent_node` using the PUCT selection `strategy`,
-    /// retrieves policy priors from `transposition_table` for the parent's state,
-    /// optionally adds Dirichlet noise to legal actions if `is_root` is true,
-    /// and uses `rng` for noise generation.
-    /// Returns the index of the child with the highest PUCT score.
+    /// Returns the `NodeId` of the best child, or `None` if no children.
     pub fn select_best_child(
         &mut self,
-        parent_node: &Node,
+        arena: &Arena,
+        parent_id: NodeId,
         strategy: &PuctStrategy,
-        transposition_table: &TranspositionTable,
+        tt: &TranspositionTable,
         is_root: bool,
         rng: &mut impl rand::Rng,
-    ) -> Option<usize> {
-        let policy_evaluation = transposition_table.get(parent_node.state())?;
-        let children = parent_node.children();
-        let parent_visit_count = parent_node.visit_count();
-
+    ) -> Option<NodeId> {
+        let parent = arena.get(parent_id);
+        let policy_evaluation = tt.get(parent.state())?;
+        let parent_visit_count = parent.visit_count();
         let dirichlet_epsilon = strategy.config().dirichlet_epsilon;
 
-        let noise = if is_root && !children.is_empty() {
+        // Collect children
+        let children: Vec<NodeId> = arena.children(parent_id).collect();
+        if children.is_empty() {
+            return None;
+        }
+
+        // Generate noise if at root
+        let noise = if is_root {
             self.dirichlet_distribution.sample(rng, children.len())
         } else {
             None
         };
 
+        // Calculate PUCT scores for each child
         children
             .iter()
             .enumerate()
-            .map(|(idx, child)| {
-                let child_ref = child.borrow();
-                let mut prior_probability = if let Some(action) = child_ref.action() {
+            .map(|(idx, &child_id)| {
+                let child = arena.get(child_id);
+                let mut prior_probability = if let Some(action) = child.action() {
                     policy_evaluation.policy().0[action]
                 } else {
                     0.0
@@ -105,59 +109,51 @@ impl ChildSelection {
                         + dirichlet_epsilon * noise_vec[idx];
                 }
 
-                let score =
-                    strategy.calculate_score(&child_ref, parent_visit_count, prior_probability);
-                (idx, score)
+                let q_value = child.q_value();
+                let score = strategy.calculate_score(
+                    q_value,
+                    child.visit_count(),
+                    parent_visit_count,
+                    prior_probability,
+                );
+                (child_id, score)
             })
             .max_by(|(_, score_a), (_, score_b)| {
                 score_a
                     .partial_cmp(score_b)
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
-            .map(|(idx, _)| idx)
+            .map(|(child_id, _)| child_id)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        policy::{Policy, PolicyEvaluation, Value},
-        state::State,
-    };
+    use crate::node::Node;
+    use crate::policy::{Policy, PolicyEvaluation, Value};
+    use crate::state::State;
     use common::{Bitboard, DiskColor};
-    use rand::{SeedableRng, rngs::StdRng};
-    use std::{cell::RefCell, rc::Rc};
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
 
     fn default_state() -> State {
         State::new(Bitboard::default(), DiskColor::Dark)
     }
 
-    fn create_node(visit_count: u32, total_value: f64, action: Option<usize>) -> Rc<RefCell<Node>> {
-        let node = Node::new(default_state(), action);
-        node.borrow_mut().set_visit_count(visit_count);
-        let sum = total_value * visit_count as f64;
-        let current_sum = node.borrow().sum_evaluation();
-        node.borrow_mut().add_evaluation(sum - current_sum); // Set to target value
-        node
-    }
-
     #[test]
-    fn test_puct_basic() {
+    fn test_puct_score() {
         let config = PuctConfig {
             c_puct: 1.0,
             dirichlet_epsilon: 0.0,
             dirichlet_alpha: 1.0,
         };
         let strategy = PuctStrategy::new(config);
-        let node = create_node(10, 0.5, Some(0));
-        let prior_probability = 0.3;
 
-        let score = strategy.calculate_score(&node.borrow(), 100, prior_probability);
-
-        // Q(s,a) = 0.5
+        // Q(s,a) = 0.5, N(s,a) = 10, N(s) = 100, P(s,a) = 0.3
         // exploration = 1.0 * 0.3 * √100 / (1 + 10) ≈ 0.2727
         // PUCT ≈ 0.7727
+        let score = strategy.calculate_score(0.5, 10, 100, 0.3);
         assert!((score - 0.7727).abs() < 0.01);
     }
 
@@ -169,7 +165,7 @@ mod tests {
             dirichlet_alpha: 1.0,
         };
         let strategy = PuctStrategy::new(config);
-        let transposition_table = TranspositionTable::new();
+        let tt = TranspositionTable::new();
         let parent_state = default_state();
 
         let mut policy_arr = [0.0; 64];
@@ -177,53 +173,44 @@ mod tests {
         policy_arr[1] = 0.5;
         policy_arr[2] = 0.3;
         let policy = Policy(policy_arr);
-        let value = Value(0.0);
-        transposition_table.add(parent_state, PolicyEvaluation::new(policy, value));
+        tt.add(parent_state, PolicyEvaluation::new(policy, Value(0.0)));
 
-        // Create parent node
-        let parent = Node::new(parent_state, None);
-        parent.borrow_mut().set_visit_count(15);
+        // Build arena
+        let mut arena = Arena::new();
+        let parent_id = arena.allocate(Node::new(parent_state, None));
 
-        // Create and add children to parent
-        let child0 = create_node(10, 0.7, Some(0)); // P=0.2, Q=0.7, N=10
-        let child1 = create_node(5, 0.4, Some(1)); // P=0.5, Q=0.4, N=5
-        let child2 = create_node(0, 0.0, Some(2)); // P=0.3, Q=0.0, N=0
-        Node::add_child(&parent, child0);
-        Node::add_child(&parent, child1);
-        Node::add_child(&parent, child2);
+        // Set parent visit count by modifying node
+        arena.get_mut(parent_id).increment_visit_count();
+        for _ in 0..14 {
+            arena.get_mut(parent_id).increment_visit_count();
+        }
+
+        // Add children
+        let mut child0 = Node::new(default_state(), Some(0));
+        for _ in 0..10 {
+            child0.increment_visit_count();
+            child0.add_evaluation(0.7);
+        }
+        let child0_id = arena.add_child(parent_id, child0);
+
+        let mut child1 = Node::new(default_state(), Some(1));
+        for _ in 0..5 {
+            child1.increment_visit_count();
+            child1.add_evaluation(0.4);
+        }
+        let child1_id = arena.add_child(parent_id, child1);
+
+        let child2 = Node::new(default_state(), Some(2));
+        let child2_id = arena.add_child(parent_id, child2);
 
         let mut rng = StdRng::seed_from_u64(42);
-        let mut selection = ChildSelection::new(strategy.config().dirichlet_alpha);
-        let best = selection.select_best_child(
-            &parent.borrow(),
-            &strategy,
-            &transposition_table,
-            false,
-            &mut rng,
-        );
-
-        // Child 0: 0.7 + 1.0 * 0.2 * sqrt(15) / 11 = 0.7 + 0.07 = 0.77
-        // Child 1: 0.4 + 1.0 * 0.5 * sqrt(15) / 6 = 0.4 + 0.32 = 0.72
-        // Child 2: 0.0 + 1.0 * 0.3 * sqrt(15) / 1 = 1.16
+        let mut selection = ChildSelection::new(config.dirichlet_alpha);
+        let best = selection.select_best_child(&arena, parent_id, &strategy, &tt, false, &mut rng);
 
         // Child 2 should be selected (highest exploration bonus due to 0 visits)
-        assert_eq!(best, Some(2));
-    }
+        assert_eq!(best, Some(child2_id));
 
-    #[test]
-    fn test_node_update() {
-        let node = Node::new(default_state(), None);
-        assert_eq!(node.borrow().average_value(), 0.0);
-
-        // Manually update for test since update method might not exist or be different
-        node.borrow_mut().increment_visit_count();
-        node.borrow_mut().add_evaluation(1.0);
-        assert_eq!(node.borrow().visit_count(), 1);
-        assert_eq!(node.borrow().average_value(), 1.0);
-
-        node.borrow_mut().increment_visit_count();
-        node.borrow_mut().add_evaluation(0.0);
-        assert_eq!(node.borrow().visit_count(), 2);
-        assert_eq!(node.borrow().average_value(), 0.5);
+        // Verify order: since we prepend children, child2 is first
+        let _ = (child0_id, child1_id); // Suppress unused warnings
     }
 }

@@ -1,8 +1,10 @@
+mod arena;
 mod dirichlet;
 mod inference;
 mod node;
 mod policy;
 mod python_bindings;
+mod search;
 mod selection;
 mod state;
 mod transposition_table;
