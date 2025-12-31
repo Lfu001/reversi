@@ -61,13 +61,88 @@ impl From<&Tree> for TreeBatch {
     }
 }
 
-impl TreeBatch {
-    fn arena(&self) -> &Arena {
+/// Common interface for tree structures used in MCTS traversal.
+///
+/// Both `Tree` (main search tree) and `TreeBatch` (batch construction copy)
+/// implement this trait, enabling unified traversal logic in `batch_mcts`.
+///
+/// The `update_statistics` method is implemented differently for each type:
+/// - `Tree`: Algorithm 2 (standard update, ignores Unknown)
+/// - `TreeBatch`: Algorithm 3 (VirtualMean for Unknown states)
+trait TreeLike {
+    fn tree_arena(&self) -> &Arena;
+    fn tree_arena_mut(&mut self) -> &mut Arena;
+
+    /// Update node statistics after tree descent.
+    ///
+    /// Implementation varies by tree type:
+    /// - `Tree`: Algorithm 2 - increment visit count and add value
+    /// - `TreeBatch`: Algorithm 3 (VirtualMean) - for Unknown, add μ×vl
+    fn update_statistics(&mut self, node_id: NodeId, res: PuctResult);
+}
+
+impl TreeLike for TreeBatch {
+    fn tree_arena(&self) -> &Arena {
         &self.arena
     }
 
-    fn arena_mut(&mut self) -> &mut Arena {
+    fn tree_arena_mut(&mut self) -> &mut Arena {
         &mut self.arena
+    }
+
+    /// Algorithm 3: UpdateStatisticsGet (VirtualMean)
+    ///
+    /// For Unknown: t.p(s,m) += vl; t.sum(s,m) += vl × μ
+    /// For Value: t.p(s,m) += 1; t.sum(s,m) += res
+    fn update_statistics(&mut self, node_id: NodeId, res: PuctResult) {
+        match res {
+            PuctResult::Unknown(_) => {
+                // Algorithm 3: μ = t.sum(s,m) / t.p(s,m)
+                let node = self.arena.get_mut(node_id);
+                let mu = if node.visit_count() > 0 {
+                    node.q_value()
+                } else {
+                    0.0
+                };
+                // Algorithm 3 (VirtualMean):
+                // t.p(s) = t.p(s) + vl
+                // t.sum(s) = t.sum(s) + vl × μ
+                for _ in 0..VL {
+                    node.increment_visit_count();
+                }
+                node.add_evaluation(VL as f64 * mu);
+            }
+            PuctResult::Value(v) => {
+                // Algorithm 3: t.p(s) = t.p(s) + 1; t.sum(s) = t.sum(s) + res
+                let node = self.arena.get_mut(node_id);
+                node.increment_visit_count();
+                node.add_evaluation(v);
+            }
+        }
+    }
+}
+
+impl TreeLike for Tree {
+    fn tree_arena(&self) -> &Arena {
+        self.arena()
+    }
+
+    fn tree_arena_mut(&mut self) -> &mut Arena {
+        self.arena_mut()
+    }
+
+    /// Algorithm 2: UpdateStatistics
+    ///
+    /// if res ≠ Unknown: t.p(s,m) += 1; t.sum(s,m) += res
+    fn update_statistics(&mut self, node_id: NodeId, res: PuctResult) {
+        // Algorithm 2: if res ≠ Unknown then
+        if let PuctResult::Value(v) = res {
+            // Algorithm 2: t.p(s) = t.p(s) + 1; t.sum(s) = t.sum(s) + res
+            let node = self.arena_mut().get_mut(node_id);
+            node.increment_visit_count();
+            node.add_evaluation(v);
+        }
+        // Algorithm 2: if res = Unknown, do nothing
     }
 }
 
@@ -117,6 +192,97 @@ impl SecondMoveInfo {
         let remaining = budget.saturating_sub(i);
         self.best_visits as usize >= self.second_visits as usize + remaining
     }
+}
+
+/// Context for Second Move Heuristic (Algorithm 8, lines 355-361).
+///
+/// When provided to `batch_mcts`, forces exploration of second-best move
+/// at root if the best move's lead is insurmountable with remaining budget.
+#[derive(Debug, Clone, Copy)]
+struct SecondMoveContext {
+    budget: usize,
+    current_i: usize,
+}
+
+/// Unified MCTS tree traversal (Algorithm 1/8).
+///
+/// This single generic function replaces the previous separate implementations:
+/// - `batch_puct_on_batch_tree` (Algorithm 1, GetBatch=True)
+/// - `batch_second_on_batch_tree` (Algorithm 8, GetBatch=True)
+/// - `batch_second_on_main_tree` (Algorithm 8, GetBatch=False)
+///
+/// The update strategy is automatically selected based on the tree type:
+/// - `Tree` → Algorithm 2 (standard update, ignores Unknown)
+/// - `TreeBatch` → Algorithm 3 (VirtualMean for Unknown states)
+///
+/// When `second_move_ctx` is provided and at root, applies Second Move
+/// forcing (Algorithm 8, lines 355-361).
+fn batch_mcts<T: TreeLike>(
+    tree: &mut T,
+    node_id: NodeId,
+    tt: &TranspositionTable,
+    strategy: &PuctStrategy,
+    config: PuctConfig,
+    rng: &mut impl rand::Rng,
+    is_root: bool,
+    second_move_ctx: Option<&SecondMoveContext>,
+) -> PuctResult {
+    let state = *tree.tree_arena().get(node_id).state();
+
+    // Algorithm 1/8: if isTerminal(s) then return Evaluation(s)
+    if state.is_terminal() {
+        return PuctResult::Value(state.terminal_value().unwrap());
+    }
+
+    // Algorithm 1/8: if s ∉ t then
+    if !tree.tree_arena().get(node_id).is_expanded() {
+        if tt.get(&state).is_none() {
+            return PuctResult::Unknown(state);
+        } else {
+            expand_node(tree.tree_arena_mut(), node_id, &state);
+            let v = tt.get(&state).unwrap().value().value();
+            return PuctResult::Value(v);
+        }
+    }
+
+    // Algorithm 1/8: PUCT selection (lines 204-215 / 343-354)
+    let mut best_child_id = select_best_child(
+        tree.tree_arena(),
+        node_id,
+        tt,
+        strategy,
+        config,
+        rng,
+        is_root,
+    );
+
+    // Algorithm 8, lines 355-361: Second Move forcing at root
+    if is_root && let Some(ctx) = second_move_ctx {
+        let info = SecondMoveInfo::from_root(tree.tree_arena(), node_id);
+        if info.should_force_second(ctx.budget, ctx.current_i) {
+            if let Some(second_id) = info.second_id {
+                best_child_id = Some(second_id);
+            }
+        }
+    }
+
+    // Recursive descent and statistics update
+    let res = batch_mcts(
+        tree,
+        best_child_id.unwrap(),
+        tt,
+        strategy,
+        config,
+        rng,
+        false,
+        second_move_ctx,
+    );
+
+    // Update statistics using the tree-type-specific strategy
+    // Tree → Algorithm 2, TreeBatch → Algorithm 3 (VirtualMean)
+    tree.update_statistics(node_id, res);
+
+    res
 }
 
 /// Algorithm 9: GetMoveSecond (with Last Iteration from Algorithm 7)
@@ -208,8 +374,9 @@ fn get_batch_second(
     let mut descent = 0;
     while batch.len() < batch_size && descent < MAX_DESCENTS_PER_BATCH {
         descent += 1;
-        // Call BatchSecond (Algorithm 8) instead of BatchPUCT
-        let res = batch_second_on_batch_tree(
+        // Call batch_mcts with SecondMoveContext for Second Move forcing
+        let ctx = SecondMoveContext { budget, current_i };
+        let res = batch_mcts(
             &mut tree_batch,
             root_id,
             tt,
@@ -217,8 +384,7 @@ fn get_batch_second(
             config,
             rng,
             true, // is_root
-            budget,
-            current_i, // Pass fixed value from GetBatchSecond, not incremented
+            Some(&ctx),
         );
 
         if let PuctResult::Unknown(state) = res {
@@ -250,11 +416,10 @@ fn put_batch_second(
         }
     }
 
-    // Update main tree with BatchSecond
+    // Update main tree with batch_mcts (uses Algorithm 2 for Tree)
+    let ctx = SecondMoveContext { budget, current_i };
     loop {
-        let res = batch_second_on_main_tree(
-            tree, root_id, tt, strategy, config, rng, true, budget, current_i,
-        );
+        let res = batch_mcts(tree, root_id, tt, strategy, config, rng, true, Some(&ctx));
         if let PuctResult::Unknown(_) = res {
             break;
         }
@@ -275,9 +440,17 @@ fn last_iteration(
 
     // Algorithm 7: while nbUnknown < U do
     while nb_unknown < LAST_ITERATION_U {
-        // Use BatchPUCT (no Second Move forcing, since budget is exhausted)
-        let res =
-            batch_puct_on_batch_tree(&mut tree_batch, root_id, tt, strategy, config, rng, true);
+        // Use batch_mcts without SecondMoveContext (no Second Move forcing)
+        let res = batch_mcts(
+            &mut tree_batch,
+            root_id,
+            tt,
+            strategy,
+            config,
+            rng,
+            true,
+            None,
+        );
         if let PuctResult::Unknown(_) = res {
             nb_unknown += 1;
         }
@@ -289,7 +462,7 @@ fn last_iteration(
 /// Copy statistics from treeBatch back to main tree after Last Iteration.
 fn copy_stats_to_main_tree(tree: &mut Tree, tree_batch: &TreeBatch) {
     let main_arena = tree.arena_mut();
-    let batch_arena = tree_batch.arena();
+    let batch_arena = &tree_batch.arena;
 
     // Only copy nodes that exist in both
     let main_len = main_arena.len();
@@ -314,189 +487,6 @@ fn copy_stats_to_main_tree(tree: &mut Tree, tree_batch: &TreeBatch) {
     }
 }
 
-/// Algorithm 1: BatchPUCT on treeBatch (GetBatch=True)
-///
-/// Used for Last Iteration (no budget checking needed).
-fn batch_puct_on_batch_tree(
-    tree_batch: &mut TreeBatch,
-    node_id: NodeId,
-    tt: &TranspositionTable,
-    strategy: &PuctStrategy,
-    config: PuctConfig,
-    rng: &mut impl rand::Rng,
-    is_root: bool,
-) -> PuctResult {
-    let arena = tree_batch.arena();
-    let state = *arena.get(node_id).state();
-
-    if state.is_terminal() {
-        return PuctResult::Value(state.terminal_value().unwrap_or(0.0));
-    }
-
-    if !arena.get(node_id).is_expanded() {
-        if tt.get(&state).is_none() {
-            return PuctResult::Unknown(state);
-        } else {
-            expand_node(tree_batch.arena_mut(), node_id, &state);
-            let v = tt.get(&state).unwrap().value().value();
-            return PuctResult::Value(v);
-        }
-    }
-
-    let best_child_id = select_best_child(
-        tree_batch.arena(),
-        node_id,
-        tt,
-        strategy,
-        config,
-        rng,
-        is_root,
-    );
-
-    if let Some(child_id) = best_child_id {
-        let child_action = tree_batch.arena().get(child_id).action();
-        let res = batch_puct_on_batch_tree(tree_batch, child_id, tt, strategy, config, rng, false);
-        update_statistics_get(tree_batch.arena_mut(), node_id, child_action, res);
-        res
-    } else {
-        PuctResult::Value(0.0)
-    }
-}
-
-/// Algorithm 8: BatchSecond on treeBatch (GetBatch=True)
-///
-/// Implements Second Move forcing at root and uses VirtualMean.
-fn batch_second_on_batch_tree(
-    tree_batch: &mut TreeBatch,
-    node_id: NodeId,
-    tt: &TranspositionTable,
-    strategy: &PuctStrategy,
-    config: PuctConfig,
-    rng: &mut impl rand::Rng,
-    is_root: bool,
-    budget: usize,
-    i: usize,
-) -> PuctResult {
-    let arena = tree_batch.arena();
-    let state = *arena.get(node_id).state();
-
-    // Algorithm 8: if isTerminal(s) then return Evaluation(s)
-    if state.is_terminal() {
-        return PuctResult::Value(state.terminal_value().unwrap_or(0.0));
-    }
-
-    // Algorithm 8: if s ∉ t then
-    if !arena.get(node_id).is_expanded() {
-        if tt.get(&state).is_none() {
-            return PuctResult::Unknown(state);
-        } else {
-            expand_node(tree_batch.arena_mut(), node_id, &state);
-            let v = tt.get(&state).unwrap().value().value();
-            return PuctResult::Value(v);
-        }
-    }
-
-    // Algorithm 8: PUCT selection (lines 343-354)
-    let mut best_child_id = select_best_child(
-        tree_batch.arena(),
-        node_id,
-        tt,
-        strategy,
-        config,
-        rng,
-        is_root,
-    );
-
-    // Algorithm 8, lines 355-361: Second Move forcing at root
-    if is_root {
-        let info = SecondMoveInfo::from_root(tree_batch.arena(), node_id);
-        if info.should_force_second(budget, i) {
-            if let Some(second_id) = info.second_id {
-                best_child_id = Some(second_id);
-            }
-        }
-    }
-
-    if let Some(child_id) = best_child_id {
-        let child_action = tree_batch.arena().get(child_id).action();
-
-        // Algorithm 8: s' = play(s, bestMove); res = BatchSecond(s', ..., False)
-        let res = batch_second_on_batch_tree(
-            tree_batch, child_id, tt, strategy, config, rng, false, budget, i,
-        );
-
-        // Algorithm 3: UpdateStatisticsGet (VirtualMean)
-        update_statistics_get(tree_batch.arena_mut(), node_id, child_action, res);
-
-        res
-    } else {
-        PuctResult::Value(0.0)
-    }
-}
-
-/// Algorithm 8: BatchSecond on main tree (GetBatch=False)
-///
-/// Uses UpdateStatistics (Algorithm 2).
-fn batch_second_on_main_tree(
-    tree: &mut Tree,
-    node_id: NodeId,
-    tt: &TranspositionTable,
-    strategy: &PuctStrategy,
-    config: PuctConfig,
-    rng: &mut impl rand::Rng,
-    is_root: bool,
-    budget: usize,
-    i: usize,
-) -> PuctResult {
-    let arena = tree.arena();
-    let state = *arena.get(node_id).state();
-
-    // Algorithm 8: if isTerminal(s) then return Evaluation(s)
-    if state.is_terminal() {
-        return PuctResult::Value(state.terminal_value().unwrap_or(0.0));
-    }
-
-    // Algorithm 8: if s ∉ t then
-    if !arena.get(node_id).is_expanded() {
-        if tt.get(&state).is_none() {
-            return PuctResult::Unknown(state);
-        } else {
-            expand_node(tree.arena_mut(), node_id, &state);
-            let v = tt.get(&state).unwrap().value().value();
-            return PuctResult::Value(v);
-        }
-    }
-
-    // Algorithm 8: PUCT selection
-    let mut best_child_id =
-        select_best_child(tree.arena(), node_id, tt, strategy, config, rng, is_root);
-
-    // Algorithm 8, lines 355-361: Second Move forcing at root
-    if is_root {
-        let info = SecondMoveInfo::from_root(tree.arena(), node_id);
-        if info.should_force_second(budget, i) {
-            if let Some(second_id) = info.second_id {
-                best_child_id = Some(second_id);
-            }
-        }
-    }
-
-    if let Some(child_id) = best_child_id {
-        let child_action = tree.arena().get(child_id).action();
-
-        // Algorithm 8: s' = play(s, bestMove); res = BatchSecond(s', ..., False)
-        let res =
-            batch_second_on_main_tree(tree, child_id, tt, strategy, config, rng, false, budget, i);
-
-        // Algorithm 2: UpdateStatistics
-        update_statistics(tree.arena_mut(), node_id, child_action, res);
-
-        res
-    } else {
-        PuctResult::Value(0.0)
-    }
-}
-
 /// Expand a node by adding children for all legal moves.
 fn expand_node(arena: &mut Arena, node_id: NodeId, state: &State) {
     for action in state.legal_actions() {
@@ -505,63 +495,6 @@ fn expand_node(arena: &mut Arena, node_id: NodeId, state: &State) {
         arena.add_child(node_id, child);
     }
     arena.get_mut(node_id).set_expanded(true);
-}
-
-/// Algorithm 2: UpdateStatistics (for main tree)
-///
-/// t.p(s,m) += 1; t.sum(s,m) += res; t.p(s) += 1; t.sum(s) += res
-fn update_statistics(
-    arena: &mut Arena,
-    node_id: NodeId,
-    _child_action: Option<usize>,
-    res: PuctResult,
-) {
-    // Algorithm 2: if res ≠ Unknown then
-    if let PuctResult::Value(v) = res {
-        // Algorithm 2: t.p(s) = t.p(s) + 1; t.sum(s) = t.sum(s) + res
-        let node = arena.get_mut(node_id);
-        node.increment_visit_count();
-        node.add_evaluation(v);
-        // Note: We store stats on nodes, not edges. The child already received
-        // its update via recursive call. Here we update the parent.
-    }
-    // Algorithm 2: if res = Unknown, do nothing
-}
-
-/// Algorithm 3: UpdateStatisticsGet (for treeBatch, with VirtualMean)
-fn update_statistics_get(
-    arena: &mut Arena,
-    node_id: NodeId,
-    _child_action: Option<usize>,
-    res: PuctResult,
-) {
-    match res {
-        PuctResult::Unknown(_) => {
-            // Algorithm 3: if res = Unknown then
-            // Algorithm 3: μ = t.sum(s,m) / t.p(s,m)
-            // We apply VirtualMean to the parent node
-            let node = arena.get_mut(node_id);
-            let mu = if node.visit_count() > 0 {
-                node.q_value()
-            } else {
-                0.0
-            };
-            // Algorithm 3 (VirtualMean):
-            // t.p(s) = t.p(s) + vl
-            // t.sum(s) = t.sum(s) + vl × μ
-            for _ in 0..VL {
-                node.increment_visit_count();
-            }
-            node.add_evaluation(VL as f64 * mu);
-        }
-        PuctResult::Value(v) => {
-            // Algorithm 3: else (res ≠ Unknown)
-            // Algorithm 3: t.p(s) = t.p(s) + 1; t.sum(s) = t.sum(s) + res
-            let node = arena.get_mut(node_id);
-            node.increment_visit_count();
-            node.add_evaluation(v);
-        }
-    }
 }
 
 /// Algorithm 1, lines 204-215: PUCT selection with μFPU
@@ -593,18 +526,9 @@ fn select_best_child(
 
     // Dirichlet noise at root
     let noise: Option<Vec<f64>> = if is_root && config.dirichlet_epsilon > 0.0 {
-        use rand_distr::{Distribution, Gamma};
-        if let Ok(gamma) = Gamma::new(config.dirichlet_alpha, 1.0) {
-            let samples: Vec<f64> = (0..children.len()).map(|_| gamma.sample(rng)).collect();
-            let sum: f64 = samples.iter().sum();
-            if sum > 0.0 {
-                Some(samples.iter().map(|x| x / sum).collect())
-            } else {
-                None
-            }
-        } else {
-            None
-        }
+        use crate::dirichlet::Dirichlet;
+        let dirichlet = Dirichlet::new(config.dirichlet_alpha);
+        dirichlet.sample(rng, children.len())
     } else {
         None
     };
@@ -766,5 +690,67 @@ mod tests {
         };
 
         assert!((mu_fpu - 0.7).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_select_best_child() {
+        // Tests that select_best_child correctly applies PUCT formula
+        // and selects the child with highest exploration bonus when unvisited
+        let config = PuctConfig {
+            c_puct: 1.0,
+            dirichlet_epsilon: 0.0, // No noise for deterministic test
+            dirichlet_alpha: 1.0,
+        };
+        let strategy = PuctStrategy::new(config);
+        let tt = TranspositionTable::new();
+        let parent_state = default_state();
+
+        // Set up policy with different priors for each action
+        let mut policy_arr = [0.0; 64];
+        policy_arr[0] = 0.2;
+        policy_arr[1] = 0.5;
+        policy_arr[2] = 0.3;
+        let policy = Policy(policy_arr);
+        tt.add(parent_state, PolicyEvaluation::new(policy, Value(0.0)));
+
+        // Build arena with parent and children
+        let mut arena = Arena::new();
+        let parent_id = arena.allocate(Node::new(parent_state, None));
+
+        // Set parent visit count
+        for _ in 0..15 {
+            arena.get_mut(parent_id).increment_visit_count();
+        }
+
+        // Child 0: 10 visits, Q=0.7
+        let mut child0 = Node::new(default_state(), Some(0));
+        for _ in 0..10 {
+            child0.increment_visit_count();
+            child0.add_evaluation(0.7);
+        }
+        arena.add_child(parent_id, child0);
+
+        // Child 1: 5 visits, Q=0.4
+        let mut child1 = Node::new(default_state(), Some(1));
+        for _ in 0..5 {
+            child1.increment_visit_count();
+            child1.add_evaluation(0.4);
+        }
+        arena.add_child(parent_id, child1);
+
+        // Child 2: 0 visits (should have highest exploration bonus)
+        let child2 = Node::new(default_state(), Some(2));
+        let child2_id = arena.add_child(parent_id, child2);
+
+        let mut rng = StdRng::seed_from_u64(42);
+        let best = select_best_child(
+            &arena, parent_id, &tt, &strategy, config, &mut rng,
+            false, // not root, no Dirichlet noise
+        );
+
+        // Child 2 should be selected due to highest exploration bonus (0 visits)
+        // PUCT = μFPU + c_puct × P(a) × √(N_parent) / (1 + N_child)
+        // For child2: PUCT = parent_q + 1.0 × 0.3 × √15 / 1 ≈ 0.7 + 1.16 = ~1.86
+        assert_eq!(best, Some(child2_id));
     }
 }

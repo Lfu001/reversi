@@ -6,40 +6,32 @@ use rand_distr::{Distribution, Gamma};
 pub struct Dirichlet {
     /// Gamma distribution with alpha parameter.
     gamma: Gamma<f64>,
-    /// Buffer for storing samples.
-    buffer: Vec<f64>,
 }
 
 impl Dirichlet {
-    /// Creates a new [`Dirichlet`].
-    pub fn new(alpha: f64, buffer_capacity: usize) -> Self {
+    /// Creates a new [`Dirichlet`] distribution with the given `alpha` parameter.
+    pub fn new(alpha: f64) -> Self {
         Self {
             gamma: Gamma::new(alpha, 1.0).unwrap(),
-            buffer: Vec::with_capacity(buffer_capacity),
         }
     }
 
     /// Samples from the Dirichlet distribution.
     ///
-    /// Returns `None` if `size` is 0.
-    pub fn sample(&mut self, rng: &mut impl rand::Rng, size: usize) -> Option<&[f64]> {
+    /// Returns `None` if `size` is 0 or if the sum of samples is 0.
+    pub fn sample(&self, rng: &mut impl rand::Rng, size: usize) -> Option<Vec<f64>> {
         if size == 0 {
-            return Some(&[]);
+            return Some(vec![]);
         }
 
-        self.buffer.clear();
-        let mut l1_norm = 0.0;
-        for _ in 0..size {
-            let gamma_sample = self.gamma.sample(rng);
-            self.buffer.push(gamma_sample);
-            l1_norm += gamma_sample;
-        }
+        let mut samples: Vec<f64> = (0..size).map(|_| self.gamma.sample(rng)).collect();
+        let sum: f64 = samples.iter().sum();
 
-        if l1_norm > 0.0 {
-            for element in self.buffer.iter_mut() {
-                *element /= l1_norm;
+        if sum > 0.0 {
+            for sample in samples.iter_mut() {
+                *sample /= sum;
             }
-            Some(&self.buffer)
+            Some(samples)
         } else {
             None
         }
@@ -55,16 +47,15 @@ mod tests {
     #[test]
     fn test_sample_dirichlet_empty() {
         let mut rng = StdRng::seed_from_u64(42);
-        let mut distribution = Dirichlet::new(1.0, 0);
+        let distribution = Dirichlet::new(1.0);
         let result = distribution.sample(&mut rng, 0);
-        let expected = vec![];
-        assert_eq!(result, Some(expected.as_slice()));
+        assert_eq!(result, Some(vec![]));
     }
 
     #[test]
     fn test_sample_dirichlet_single() {
         let mut rng = StdRng::seed_from_u64(42);
-        let mut distribution = Dirichlet::new(1.0, 1);
+        let distribution = Dirichlet::new(1.0);
         let result = distribution.sample(&mut rng, 1);
         assert!(result.is_some());
         let samples = result.unwrap();
@@ -75,15 +66,15 @@ mod tests {
     #[test]
     fn test_sample_dirichlet_multiple() {
         let mut rng = StdRng::seed_from_u64(42);
-        let mut distribution = Dirichlet::new(1.0, 5);
+        let distribution = Dirichlet::new(1.0);
         let result = distribution.sample(&mut rng, 5);
         assert!(result.is_some());
         let samples = result.unwrap();
         assert_eq!(samples.len(), 5);
 
         // Check that all samples are between 0 and 1
-        for &sample in samples {
-            assert!((0.0..=1.0).contains(&sample));
+        for sample in &samples {
+            assert!((0.0..=1.0).contains(sample));
         }
 
         // Check that the sum is approximately 1
@@ -95,8 +86,8 @@ mod tests {
     fn test_sample_dirichlet_distribution() {
         // Run multiple times to check consistency
         let mut rng = StdRng::seed_from_u64(42);
+        let distribution = Dirichlet::new(0.3);
         for _ in 0..10 {
-            let mut distribution = Dirichlet::new(0.3, 3);
             let result = distribution.sample(&mut rng, 3);
             assert!(result.is_some());
             let samples = result.unwrap();
