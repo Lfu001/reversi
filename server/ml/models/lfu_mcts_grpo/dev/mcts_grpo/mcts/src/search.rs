@@ -70,8 +70,8 @@ impl From<&Tree> for TreeBatch {
 /// - `Tree`: Algorithm 2 (standard update, ignores Unknown)
 /// - `TreeBatch`: Algorithm 3 (VirtualMean for Unknown states)
 trait TreeLike {
-    fn tree_arena(&self) -> &Arena;
-    fn tree_arena_mut(&mut self) -> &mut Arena;
+    fn arena(&self) -> &Arena;
+    fn arena_mut(&mut self) -> &mut Arena;
 
     /// Update node statistics after tree descent.
     ///
@@ -82,11 +82,11 @@ trait TreeLike {
 }
 
 impl TreeLike for TreeBatch {
-    fn tree_arena(&self) -> &Arena {
+    fn arena(&self) -> &Arena {
         &self.arena
     }
 
-    fn tree_arena_mut(&mut self) -> &mut Arena {
+    fn arena_mut(&mut self) -> &mut Arena {
         &mut self.arena
     }
 
@@ -123,11 +123,11 @@ impl TreeLike for TreeBatch {
 }
 
 impl TreeLike for Tree {
-    fn tree_arena(&self) -> &Arena {
+    fn arena(&self) -> &Arena {
         self.arena()
     }
 
-    fn tree_arena_mut(&mut self) -> &mut Arena {
+    fn arena_mut(&mut self) -> &mut Arena {
         self.arena_mut()
     }
 
@@ -227,7 +227,7 @@ fn batch_mcts<T: TreeLike>(
     is_root: bool,
     second_move_ctx: Option<&SecondMoveContext>,
 ) -> PuctResult {
-    let state = *tree.tree_arena().get(node_id).state();
+    let state = *tree.arena().get(node_id).state();
 
     // Algorithm 1/8: if isTerminal(s) then return Evaluation(s)
     if state.is_terminal() {
@@ -235,11 +235,11 @@ fn batch_mcts<T: TreeLike>(
     }
 
     // Algorithm 1/8: if s ∉ t then
-    if !tree.tree_arena().get(node_id).is_expanded() {
+    if !tree.arena().get(node_id).is_expanded() {
         if tt.get(&state).is_none() {
             return PuctResult::Unknown(state);
         } else {
-            expand_node(tree.tree_arena_mut(), node_id, &state);
+            expand_node(tree.arena_mut(), node_id, &state);
             let v = tt.get(&state).unwrap().value().value();
             return PuctResult::Value(v);
         }
@@ -247,7 +247,7 @@ fn batch_mcts<T: TreeLike>(
 
     // Algorithm 1/8: PUCT selection (lines 204-215 / 343-354)
     let mut best_child_id = select_best_child(
-        tree.tree_arena(),
+        tree.arena(),
         node_id,
         tt,
         strategy,
@@ -258,7 +258,7 @@ fn batch_mcts<T: TreeLike>(
 
     // Algorithm 8, lines 355-361: Second Move forcing at root
     if is_root && let Some(ctx) = second_move_ctx {
-        let info = SecondMoveInfo::from_root(tree.tree_arena(), node_id);
+        let info = SecondMoveInfo::from_root(tree.arena(), node_id);
         if info.should_force_second(ctx.budget, ctx.spent_budget) {
             if let Some(second_id) = info.second_id {
                 best_child_id = Some(second_id);
