@@ -246,15 +246,8 @@ fn batch_mcts<T: TreeLike>(
     }
 
     // Algorithm 1/8: PUCT selection (lines 204-215 / 343-354)
-    let mut best_child_id = select_best_child(
-        tree.arena(),
-        node_id,
-        tt,
-        strategy,
-        config,
-        rng,
-        is_root,
-    );
+    let mut best_child_id =
+        select_best_child(tree.arena(), node_id, tt, strategy, config, rng, is_root);
 
     // Algorithm 8, lines 355-361: Second Move forcing at root
     if is_root && let Some(ctx) = second_move_ctx {
@@ -344,7 +337,7 @@ pub fn get_move_second<M: ModelEvaluator>(
         );
 
         if let Some(pb) = &pbar {
-            pb.set_position((batch_idx + 1) as u64);
+            pb.inc(1);
         }
     }
 
