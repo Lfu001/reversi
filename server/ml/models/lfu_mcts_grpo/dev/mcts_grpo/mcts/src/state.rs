@@ -35,6 +35,9 @@ impl State {
     }
 
     /// Applies an action and returns the new state.
+    ///
+    /// If the next player has no legal moves after the action, a pass (turn skip)
+    /// is automatically applied, matching the behavior of `ReversiEnvironment`.
     pub fn apply(&self, action_idx: usize) -> State {
         let mut table = Table::default();
         table.set_board(self.board);
@@ -48,7 +51,13 @@ impl State {
 
         // Use Controller.step() instead of direct execution
         use reversi_core::controller::Controller;
-        let _ = Controller::step(&mut table, action);
+        let step_result = Controller::step(&mut table, action).expect("Invalid action");
+
+        // Auto-skip: if the next player has no legal moves, pass the turn
+        if step_result.puttable_positions.is_empty() {
+            let turn = table.turn();
+            let _ = Controller::step(&mut table, Action::PassTurn(turn));
+        }
 
         State {
             board: *table.board(),
