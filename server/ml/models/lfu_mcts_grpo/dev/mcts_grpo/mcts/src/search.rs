@@ -201,7 +201,7 @@ impl SecondMoveInfo {
 #[derive(Debug, Clone, Copy)]
 struct SecondMoveContext {
     budget: usize,
-    current_i: usize,
+    spent_budget: usize,
 }
 
 /// Unified MCTS tree traversal (Algorithm 1/8).
@@ -259,7 +259,7 @@ fn batch_mcts<T: TreeLike>(
     // Algorithm 8, lines 355-361: Second Move forcing at root
     if is_root && let Some(ctx) = second_move_ctx {
         let info = SecondMoveInfo::from_root(tree.tree_arena(), node_id);
-        if info.should_force_second(ctx.budget, ctx.current_i) {
+        if info.should_force_second(ctx.budget, ctx.spent_budget) {
             if let Some(second_id) = info.second_id {
                 best_child_id = Some(second_id);
             }
@@ -307,7 +307,7 @@ pub fn get_move_second<M: ModelEvaluator>(
 
     // Algorithm 9: for i ← 0 to B do
     for batch_idx in 0..num_batches {
-        let current_i = batch_idx * batch_size;
+        let spent_budget = batch_idx * batch_size;
 
         // Algorithm 9: GetBatchSecond(s, budget, i)
         let batch = get_batch_second(
@@ -319,7 +319,7 @@ pub fn get_move_second<M: ModelEvaluator>(
             config,
             rng,
             total_budget,
-            current_i,
+            spent_budget,
         );
 
         // Algorithm 9: out ← Forward(batch)
@@ -338,7 +338,7 @@ pub fn get_move_second<M: ModelEvaluator>(
             config,
             rng,
             total_budget,
-            current_i,
+            spent_budget,
             batch,
             inference_results,
         );
@@ -366,7 +366,7 @@ fn get_batch_second(
     config: PuctConfig,
     rng: &mut impl rand::Rng,
     budget: usize,
-    current_i: usize,
+    spent_budget: usize,
 ) -> Vec<State> {
     let mut tree_batch = TreeBatch::from(&*tree);
     let mut batch: Vec<State> = Vec::with_capacity(batch_size);
@@ -375,7 +375,10 @@ fn get_batch_second(
     while batch.len() < batch_size && descent < MAX_DESCENTS_PER_BATCH {
         descent += 1;
         // Call batch_mcts with SecondMoveContext for Second Move forcing
-        let ctx = SecondMoveContext { budget, current_i };
+        let ctx = SecondMoveContext {
+            budget,
+            spent_budget,
+        };
         let res = batch_mcts(
             &mut tree_batch,
             root_id,
@@ -405,7 +408,7 @@ fn put_batch_second(
     config: PuctConfig,
     rng: &mut impl rand::Rng,
     budget: usize,
-    current_i: usize,
+    spent_budget: usize,
     batch: Vec<State>,
     inference_results: Option<Vec<crate::policy::PolicyEvaluation>>,
 ) {
@@ -417,7 +420,10 @@ fn put_batch_second(
     }
 
     // Update main tree with batch_mcts (uses Algorithm 2 for Tree)
-    let ctx = SecondMoveContext { budget, current_i };
+    let ctx = SecondMoveContext {
+        budget,
+        spent_budget,
+    };
     loop {
         let res = batch_mcts(tree, root_id, tt, strategy, config, rng, true, Some(&ctx));
         if let PuctResult::Unknown(_) = res {
