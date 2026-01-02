@@ -27,6 +27,10 @@ const LAST_ITERATION_U: usize = 40;
 /// Maximum descents per GetBatch call (N in Algorithm 4).
 const MAX_DESCENTS_PER_BATCH: usize = 500;
 
+/// Maximum descents in Last Iteration before giving up.
+/// Prevents infinite loop when tree has fewer than LAST_ITERATION_U unexplored states.
+const LAST_ITERATION_MAX_DESCENTS: usize = 500;
+
 /// Result from BatchPUCT.
 #[derive(Debug, Clone, Copy)]
 enum PuctResult {
@@ -417,7 +421,10 @@ fn put_batch_second(
         budget,
         spent_budget,
     };
-    loop {
+    // Bounded loop: max iterations = batch size * 2 to prevent infinite loop
+    // when all reachable states are already in TT
+    let max_iterations = batch.len().max(1) * 2;
+    for _ in 0..max_iterations {
         let res = batch_mcts(tree, root_id, tt, strategy, config, rng, true, Some(&ctx));
         if let PuctResult::Unknown(_) = res {
             break;
@@ -436,9 +443,15 @@ fn last_iteration(
 ) {
     let mut tree_batch = TreeBatch::from(&*tree);
     let mut nb_unknown = 0;
+    let mut total_descents = 0;
 
-    // Algorithm 7: while nbUnknown < U do
-    while nb_unknown < LAST_ITERATION_U {
+    // Dynamic target: min of LAST_ITERATION_U and tree size
+    // This prevents infinite loop when tree has fewer unexplored states than U
+    let target_unknown = LAST_ITERATION_U.min(tree.arena().len());
+
+    // Algorithm 7: while nbUnknown < U do (with max descent limit)
+    while nb_unknown < target_unknown && total_descents < LAST_ITERATION_MAX_DESCENTS {
+        total_descents += 1;
         // Use batch_mcts without SecondMoveContext (no Second Move forcing)
         let res = batch_mcts(
             &mut tree_batch,
