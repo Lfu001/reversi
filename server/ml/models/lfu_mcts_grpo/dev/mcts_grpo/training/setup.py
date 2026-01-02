@@ -7,8 +7,8 @@ from accelerate import Accelerator
 from accelerate.utils import ProjectConfiguration
 from reversi import ReversiEnvironment
 
-from ..model.configuration_reversizero import ReversiZeroConfig
-from ..model.modeling_reversizero import ReversiZeroModel
+from ..model.configuration_urm import URMConfig
+from ..model.modeling_urm import URMModel
 from ..replay_buffer import ReplayBuffer
 from ..settings import Settings
 
@@ -54,7 +54,7 @@ class GameSetup:
         torch.nn.Module, torch.optim.Optimizer, torch.optim.lr_scheduler.LRScheduler
     ]:
         """モデル、オプティマイザ、スケジューラを初期化"""
-        model = ReversiZeroModel(ReversiZeroConfig(**self.settings.model.model_dump()))
+        model = URMModel(URMConfig(**self.settings.model.model_dump()))
         optimizer = torch.optim.AdamW(
             model.parameters(),
             lr=self.settings.training.learning_rate,

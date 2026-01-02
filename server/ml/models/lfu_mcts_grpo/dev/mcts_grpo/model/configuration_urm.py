@@ -29,7 +29,6 @@ class URMConfig(PretrainedConfig):
         dropout: Dropout rate (default: 0.0)
         layer_norm_eps: Layer normalization epsilon (default: 1e-5)
         input_channels: Number of input channels for board state (default: 4)
-        board_size: Size of the board (default: 8)
     """
 
     model_type = "urm"
@@ -46,7 +45,6 @@ class URMConfig(PretrainedConfig):
         dropout: float = 0.0,
         layer_norm_eps: float = 1e-5,
         input_channels: int = 4,
-        board_size: int = 8,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -67,12 +65,6 @@ class URMConfig(PretrainedConfig):
         self.dropout = dropout
         self.layer_norm_eps = layer_norm_eps
         self.input_channels = input_channels
-        self.board_size = board_size
-
-    @property
-    def seq_length(self) -> int:
-        """Sequence length = board_size^2 (flattened board)."""
-        return self.board_size * self.board_size
 
     @property
     def intermediate_size(self) -> int:

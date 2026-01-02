@@ -10,12 +10,17 @@ from pydantic_settings import (
 
 
 class ModelConfig(BaseModel):
-    """Model architecture configuration."""
+    """Model architecture configuration for URM (Universal Reasoning Model)."""
 
-    num_channels: int = Field(description="Number of channels in the neural network")
-    num_residual_blocks: int = Field(
-        description="Number of residual blocks in the network"
-    )
+    hidden_size: int = Field(description="Hidden dimension size")
+    num_attention_heads: int = Field(description="Number of attention heads")
+    num_layers: int = Field(description="Number of transformer layers (shared)")
+    num_inner_loops: int = Field(description="Number of inner loop iterations")
+    truncation_steps: int = Field(description="Forward-only steps for TBPTL")
+    expansion_ratio: int = Field(description="MLP expansion ratio")
+    conv_kernel_size: int = Field(description="Depthwise convolution kernel size")
+    dropout: float = Field(description="Dropout rate")
+    layer_norm_eps: float = Field(description="Layer normalization epsilon")
 
 
 class MCTSConfig(BaseModel):

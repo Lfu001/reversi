@@ -38,8 +38,6 @@ class TestURMConfig:
         assert config.truncation_steps == 2
         assert config.expansion_ratio == 4
         assert config.conv_kernel_size == 2
-        assert config.board_size == 8
-        assert config.seq_length == 64
         assert config.intermediate_size == 1536  # 512 * 4 * 2/3 → round to 256
 
     def test_custom_config(self):

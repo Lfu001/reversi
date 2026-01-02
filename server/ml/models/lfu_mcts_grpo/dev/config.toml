@@ -1,7 +1,14 @@
 # Model architecture settings
 [model]
-num_channels = 64
-num_residual_blocks = 5
+hidden_size = 512
+num_attention_heads = 8
+num_layers = 4
+num_inner_loops = 8
+truncation_steps = 2
+expansion_ratio = 4
+conv_kernel_size = 2
+dropout = 0.0
+layer_norm_eps = 1e-5
 
 # MCTS settings
 [mcts]

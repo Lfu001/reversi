@@ -8,8 +8,8 @@ from reversi import ReversiEnvironment
 from tqdm.rich import tqdm
 from transformers import AutoConfig, AutoModel
 
-from mcts_grpo.model.configuration_reversizero import ReversiZeroConfig
-from mcts_grpo.model.modeling_reversizero import ReversiZeroModel
+from mcts_grpo.model.configuration_urm import URMConfig
+from mcts_grpo.model.modeling_urm import URMModel
 from mcts_grpo.settings import Settings
 from mcts_grpo.training import GameSetup
 
@@ -448,8 +448,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    AutoConfig.register("reversi_zero", ReversiZeroConfig)
-    AutoModel.register(ReversiZeroConfig, ReversiZeroModel)
+    AutoConfig.register("urm", URMConfig)
+    AutoModel.register(URMConfig, URMModel)
     # model = AutoModel.from_pretrained("reversi_zero_model_final").to("mps")
 
     evaluate(

@@ -185,7 +185,7 @@ class URMAttention(nn.Module):
         self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
 
         # RoPE
-        self.rotary_emb = RotaryEmbedding(self.head_dim, max_seq_len=config.seq_length)
+        self.rotary_emb = RotaryEmbedding(self.head_dim, max_seq_len=64)
 
     def forward(
         self,
