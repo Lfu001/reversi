@@ -6,6 +6,7 @@ import torch
 from accelerate import Accelerator
 from accelerate.utils import ProjectConfiguration
 from reversi import ReversiEnvironment
+from transformers import get_constant_schedule_with_warmup
 
 from ..model.configuration_urm import URMConfig
 from ..model.modeling_urm import URMModel
@@ -80,8 +81,8 @@ class GameSetup:
                 weight_decay=self.settings.training.weight_decay,
             ),
         )
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=self.settings.training.total_training_steps
+        lr_scheduler = get_constant_schedule_with_warmup(
+            optimizer, num_warmup_steps=self.settings.training.warmup_steps
         )
         model, optimizer, lr_scheduler = accelerator.prepare(
             model, optimizer, lr_scheduler

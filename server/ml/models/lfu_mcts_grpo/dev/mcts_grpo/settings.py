@@ -54,6 +54,7 @@ class TrainingConfig(BaseModel):
     training_steps_per_iteration: int = Field(
         description="Training steps per iteration"
     )
+    warmup_steps: int = Field(description="Number of warmup steps for LR scheduler")
     lambda_value: float = Field(description="Lambda value for value loss")
 
 
