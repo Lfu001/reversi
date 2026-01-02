@@ -24,3 +24,8 @@ mcts = { workspace = true }
 members = [
     "mcts_grpo/mcts",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+]
