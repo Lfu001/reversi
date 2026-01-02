@@ -57,13 +57,13 @@ class GameSetup:
         """モデル、オプティマイザ、スケジューラを初期化"""
         model = URMModel(URMConfig(**self.settings.model.model_dump()))
 
-        # Muonは2Dパラメータ（隠れ層の重み）に使用
-        # 1Dパラメータ（バイアス、埋め込み、LayerNorm）はAdamWを使用
+        # Muonは2Dパラメータのみ対応（行列のみ、畳み込み層の3D以上は除外）
+        # それ以外（1D: バイアス、LayerNorm、3D+: 畳み込み）はAdamWを使用
         muon_params = []
         adamw_params = []
         for param in model.parameters():
             if param.requires_grad:
-                if param.ndim >= 2:
+                if param.ndim == 2:
                     muon_params.append(param)
                 else:
                     adamw_params.append(param)
