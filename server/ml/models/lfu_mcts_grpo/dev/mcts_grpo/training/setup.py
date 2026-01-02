@@ -55,10 +55,30 @@ class GameSetup:
     ]:
         """モデル、オプティマイザ、スケジューラを初期化"""
         model = URMModel(URMConfig(**self.settings.model.model_dump()))
-        optimizer = torch.optim.AdamW(
-            model.parameters(),
-            lr=self.settings.training.learning_rate,
-            weight_decay=self.settings.training.weight_decay,
+
+        # Muonは2Dパラメータ（隠れ層の重み）に使用
+        # 1Dパラメータ（バイアス、埋め込み、LayerNorm）はAdamWを使用
+        muon_params = []
+        adamw_params = []
+        for param in model.parameters():
+            if param.requires_grad:
+                if param.ndim >= 2:
+                    muon_params.append(param)
+                else:
+                    adamw_params.append(param)
+
+        # MuonとAdamWを組み合わせたChainedOptimizer
+        optimizer = ChainedOptimizer(
+            torch.optim.Muon(
+                muon_params,
+                lr=self.settings.training.learning_rate,
+                weight_decay=self.settings.training.weight_decay,
+            ),
+            torch.optim.AdamW(
+                adamw_params,
+                lr=self.settings.training.learning_rate,
+                weight_decay=self.settings.training.weight_decay,
+            ),
         )
         lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=self.settings.training.total_training_steps
@@ -67,3 +87,35 @@ class GameSetup:
             model, optimizer, lr_scheduler
         )
         return model, optimizer, lr_scheduler
+
+
+class ChainedOptimizer(torch.optim.Optimizer):
+    """複数のオプティマイザを1つとして扱うラッパー"""
+
+    def __init__(self, *optimizers: torch.optim.Optimizer):
+        self.optimizers = list(optimizers)
+        # 全param_groupsを統合（LRScheduler互換性のため）
+        param_groups = []
+        for opt in self.optimizers:
+            param_groups.extend(opt.param_groups)
+        # Optimizer基底クラスの初期化をスキップし、必要な属性のみ設定
+        self.param_groups = param_groups
+        self.defaults = {}
+        self.state: dict = {}
+
+    def zero_grad(self, set_to_none: bool = True):
+        for opt in self.optimizers:
+            opt.zero_grad(set_to_none=set_to_none)
+
+    def step(self, closure=None):
+        loss = None
+        for opt in self.optimizers:
+            loss = opt.step(closure)
+        return loss
+
+    def state_dict(self):
+        return {"optimizers": [opt.state_dict() for opt in self.optimizers]}
+
+    def load_state_dict(self, state_dict):
+        for opt, sd in zip(self.optimizers, state_dict["optimizers"]):
+            opt.load_state_dict(sd)
