@@ -54,7 +54,8 @@ class LossCalculator:
         self, pred_values: torch.Tensor, outcomes: torch.Tensor
     ) -> torch.Tensor:
         """Value Lossを計算"""
-        return F.mse_loss(pred_values, outcomes)
+        # pred_values: (batch, 1), outcomes: (batch,) -> squeeze to match
+        return F.mse_loss(pred_values.squeeze(-1), outcomes)
 
     def _compute_non_terminal_mask(self, legal_moves: torch.Tensor) -> torch.Tensor:
         """非終局盤面のマスクを計算"""
