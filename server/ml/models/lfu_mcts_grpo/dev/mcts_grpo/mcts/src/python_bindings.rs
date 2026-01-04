@@ -17,8 +17,8 @@ use rayon::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::{mpsc, oneshot};
 
-/// Type alias for MCTS run results: (policy distribution, Q-values)
-type MctsResult = PyResult<(Py<PyArray2<f64>>, Py<PyArray2<f64>>)>;
+/// Type alias for MCTS run results: (policy distribution, Q-values, visit_counts)
+type MctsResult = PyResult<(Py<PyArray2<f64>>, Py<PyArray2<f64>>, Py<PyArray2<u32>>)>;
 
 struct PythonModel {
     sender: mpsc::Sender<InferenceRequest>,
@@ -252,6 +252,7 @@ impl Mcts {
     ) -> MctsResult {
         let mut pi = vec![0.0f64; batch_size * 64];
         let mut q_values = vec![0.0f64; batch_size * 64];
+        let mut visit_counts = vec![0u32; batch_size * 64];
 
         for (i, result) in results.iter().enumerate() {
             let total_visits: u32 = result.visit_counts.iter().sum();
@@ -263,6 +264,7 @@ impl Mcts {
                     pi[i * 64 + j] = 1.0 / 64.0;
                 }
                 q_values[i * 64 + j] = result.q_values[j];
+                visit_counts[i * 64 + j] = result.visit_counts[j];
             }
         }
 
@@ -276,6 +278,11 @@ impl Mcts {
             .into_pyarray(py)
             .unbind();
 
-        Ok((pi_array, q_values_array))
+        let visit_counts_array = Array2::from_shape_vec((batch_size, 64), visit_counts)
+            .expect("Failed to create visit_counts array")
+            .into_pyarray(py)
+            .unbind();
+
+        Ok((pi_array, q_values_array, visit_counts_array))
     }
 }

@@ -10,6 +10,7 @@ class Experience:
     pi: ndarray
     outcome: float
     q_values: ndarray  # Q-values for all actions at the root
+    visit_counts: ndarray  # Visit counts for all actions at the root
 
 
 class ReplayBuffer:

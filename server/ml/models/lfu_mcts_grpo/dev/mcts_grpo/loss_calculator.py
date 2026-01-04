@@ -24,6 +24,7 @@ class LossCalculator:
         pis: torch.Tensor,
         outcomes: torch.Tensor,
         q_vals: torch.Tensor,
+        visit_counts: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         """全ての損失を計算"""
         value_loss = self._compute_value_loss(pred_values, outcomes)
@@ -32,7 +33,7 @@ class LossCalculator:
         non_terminal_mask = self._compute_non_terminal_mask(legal_moves)
 
         policy_loss, grpo_loss = self._compute_policy_and_grpo_loss(
-            pred_logits, pis, legal_moves, q_vals, non_terminal_mask
+            pred_logits, pis, legal_moves, q_vals, visit_counts, non_terminal_mask
         )
 
         return {
@@ -66,6 +67,7 @@ class LossCalculator:
         pis: torch.Tensor,
         legal_moves: torch.Tensor,
         q_vals: torch.Tensor,
+        visit_counts: torch.Tensor,
         non_terminal_mask: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Policy LossとGRPO Lossを計算"""
@@ -75,7 +77,7 @@ class LossCalculator:
 
         policy_loss = self._compute_policy_loss(pred_logits, pis, non_terminal_mask)
         grpo_loss = self._compute_grpo_loss(
-            pred_logits, q_vals, legal_moves, non_terminal_mask
+            pred_logits, q_vals, legal_moves, visit_counts, non_terminal_mask
         )
 
         return policy_loss, grpo_loss
@@ -100,6 +102,7 @@ class LossCalculator:
         pred_logits: torch.Tensor,
         q_vals: torch.Tensor,
         legal_moves: torch.Tensor,
+        visit_counts: torch.Tensor,
         non_terminal_mask: torch.Tensor,
     ) -> torch.Tensor:
         """GRPO Lossを計算"""
@@ -107,6 +110,7 @@ class LossCalculator:
         pred_logits = pred_logits[non_terminal_mask]
         q_values = q_vals[non_terminal_mask]
         legal_moves = legal_moves[non_terminal_mask]
+        visit_counts = visit_counts[non_terminal_mask]
 
         if pred_logits.shape[0] == 0:
             return torch.tensor(0.0, device=pred_logits.device)
@@ -120,16 +124,15 @@ class LossCalculator:
             item_log_probs = log_probs[i]
             item_q_values = q_values[i].view(-1)
             item_legal_moves = legal_moves[i].view(-1)
+            item_visit_counts = visit_counts[i].view(-1)
 
             legal_indices = torch.where(item_legal_moves > 0)[0]
 
-            # 1. 合法手のQ値を取得
-            legal_q = item_q_values[legal_indices]
+            # 1. 合法手のvisit_countsを取得
+            legal_visits = item_visit_counts[legal_indices]
 
-            # 2. mcts.py で設定したペナルティ値より大きいQ値を持つ
-            #    （＝探索済みの）インデックスだけを抽出する
-            #    (-99.0 は -100.0 よりも大きいことを意図した閾値)
-            explored_mask = legal_q > -99.0
+            # 2. visit_count > 0 のノードが探索済み
+            explored_mask = legal_visits > 0
             explored_legal_indices = legal_indices[explored_mask]
 
             # 3. 探索済みの合法手が2手未満（比較対象がいない）場合は、

@@ -43,7 +43,7 @@ class SelfPlayExecutor:
 
         current_states = self.env.reset()
         while games_completed < self.settings.training.games_per_iteration:
-            pi, q_values = mcts.run_simulations(
+            pi, q_values, visit_counts = mcts.run_simulations(
                 model=model,
                 states=current_states,
                 device=device,
@@ -58,7 +58,9 @@ class SelfPlayExecutor:
 
             current_done_count = 0
             for i in range(self.settings.training.batch_size):
-                self._record_step(i, current_states[i], pi[i], q_values[i])
+                self._record_step(
+                    i, current_states[i], pi[i], q_values[i], visit_counts[i]
+                )
 
                 if dones[i]:
                     games_completed += 1
@@ -67,7 +69,12 @@ class SelfPlayExecutor:
             current_states = self.env.reset_indices(np.where(dones)[0])
 
     def _record_step(
-        self, game_idx: int, state: np.ndarray, pi: np.ndarray, q_values: np.ndarray
+        self,
+        game_idx: int,
+        state: np.ndarray,
+        pi: np.ndarray,
+        q_values: np.ndarray,
+        visit_counts: np.ndarray,
     ):
         """ゲームの1ステップを記録"""
         self.ongoing_games_data[game_idx].append(
@@ -75,6 +82,7 @@ class SelfPlayExecutor:
                 "state": state,
                 "pi": pi,
                 "q_values": q_values,
+                "visit_counts": visit_counts,
             }
         )
 

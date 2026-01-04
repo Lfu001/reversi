@@ -76,7 +76,16 @@ class TrainingExecutor:
         q_vals = torch.from_numpy(np.stack([e.q_values for e in experiences])).to(
             dtype=torch.float32, device=self.device
         )
-        return {"states": states, "pis": pis, "outcomes": outcomes, "q_vals": q_vals}
+        visit_counts = torch.from_numpy(
+            np.stack([e.visit_counts for e in experiences])
+        ).to(dtype=torch.float32, device=self.device)
+        return {
+            "states": states,
+            "pis": pis,
+            "outcomes": outcomes,
+            "q_vals": q_vals,
+            "visit_counts": visit_counts,
+        }
 
     def _compute_losses(
         self, batch: dict[str, torch.Tensor]
@@ -86,11 +95,12 @@ class TrainingExecutor:
         pis = batch["pis"]
         outcomes = batch["outcomes"]
         q_vals = batch["q_vals"]
+        visit_counts = batch["visit_counts"]
 
         pred_logits, pred_values = self.model(states)
 
         return self.loss_calculator.compute_all_losses(
-            pred_logits, pred_values, states, pis, outcomes, q_vals
+            pred_logits, pred_values, states, pis, outcomes, q_vals, visit_counts
         )
 
     def _compute_total_loss(self, losses: dict[str, torch.Tensor]) -> torch.Tensor:

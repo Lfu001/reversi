@@ -38,6 +38,7 @@ class GameResultProcessor:
                     pi=experience_data["pi"],
                     outcome=outcome,
                     q_values=experience_data["q_values"],
+                    visit_counts=experience_data["visit_counts"],
                 )
             )
 

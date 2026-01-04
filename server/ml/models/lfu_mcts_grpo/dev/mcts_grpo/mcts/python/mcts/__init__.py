@@ -42,7 +42,7 @@ class MCTS:
         dirichlet_alpha: float,
         c_puct: float,
         seed: Optional[int] = None,
-    ) -> tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Run MCTS simulations for a batch of states.
 
@@ -59,6 +59,7 @@ class MCTS:
         Returns:
             pi: Improved policy distributions, shape [B, num_actions]
             q_values: Q-values for each action, shape [B, num_actions]
+            visit_counts: Visit counts for each action, shape [B, num_actions]
         """
 
         # Create inference callback that wraps the model
@@ -124,8 +125,8 @@ class MCTS:
             return policy, value
 
         # Run MCTS with the Rust implementation
-        # Rust returns (pi, q_values) where pi is already normalized
-        pi, q_values = self._rust_mcts.run(
+        # Rust returns (pi, q_values, visit_counts) where pi is already normalized
+        pi, q_values, visit_counts = self._rust_mcts.run(
             states.astype(np.float32),
             inference_callback,
             num_simulations,
@@ -136,7 +137,11 @@ class MCTS:
         )
 
         # Convert to float32 for consistency with PyTorch
-        return pi.astype(np.float32), q_values.astype(np.float32)
+        return (
+            pi.astype(np.float32),
+            q_values.astype(np.float32),
+            visit_counts.astype(np.uint32),
+        )
 
 
 # Low-level API: Direct access to Rust implementation
