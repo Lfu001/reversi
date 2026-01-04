@@ -2,7 +2,7 @@ use crate::{
     inference::ModelEvaluator,
     inference::worker::{InferenceRequest, Worker},
     policy::PolicyEvaluation,
-    search::{SearchResults, get_move_second},
+    search::{SearchParams, SearchResults, get_move_second},
     selection::PuctConfig,
     state::State,
     transposition_table::TranspositionTable,
@@ -16,6 +16,9 @@ use rand::{RngCore, SeedableRng, rngs::StdRng};
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::{mpsc, oneshot};
+
+/// Type alias for MCTS run results: (policy distribution, Q-values)
+type MctsResult = PyResult<(Py<PyArray2<f64>>, Py<PyArray2<f64>>)>;
 
 struct PythonModel {
     sender: mpsc::Sender<InferenceRequest>,
@@ -94,6 +97,7 @@ impl Mcts {
     /// A tuple containing:
     /// * `pi` - Policy distribution of shape (batch_size, 64).
     /// * `q_values` - Q-values of shape (batch_size, 64).
+    #[allow(clippy::too_many_arguments)]
     fn run(
         &self,
         py: Python<'_>,
@@ -104,7 +108,7 @@ impl Mcts {
         dirichlet_alpha: f64,
         c_puct: f64,
         seed: Option<u64>,
-    ) -> PyResult<(Py<PyArray2<f64>>, Py<PyArray2<f64>>)> {
+    ) -> MctsResult {
         let states_array = states.as_array();
         let batch_size = states_array.shape()[0];
 
@@ -217,16 +221,13 @@ impl Mcts {
 
                         let mut tree = Tree::new(*state);
 
-                        get_move_second(
-                            &mut tree,
-                            num_inferences,
-                            self.states_per_inference,
-                            &py_model,
-                            tt,
-                            puct_config,
-                            &mut rng,
-                            Some(pbar),
-                        )
+                        let params = SearchParams {
+                            num_batches: num_inferences,
+                            batch_size: self.states_per_inference,
+                            config: puct_config,
+                            pbar: Some(pbar),
+                        };
+                        get_move_second(&mut tree, params, &py_model, tt, &mut rng)
                     })
                     .collect()
             })
@@ -248,7 +249,7 @@ impl Mcts {
         py: Python<'_>,
         results: Vec<SearchResults>,
         batch_size: usize,
-    ) -> PyResult<(Py<PyArray2<f64>>, Py<PyArray2<f64>>)> {
+    ) -> MctsResult {
         let mut pi = vec![0.0f64; batch_size * 64];
         let mut q_values = vec![0.0f64; batch_size * 64];
 

@@ -24,13 +24,6 @@ impl Tree {
         Self { arena, root }
     }
 
-    /// Creates a new [`Tree`] with the given root state and pre-allocated capacity.
-    pub fn with_capacity(root_state: State, capacity: usize) -> Self {
-        let mut arena = Arena::with_capacity(capacity);
-        let root = arena.allocate(Node::new(root_state, None));
-        Self { arena, root }
-    }
-
     /// Returns the root node ID.
     pub fn root(&self) -> NodeId {
         self.root
@@ -44,11 +37,6 @@ impl Tree {
     /// Returns a mutable reference to the arena.
     pub fn arena_mut(&mut self) -> &mut Arena {
         &mut self.arena
-    }
-
-    /// Returns the root state.
-    pub fn root_state(&self) -> &State {
-        self.arena.get(self.root).state()
     }
 }
 
@@ -66,11 +54,5 @@ mod tests {
         let tree = Tree::new(default_state());
         assert_eq!(tree.root(), 0);
         assert_eq!(tree.arena().len(), 1);
-    }
-
-    #[test]
-    fn test_root_state() {
-        let tree = Tree::new(default_state());
-        assert_eq!(tree.root_state(), &default_state());
     }
 }

@@ -13,6 +13,7 @@
 use crate::arena::{Arena, NodeId};
 use crate::inference::ModelEvaluator;
 use crate::node::Node;
+use crate::policy::PolicyEvaluation;
 use crate::selection::{PuctConfig, PuctStrategy};
 use crate::state::State;
 use crate::transposition_table::TranspositionTable;
@@ -45,6 +46,34 @@ enum PuctResult {
 pub struct SearchResults {
     pub visit_counts: Vec<u32>,
     pub q_values: Vec<f64>,
+}
+
+/// Parameters for MCTS search.
+pub struct SearchParams {
+    /// Number of batches to run.
+    pub num_batches: usize,
+    /// Number of states per batch.
+    pub batch_size: usize,
+    /// PUCT configuration.
+    pub config: PuctConfig,
+    /// Optional progress bar.
+    pub pbar: Option<indicatif::ProgressBar>,
+}
+
+/// Context for MCTS search operations.
+///
+/// Groups together the common references passed to all MCTS functions,
+/// reducing the number of function arguments.
+struct SearchContext<'a> {
+    tt: &'a TranspositionTable,
+    strategy: &'a PuctStrategy,
+    config: PuctConfig,
+}
+
+/// Batch of states with their inference results.
+struct InferenceBatch {
+    states: Vec<State>,
+    results: Option<Vec<PolicyEvaluation>>,
 }
 
 /// treeBatch: A copy of the main tree's statistics for batch construction.
@@ -224,9 +253,7 @@ struct SecondMoveContext {
 fn batch_mcts<T: TreeLike>(
     tree: &mut T,
     node_id: NodeId,
-    tt: &TranspositionTable,
-    strategy: &PuctStrategy,
-    config: PuctConfig,
+    ctx: &SearchContext<'_>,
     rng: &mut impl rand::Rng,
     is_root: bool,
     second_move_ctx: Option<&SecondMoveContext>,
@@ -240,26 +267,25 @@ fn batch_mcts<T: TreeLike>(
 
     // Algorithm 1/8: if s ∉ t then
     if !tree.arena().get(node_id).is_expanded() {
-        if tt.get(&state).is_none() {
+        if ctx.tt.get(&state).is_none() {
             return PuctResult::Unknown(state);
         } else {
             expand_node(tree.arena_mut(), node_id, &state);
-            let v = tt.get(&state).unwrap().value().value();
+            let v = ctx.tt.get(&state).unwrap().value().value();
             return PuctResult::Value(v);
         }
     }
 
     // Algorithm 1/8: PUCT selection (lines 204-215 / 343-354)
-    let mut best_child_id =
-        select_best_child(tree.arena(), node_id, tt, strategy, config, rng, is_root);
+    let mut best_child_id = select_best_child(tree.arena(), node_id, ctx, rng, is_root);
 
     // Algorithm 8, lines 355-361: Second Move forcing at root
-    if is_root && let Some(ctx) = second_move_ctx {
+    if is_root && let Some(smc) = second_move_ctx {
         let info = SecondMoveInfo::from_root(tree.arena(), node_id);
-        if info.should_force_second(ctx.budget, ctx.spent_budget) {
-            if let Some(second_id) = info.second_id {
-                best_child_id = Some(second_id);
-            }
+        if info.should_force_second(smc.budget, smc.spent_budget)
+            && let Some(second_id) = info.second_id
+        {
+            best_child_id = Some(second_id);
         }
     }
 
@@ -267,9 +293,7 @@ fn batch_mcts<T: TreeLike>(
     let res = batch_mcts(
         tree,
         best_child_id.unwrap(),
-        tt,
-        strategy,
-        config,
+        ctx,
         rng,
         false,
         second_move_ctx,
@@ -288,40 +312,36 @@ fn batch_mcts<T: TreeLike>(
 /// Combines Algorithm 7's Last Iteration with Algorithm 9's final μ comparison.
 pub fn get_move_second<M: ModelEvaluator>(
     tree: &mut Tree,
-    num_batches: usize,
-    batch_size: usize,
+    params: SearchParams,
     model: &M,
     tt: &TranspositionTable,
-    config: PuctConfig,
     rng: &mut impl rand::Rng,
-    pbar: Option<indicatif::ProgressBar>,
 ) -> SearchResults {
-    let strategy = PuctStrategy::new(config);
+    let strategy = PuctStrategy::new(params.config);
+    let ctx = SearchContext {
+        tt,
+        strategy: &strategy,
+        config: params.config,
+    };
     let root_id = tree.root();
 
     // Total budget for Second Move Heuristic (Algorithm 9)
-    let total_budget = num_batches * batch_size;
+    let total_budget = params.num_batches * params.batch_size;
 
     // Algorithm 9: for i ← 0 to B do
-    for batch_idx in 0..num_batches {
-        let spent_budget = batch_idx * batch_size;
+    for batch_idx in 0..params.num_batches {
+        let spent_budget = batch_idx * params.batch_size;
+        let smc = SecondMoveContext {
+            budget: total_budget,
+            spent_budget,
+        };
 
         // Algorithm 9: GetBatchSecond(s, budget, i)
-        let batch = get_batch_second(
-            tree,
-            root_id,
-            batch_size,
-            tt,
-            &strategy,
-            config,
-            rng,
-            total_budget,
-            spent_budget,
-        );
+        let states = get_batch_second(tree, root_id, params.batch_size, &ctx, rng, &smc);
 
         // Algorithm 9: out ← Forward(batch)
-        let inference_results = if !batch.is_empty() {
-            Some(model.infer(&batch))
+        let results = if !states.is_empty() {
+            Some(model.infer(&states))
         } else {
             None
         };
@@ -330,23 +350,19 @@ pub fn get_move_second<M: ModelEvaluator>(
         put_batch_second(
             tree,
             root_id,
-            tt,
-            &strategy,
-            config,
+            &ctx,
             rng,
-            total_budget,
-            spent_budget,
-            batch,
-            inference_results,
+            &smc,
+            InferenceBatch { states, results },
         );
 
-        if let Some(pb) = &pbar {
+        if let Some(pb) = &params.pbar {
             pb.inc(1);
         }
     }
 
     // Algorithm 7: Last Iteration (uses BatchPUCT, not BatchSecond - no budget remaining)
-    last_iteration(tree, root_id, tt, &strategy, config, rng);
+    last_iteration(tree, root_id, &ctx, rng);
 
     // Algorithm 9, lines 8-15: Compare μ(best) vs μ(secondBest)
     aggregate_results_second_heuristic(tree)
@@ -358,12 +374,9 @@ fn get_batch_second(
     tree: &mut Tree,
     root_id: NodeId,
     batch_size: usize,
-    tt: &TranspositionTable,
-    strategy: &PuctStrategy,
-    config: PuctConfig,
+    ctx: &SearchContext<'_>,
     rng: &mut impl rand::Rng,
-    budget: usize,
-    spent_budget: usize,
+    smc: &SecondMoveContext,
 ) -> Vec<State> {
     let mut tree_batch = TreeBatch::from(&*tree);
     let mut batch: Vec<State> = Vec::with_capacity(batch_size);
@@ -371,20 +384,13 @@ fn get_batch_second(
     let mut descent = 0;
     while batch.len() < batch_size && descent < MAX_DESCENTS_PER_BATCH {
         descent += 1;
-        // Call batch_mcts with SecondMoveContext for Second Move forcing
-        let ctx = SecondMoveContext {
-            budget,
-            spent_budget,
-        };
         let res = batch_mcts(
             &mut tree_batch,
             root_id,
-            tt,
-            strategy,
-            config,
+            ctx,
             rng,
             true, // is_root
-            Some(&ctx),
+            Some(smc),
         );
 
         if let PuctResult::Unknown(state) = res {
@@ -400,32 +406,24 @@ fn get_batch_second(
 fn put_batch_second(
     tree: &mut Tree,
     root_id: NodeId,
-    tt: &TranspositionTable,
-    strategy: &PuctStrategy,
-    config: PuctConfig,
+    ctx: &SearchContext<'_>,
     rng: &mut impl rand::Rng,
-    budget: usize,
-    spent_budget: usize,
-    batch: Vec<State>,
-    inference_results: Option<Vec<crate::policy::PolicyEvaluation>>,
+    smc: &SecondMoveContext,
+    batch: InferenceBatch,
 ) {
     // Add inference results to TT (Algorithm 9)
-    if let Some(results) = inference_results {
-        for (state, policy_eval) in batch.iter().zip(results.into_iter()) {
-            tt.add(*state, policy_eval);
+    if let Some(results) = batch.results {
+        for (state, policy_eval) in batch.states.iter().zip(results.into_iter()) {
+            ctx.tt.add(*state, policy_eval);
         }
     }
 
     // Update main tree with batch_mcts (uses Algorithm 2 for Tree)
-    let ctx = SecondMoveContext {
-        budget,
-        spent_budget,
-    };
     // Bounded loop: max iterations = batch size * 2 to prevent infinite loop
     // when all reachable states are already in TT
-    let max_iterations = batch.len().max(1) * 2;
+    let max_iterations = batch.states.len().max(1) * 2;
     for _ in 0..max_iterations {
-        let res = batch_mcts(tree, root_id, tt, strategy, config, rng, true, Some(&ctx));
+        let res = batch_mcts(tree, root_id, ctx, rng, true, Some(smc));
         if let PuctResult::Unknown(_) = res {
             break;
         }
@@ -436,9 +434,7 @@ fn put_batch_second(
 fn last_iteration(
     tree: &mut Tree,
     root_id: NodeId,
-    tt: &TranspositionTable,
-    strategy: &PuctStrategy,
-    config: PuctConfig,
+    ctx: &SearchContext<'_>,
     rng: &mut impl rand::Rng,
 ) {
     let mut tree_batch = TreeBatch::from(&*tree);
@@ -453,16 +449,7 @@ fn last_iteration(
     while nb_unknown < target_unknown && total_descents < LAST_ITERATION_MAX_DESCENTS {
         total_descents += 1;
         // Use batch_mcts without SecondMoveContext (no Second Move forcing)
-        let res = batch_mcts(
-            &mut tree_batch,
-            root_id,
-            tt,
-            strategy,
-            config,
-            rng,
-            true,
-            None,
-        );
+        let res = batch_mcts(&mut tree_batch, root_id, ctx, rng, true, None);
         if let PuctResult::Unknown(_) = res {
             nb_unknown += 1;
         }
@@ -513,14 +500,12 @@ fn expand_node(arena: &mut Arena, node_id: NodeId, state: &State) {
 fn select_best_child(
     arena: &Arena,
     parent_id: NodeId,
-    tt: &TranspositionTable,
-    strategy: &PuctStrategy,
-    config: PuctConfig,
+    ctx: &SearchContext<'_>,
     rng: &mut impl rand::Rng,
     is_root: bool,
 ) -> Option<NodeId> {
     let parent = arena.get(parent_id);
-    let policy_eval = tt.get(parent.state())?;
+    let policy_eval = ctx.tt.get(parent.state())?;
     let parent_visit_count = parent.visit_count();
 
     let children: Vec<NodeId> = arena.children(parent_id).collect();
@@ -537,9 +522,9 @@ fn select_best_child(
     };
 
     // Dirichlet noise at root
-    let noise: Option<Vec<f64>> = if is_root && config.dirichlet_epsilon > 0.0 {
+    let noise: Option<Vec<f64>> = if is_root && ctx.config.dirichlet_epsilon > 0.0 {
         use crate::dirichlet::Dirichlet;
-        let dirichlet = Dirichlet::new(config.dirichlet_alpha);
+        let dirichlet = Dirichlet::new(ctx.config.dirichlet_alpha);
         dirichlet.sample(rng, children.len())
     } else {
         None
@@ -567,12 +552,14 @@ fn select_best_child(
 
         // Dirichlet noise at root
         if let Some(ref noise_vec) = noise {
-            prior = (1.0 - config.dirichlet_epsilon) * prior
-                + config.dirichlet_epsilon * noise_vec[idx];
+            prior = (1.0 - ctx.config.dirichlet_epsilon) * prior
+                + ctx.config.dirichlet_epsilon * noise_vec[idx];
         }
 
         // Algorithm 1: bandit = μ + c × prior × √(t.p(s)) / (1 + t.p(s,m))
-        let score = strategy.calculate_score(mu, child.visit_count(), parent_visit_count, prior);
+        let score =
+            ctx.strategy
+                .calculate_score(mu, child.visit_count(), parent_visit_count, prior);
 
         if score > best_score {
             best_score = score;
@@ -674,7 +661,13 @@ mod tests {
         let config = create_default_config();
         let mut rng = StdRng::seed_from_u64(42);
 
-        get_move_second(&mut tree, 4, 2, &model, &tt, config, &mut rng, None);
+        let params = SearchParams {
+            num_batches: 4,
+            batch_size: 2,
+            config,
+            pbar: None,
+        };
+        get_move_second(&mut tree, params, &model, &tt, &mut rng);
 
         assert!(tree.arena().get(tree.root()).visit_count() > 0);
     }
@@ -755,9 +748,13 @@ mod tests {
         let child2_id = arena.add_child(parent_id, child2);
 
         let mut rng = StdRng::seed_from_u64(42);
+        let ctx = SearchContext {
+            tt: &tt,
+            strategy: &strategy,
+            config,
+        };
         let best = select_best_child(
-            &arena, parent_id, &tt, &strategy, config, &mut rng,
-            false, // not root, no Dirichlet noise
+            &arena, parent_id, &ctx, &mut rng, false, // not root, no Dirichlet noise
         );
 
         // Child 2 should be selected due to highest exploration bonus (0 visits)

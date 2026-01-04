@@ -23,13 +23,6 @@ impl Arena {
         Self { nodes: Vec::new() }
     }
 
-    /// Creates a new [`Arena`] with the specified capacity.
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self {
-            nodes: Vec::with_capacity(capacity),
-        }
-    }
-
     /// Allocates a new node and returns its ID.
     pub fn allocate(&mut self, node: Node) -> NodeId {
         let id = self.nodes.len();
@@ -78,11 +71,6 @@ impl Arena {
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
-
-    /// Returns true if the arena contains no nodes.
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
-    }
 }
 
 impl Default for Arena {
@@ -120,7 +108,7 @@ mod tests {
     #[test]
     fn test_arena_new() {
         let arena = Arena::new();
-        assert!(arena.is_empty());
+        assert_eq!(arena.len(), 0);
     }
 
     #[test]

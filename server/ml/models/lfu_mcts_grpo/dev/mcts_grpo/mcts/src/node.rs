@@ -94,30 +94,6 @@ impl Node {
             self.sum_evaluation / self.visit_count as f64
         }
     }
-
-    /// Applies virtual loss (Virtual Mean).
-    ///
-    /// Adds 1 to visit count and adds current Q-value to sum,
-    /// keeping the average value unchanged.
-    pub fn apply_virtual_loss(&mut self) {
-        let current_mean = self.q_value();
-        self.visit_count += 1;
-        self.sum_evaluation += current_mean;
-    }
-
-    /// Updates the node by replacing virtual loss with real value.
-    ///
-    /// Assumes `apply_virtual_loss` was called before.
-    pub fn update_with_real_value(&mut self, real_value: f64) {
-        let current_mean = self.q_value();
-        self.sum_evaluation -= current_mean;
-        self.sum_evaluation += real_value;
-    }
-
-    /// Returns true if the node has no children.
-    pub fn is_leaf(&self) -> bool {
-        self.first_child.is_none()
-    }
 }
 
 #[cfg(test)]
@@ -140,12 +116,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_leaf() {
-        let node = Node::new(default_state(), None);
-        assert!(node.is_leaf());
-    }
-
-    #[test]
     fn test_q_value() {
         let mut node = Node::new(default_state(), None);
         assert_eq!(node.q_value(), 0.0);
@@ -157,32 +127,5 @@ mod tests {
         node.increment_visit_count();
         node.add_evaluation(0.4);
         assert!((node.q_value() - 0.6).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_virtual_loss() {
-        let mut node = Node::new(default_state(), None);
-        node.increment_visit_count();
-        node.add_evaluation(0.8);
-
-        let q_before = node.q_value();
-        node.apply_virtual_loss();
-
-        // Q-value should remain approximately the same
-        assert!((node.q_value() - q_before).abs() < 1e-10);
-        assert_eq!(node.visit_count(), 2);
-    }
-
-    #[test]
-    fn test_update_with_real_value() {
-        let mut node = Node::new(default_state(), None);
-        node.increment_visit_count();
-        node.add_evaluation(0.5);
-
-        node.apply_virtual_loss();
-        node.update_with_real_value(1.0);
-
-        // After update: (0.5 - 0.5 + 1.0) / 2 = 0.75
-        assert!((node.q_value() - 0.75).abs() < 1e-10);
     }
 }
