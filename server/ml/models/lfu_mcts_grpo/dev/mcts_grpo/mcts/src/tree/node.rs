@@ -2,8 +2,8 @@
 //!
 //! Nodes are stored in an arena allocator and linked via indices.
 
-use crate::arena::NodeId;
-use crate::state::State;
+use crate::game::state::State;
+use crate::tree::arena::NodeId;
 
 /// Node in the MCTS tree (arena-allocated).
 ///

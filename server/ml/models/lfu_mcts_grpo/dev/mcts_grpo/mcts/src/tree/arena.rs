@@ -3,7 +3,7 @@
 //! Provides contiguous storage for all tree nodes in a single `Vec<Node>`,
 //! enabling better cache locality compared to scattered heap allocations.
 
-use crate::node::Node;
+use crate::tree::node::Node;
 
 /// Index into the arena.
 pub type NodeId = usize;
@@ -98,7 +98,7 @@ impl<'a> Iterator for ChildrenIter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::state::State;
+    use crate::game::state::State;
     use common::{Bitboard, DiskColor};
 
     fn default_state() -> State {

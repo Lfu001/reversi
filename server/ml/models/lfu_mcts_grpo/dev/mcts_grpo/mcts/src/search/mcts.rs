@@ -10,14 +10,14 @@
 //! - Algorithm 4/5: GetBatchSecond / PutBatchSecond
 //! - Algorithm 9: GetMoveSecond (with Last Iteration from Algorithm 7)
 
-use crate::arena::{Arena, NodeId};
-use crate::inference::ModelEvaluator;
-use crate::node::Node;
-use crate::policy::PolicyEvaluation;
-use crate::selection::{PuctConfig, PuctStrategy};
-use crate::state::State;
-use crate::transposition_table::TranspositionTable;
-use crate::tree::Tree;
+use crate::game::policy::PolicyEvaluation;
+use crate::game::state::State;
+use crate::inference::model_evaluator::ModelEvaluator;
+use crate::search::selection::{PuctConfig, PuctStrategy};
+use crate::tree::arena::{Arena, NodeId};
+use crate::tree::node::Node;
+use crate::tree::transposition_table::TranspositionTable;
+use crate::tree::tree_impl::Tree;
 
 /// Virtual loss count (vl in the paper). Using VirtualMean.
 const VL: u32 = 1;
@@ -523,7 +523,7 @@ fn select_best_child(
 
     // Dirichlet noise at root
     let noise: Option<Vec<f64>> = if is_root && ctx.config.dirichlet_epsilon > 0.0 {
-        use crate::dirichlet::Dirichlet;
+        use crate::search::dirichlet::Dirichlet;
         let dirichlet = Dirichlet::new(ctx.config.dirichlet_alpha);
         dirichlet.sample(rng, children.len())
     } else {
@@ -618,8 +618,8 @@ fn aggregate_results_second_heuristic(tree: &Tree) -> SearchResults {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::policy::{Policy, PolicyEvaluation, Value};
-    use crate::tree::Tree;
+    use crate::game::policy::{Policy, PolicyEvaluation, Value};
+    use crate::tree::tree_impl::Tree;
     use common::{Bitboard, DiskColor};
     use rand::SeedableRng;
     use rand::rngs::StdRng;

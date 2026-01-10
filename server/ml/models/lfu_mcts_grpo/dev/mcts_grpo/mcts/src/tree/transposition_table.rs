@@ -5,7 +5,7 @@
 //! move sequences, caching these evaluations avoids redundant neural network
 //! inference calls and significantly improves MCTS performance.
 
-use crate::{policy::PolicyEvaluation, state::State};
+use crate::game::{policy::PolicyEvaluation, state::State};
 use dashmap::DashMap;
 
 /// A thread-safe cache for storing neural network evaluations of game states.
@@ -53,7 +53,7 @@ impl TranspositionTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::policy::{Policy, Value};
+    use crate::game::policy::{Policy, Value};
     use common::{Bitboard, DiskColor};
 
     fn default_state() -> State {

@@ -1,5 +1,5 @@
-use crate::policy::{Policy, PolicyEvaluation, Value};
-use crate::state::State;
+use crate::game::policy::{Policy, PolicyEvaluation, Value};
+use crate::game::state::State;
 use common::{BitPosition, Column, DiskColor, Position, Row};
 use num_traits::FromPrimitive;
 use numpy::{PyArray, PyArrayMethods};

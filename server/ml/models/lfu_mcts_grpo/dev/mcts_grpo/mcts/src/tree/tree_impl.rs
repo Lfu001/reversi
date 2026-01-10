@@ -3,9 +3,9 @@
 //! The `Tree` holds nodes in an arena allocator and provides access to the
 //! root node. Search logic is handled separately in the `search` module.
 
-use crate::arena::{Arena, NodeId};
-use crate::node::Node;
-use crate::state::State;
+use crate::game::state::State;
+use crate::tree::arena::{Arena, NodeId};
+use crate::tree::node::Node;
 
 /// MCTS search tree
 ///

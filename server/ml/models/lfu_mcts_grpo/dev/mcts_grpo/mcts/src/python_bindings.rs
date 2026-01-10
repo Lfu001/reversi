@@ -1,12 +1,14 @@
 use crate::{
-    inference::ModelEvaluator,
-    inference::worker::{InferenceRequest, Worker},
-    policy::PolicyEvaluation,
-    search::{SearchParams, SearchResults, get_move_second},
-    selection::PuctConfig,
-    state::State,
-    transposition_table::TranspositionTable,
-    tree::Tree,
+    game::{policy::PolicyEvaluation, state::State},
+    inference::{
+        model_evaluator::ModelEvaluator,
+        worker::{InferenceRequest, Worker},
+    },
+    search::{
+        mcts::{SearchParams, SearchResults, get_move_second},
+        selection::PuctConfig,
+    },
+    tree::{transposition_table::TranspositionTable, tree_impl::Tree},
 };
 use common::DiskColor;
 use indicatif::ProgressBar;
