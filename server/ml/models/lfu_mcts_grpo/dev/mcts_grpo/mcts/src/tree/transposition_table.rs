@@ -48,6 +48,46 @@ impl TranspositionTable {
         // DashMap returns a Ref, but we need owned data (PolicyEvaluation is small/cloneable)
         self.table.get(state)
     }
+
+    /// Attempts to reserve a state for inference atomically.
+    ///
+    /// This method prevents duplicate inference requests by using an atomic
+    /// check-and-insert pattern. When multiple threads encounter the same
+    /// unexplored state, only one will successfully reserve it.
+    ///
+    /// Returns:
+    /// - `Reserved` if this thread successfully reserved the state (should queue for inference)
+    /// - `AlreadyReserved` if another thread has reserved it but inference is pending
+    /// - `AlreadyEvaluated(value)` if inference result is already available
+    pub fn try_reserve(&self, state: State) -> ReserveResult {
+        use dashmap::mapref::entry::Entry;
+
+        match self.table.entry(state) {
+            Entry::Occupied(entry) => {
+                let eval = entry.get();
+                if eval.is_pending() {
+                    ReserveResult::AlreadyReserved
+                } else {
+                    ReserveResult::AlreadyEvaluated(eval.value())
+                }
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(PolicyEvaluation::pending());
+                ReserveResult::Reserved
+            }
+        }
+    }
+}
+
+/// Result of attempting to reserve a state in the transposition table.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ReserveResult {
+    /// This thread successfully reserved the state for inference.
+    Reserved,
+    /// Another thread has already reserved this state (inference pending).
+    AlreadyReserved,
+    /// The state has already been evaluated (value available).
+    AlreadyEvaluated(f64),
 }
 
 #[cfg(test)]
@@ -84,5 +124,67 @@ mod tests {
         let policy_evaluation = default_policy_evaluation();
         table.add(default_state(), policy_evaluation);
         assert!(table.get(&default_state()).is_some());
+    }
+
+    #[test]
+    fn test_try_reserve_new_state() {
+        let table = TranspositionTable::new();
+        let state = default_state();
+
+        // First reservation should succeed
+        let result = table.try_reserve(state);
+        assert_eq!(result, ReserveResult::Reserved);
+
+        // State should now be in table with pending evaluation
+        let eval = table.get(&state).unwrap();
+        assert!(eval.is_pending());
+    }
+
+    #[test]
+    fn test_try_reserve_already_reserved() {
+        let table = TranspositionTable::new();
+        let state = default_state();
+
+        // First reservation succeeds
+        assert_eq!(table.try_reserve(state), ReserveResult::Reserved);
+
+        // Second reservation returns AlreadyReserved (still pending)
+        assert_eq!(table.try_reserve(state), ReserveResult::AlreadyReserved);
+    }
+
+    #[test]
+    fn test_try_reserve_already_evaluated() {
+        let table = TranspositionTable::new();
+        let state = default_state();
+
+        // Add a completed evaluation
+        let eval = PolicyEvaluation::new(Policy([0.0; 64]), Value(0.5));
+        table.add(state, eval);
+
+        // try_reserve should return AlreadyEvaluated with the value
+        match table.try_reserve(state) {
+            ReserveResult::AlreadyEvaluated(v) => assert!((v - 0.5).abs() < 1e-10),
+            _ => panic!("Expected AlreadyEvaluated"),
+        }
+    }
+
+    #[test]
+    fn test_pending_overwritten_by_add() {
+        let table = TranspositionTable::new();
+        let state = default_state();
+
+        // Reserve the state (creates pending entry)
+        assert_eq!(table.try_reserve(state), ReserveResult::Reserved);
+        assert!(table.get(&state).unwrap().is_pending());
+
+        // Add actual evaluation (overwrites pending)
+        let eval = PolicyEvaluation::new(Policy([0.0; 64]), Value(0.7));
+        table.add(state, eval);
+
+        // Now should return AlreadyEvaluated
+        match table.try_reserve(state) {
+            ReserveResult::AlreadyEvaluated(v) => assert!((v - 0.7).abs() < 1e-10),
+            _ => panic!("Expected AlreadyEvaluated after add"),
+        }
     }
 }

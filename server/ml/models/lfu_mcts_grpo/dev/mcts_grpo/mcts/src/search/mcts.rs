@@ -16,7 +16,7 @@ use crate::inference::model_evaluator::ModelEvaluator;
 use crate::search::selection::{PuctConfig, PuctStrategy};
 use crate::tree::arena::{Arena, NodeId};
 use crate::tree::node::Node;
-use crate::tree::transposition_table::TranspositionTable;
+use crate::tree::transposition_table::{ReserveResult, TranspositionTable};
 use crate::tree::tree_impl::Tree;
 
 /// Virtual loss count (vl in the paper). Using VirtualMean.
@@ -37,6 +37,8 @@ const LAST_ITERATION_MAX_DESCENTS: usize = 500;
 enum PuctResult {
     /// State not in TT, needs inference. Contains the state.
     Unknown(State),
+    /// State reserved by another thread, inference pending.
+    Pending,
     /// Evaluation value.
     Value(f64),
 }
@@ -125,11 +127,11 @@ impl TreeLike for TreeBatch {
 
     /// Algorithm 3: UpdateStatisticsGet (VirtualMean)
     ///
-    /// For Unknown: t.p(s,m) += vl; t.sum(s,m) += vl × μ
+    /// For Unknown/Pending: t.p(s,m) += vl; t.sum(s,m) += vl × μ
     /// For Value: t.p(s,m) += 1; t.sum(s,m) += res
     fn update_statistics(&mut self, node_id: NodeId, res: PuctResult) {
         match res {
-            PuctResult::Unknown(_) => {
+            PuctResult::Unknown(_) | PuctResult::Pending => {
                 // Algorithm 3: μ = t.sum(s,m) / t.p(s,m)
                 let node = self.arena.get_mut(node_id);
                 let mu = if node.visit_count() > 0 {
@@ -166,7 +168,7 @@ impl TreeLike for Tree {
 
     /// Algorithm 2: UpdateStatistics
     ///
-    /// if res ≠ Unknown: t.p(s,m) += 1; t.sum(s,m) += res
+    /// if res ≠ Unknown/Pending: t.p(s,m) += 1; t.sum(s,m) += res
     fn update_statistics(&mut self, node_id: NodeId, res: PuctResult) {
         // Algorithm 2: if res ≠ Unknown then
         if let PuctResult::Value(v) = res {
@@ -175,7 +177,7 @@ impl TreeLike for Tree {
             node.increment_visit_count();
             node.add_evaluation(v);
         }
-        // Algorithm 2: if res = Unknown, do nothing
+        // Algorithm 2: if res = Unknown or Pending, do nothing
     }
 }
 
@@ -267,12 +269,21 @@ fn batch_mcts<T: TreeLike>(
 
     // Algorithm 1/8: if s ∉ t then
     if !tree.arena().get(node_id).is_expanded() {
-        if ctx.tt.get(&state).is_none() {
-            return PuctResult::Unknown(state);
-        } else {
-            expand_node(tree.arena_mut(), node_id, &state);
-            let v = ctx.tt.get(&state).unwrap().value().value();
-            return PuctResult::Value(v);
+        // Use atomic try_reserve to prevent duplicate inference requests
+        match ctx.tt.try_reserve(state) {
+            ReserveResult::Reserved => {
+                // This thread won the reservation - add state to batch
+                return PuctResult::Unknown(state);
+            }
+            ReserveResult::AlreadyReserved => {
+                // Another thread is handling this state - apply VirtualMean
+                return PuctResult::Pending;
+            }
+            ReserveResult::AlreadyEvaluated(v) => {
+                // Inference result available - expand and use value
+                expand_node(tree.arena_mut(), node_id, &state);
+                return PuctResult::Value(v);
+            }
         }
     }
 

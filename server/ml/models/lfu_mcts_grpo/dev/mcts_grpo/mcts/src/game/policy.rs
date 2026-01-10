@@ -33,6 +33,23 @@ impl PolicyEvaluation {
         Self { policy, value }
     }
 
+    /// Creates a pending evaluation used as a placeholder in the transposition table.
+    ///
+    /// A pending evaluation indicates that another thread has reserved this state
+    /// for inference but the result is not yet available. The value is set to NaN
+    /// as a sentinel value.
+    pub fn pending() -> Self {
+        Self {
+            policy: Policy([0.0; 64]),
+            value: Value(f64::NAN),
+        }
+    }
+
+    /// Returns true if this evaluation is pending (awaiting inference).
+    pub fn is_pending(&self) -> bool {
+        self.value.0.is_nan()
+    }
+
     /// Returns the policy.
     pub fn policy(&self) -> &Policy {
         &self.policy
@@ -55,5 +72,18 @@ mod tests {
         let policy_evaluation = PolicyEvaluation::new(policy, value);
         assert_eq!(policy_evaluation.policy.0, [0.0; 64]);
         assert_eq!(policy_evaluation.value.0, 0.0);
+    }
+
+    #[test]
+    fn test_pending() {
+        let pending = PolicyEvaluation::pending();
+        assert!(pending.is_pending());
+        assert!(pending.value().is_nan());
+    }
+
+    #[test]
+    fn test_is_pending_false_for_normal() {
+        let normal = PolicyEvaluation::new(Policy([0.0; 64]), Value(0.5));
+        assert!(!normal.is_pending());
     }
 }
