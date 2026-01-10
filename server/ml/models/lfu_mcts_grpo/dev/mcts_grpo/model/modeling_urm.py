@@ -46,7 +46,7 @@ class ConvSwiGLU(nn.Module):
             in_channels=intermediate_size,
             out_channels=intermediate_size,
             kernel_size=conv_kernel_size,
-            padding=conv_kernel_size - 1,  # Causal-ish padding
+            padding=conv_kernel_size // 2,  # Symmetric padding
             groups=intermediate_size,
             bias=True,
         )
@@ -239,19 +239,15 @@ class URMBlock(nn.Module):
     """
     Single URM block: Attention + ConvSwiGLU with residual connections.
 
-    Pre-norm architecture (RMSNorm/LayerNorm before each sub-layer).
+    Post-norm architecture (RMSNorm after residual).
     """
 
     def __init__(self, config: URMConfig):
         super().__init__()
         self.self_attn = URMAttention(config)
         self.mlp = ConvSwiGLU(config)
-        self.input_layernorm = nn.LayerNorm(
-            config.hidden_size, eps=config.layer_norm_eps
-        )
-        self.post_attention_layernorm = nn.LayerNorm(
-            config.hidden_size, eps=config.layer_norm_eps
-        )
+        self.post_attn_norm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_mlp_norm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -265,17 +261,13 @@ class URMBlock(nn.Module):
         Returns:
             [batch, seq_len, hidden_size]
         """
-        # Self-attention with residual
-        residual = hidden_states
-        hidden_states = self.input_layernorm(hidden_states)
-        hidden_states = self.self_attn(hidden_states, attention_mask)
-        hidden_states = residual + hidden_states
+        # Self-attention with residual + post-norm
+        attn_output = self.self_attn(hidden_states, attention_mask)
+        hidden_states = self.post_attn_norm(hidden_states + attn_output)
 
-        # MLP with residual
-        residual = hidden_states
-        hidden_states = self.post_attention_layernorm(hidden_states)
-        hidden_states = self.mlp(hidden_states)
-        hidden_states = residual + hidden_states
+        # MLP with residual + post-norm
+        mlp_output = self.mlp(hidden_states)
+        hidden_states = self.post_mlp_norm(hidden_states + mlp_output)
 
         return hidden_states
 
@@ -297,38 +289,39 @@ class URMBackbone(nn.Module):
             [URMBlock(config) for _ in range(config.num_layers)]
         )
 
-        # Final layer norm
-        self.final_layernorm = nn.LayerNorm(
-            config.hidden_size, eps=config.layer_norm_eps
-        )
-
     def forward(
         self,
         hidden_states: torch.Tensor,
+        input_embeddings: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """
         Args:
-            hidden_states: [batch, seq_len, hidden_size]
+            hidden_states: [batch, seq_len, hidden_size] - current recurrent state
+            input_embeddings: [batch, seq_len, hidden_size] - added at each loop
             attention_mask: Optional attention mask
         Returns:
             [batch, seq_len, hidden_size]
         """
-        # Note: Position encoding is handled by RoPE in the attention layer
+        # TBPTL: Run early loops in forward-only mode (no gradients)
+        # Gradients flow from later loops through input_embeddings
+        if self.training and self.config.truncation_steps > 0:
+            with torch.no_grad():
+                for _ in range(self.config.truncation_steps):
+                    # Add input embeddings at each loop (Universal Transformer)
+                    hidden_states = hidden_states + input_embeddings
+                    for layer in self.layers:
+                        hidden_states = layer(hidden_states, attention_mask)
 
-        # Inner loop recurrence with TBPTL
-        for loop_idx in range(self.config.num_inner_loops):
-            # Apply all transformer layers
+        # Remaining loops with gradient tracking
+        # Input embeddings are added here, preserving gradient flow to input_embed
+        num_grad_loops = self.config.num_inner_loops - self.config.truncation_steps
+        for _ in range(num_grad_loops):
+            # Add input embeddings at each loop (Universal Transformer)
+            hidden_states = hidden_states + input_embeddings
             for layer in self.layers:
                 hidden_states = layer(hidden_states, attention_mask)
 
-            # TBPTL: Detach gradients AFTER truncated loops complete
-            # This allows gradients to flow to input, but stops gradients from
-            # later loops (which we optimize) from flowing to earlier loops
-            if self.training and loop_idx < self.config.truncation_steps:
-                hidden_states = hidden_states.detach()
-
-        hidden_states = self.final_layernorm(hidden_states)
         return hidden_states
 
 
@@ -348,6 +341,11 @@ class URMModel(PreTrainedModel):
 
         # Input embedding: project [4] channels to hidden_size
         self.input_embed = nn.Linear(config.input_channels, config.hidden_size)
+
+        # Initial hidden state (fixed, truncated normal init per official URM)
+        init_hidden = torch.empty(1, 1, config.hidden_size)
+        torch.nn.init.trunc_normal_(init_hidden, std=1.0)
+        self.register_buffer("init_hidden", init_hidden, persistent=True)
 
         # Transformer backbone
         self.backbone = URMBackbone(config)
@@ -384,11 +382,19 @@ class URMModel(PreTrainedModel):
         x = x.view(batch_size, self.config.input_channels, -1)  # [batch, 4, 64]
         x = x.transpose(1, 2)  # [batch, 64, 4]
 
-        # Project to hidden dimension
-        hidden_states = self.input_embed(x)  # [batch, 64, hidden_size]
+        # Project to hidden dimension (input embeddings added at each loop)
+        input_embeddings = self.input_embed(x)  # [batch, 64, hidden_size]
 
-        # Apply transformer backbone
-        hidden_states = self.backbone(hidden_states)  # [batch, 64, hidden_size]
+        # Initialize hidden state (broadcast to batch)
+        hidden_states = self.init_hidden.expand(
+            batch_size, -1, -1
+        )  # [batch, 1, hidden]
+        hidden_states = hidden_states.expand(-1, 64, -1)  # [batch, 64, hidden]
+
+        # Apply transformer backbone with input embeddings added at each loop
+        hidden_states = self.backbone(
+            hidden_states, input_embeddings
+        )  # [batch, 64, hidden_size]
 
         # Policy head: per-position logits
         policy_logits = self.policy_head(hidden_states)  # [batch, 64, 1]

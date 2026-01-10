@@ -262,28 +262,58 @@ class TestURMModel:
         assert x.grad is not None
         assert not torch.isnan(x.grad).any()
 
-    def test_tbptl_detaches_early_loops(self, small_config):
-        """Test TBPTL: gradients detached for early loops during training."""
+    def test_tbptl_skips_gradient_for_early_loops(self, small_config):
+        """Test TBPTL: early loops run without gradient tracking."""
         model = URMModel(small_config)
         model.train()
-
-        # Hook to track gradient presence
-        gradients_detected = []
-
-        def hook(module, grad_input, grad_output):
-            gradients_detected.append(True)
-
-        # Register hook on first layer
-        model.backbone.layers[0].register_full_backward_hook(hook)
 
         x = torch.randn(2, 4, 8, 8)
         policy, value = model(x)
         loss = policy.sum() + value.sum()
         loss.backward()
 
-        # Should have gradients only from (num_inner_loops - truncation_steps) loops
-        # but they go through the same layers, so we just verify the hook was called
-        assert len(gradients_detected) > 0
+        # Verify backbone layers have gradients (from non-truncated loops)
+        # Note: input_embed won't have gradients because truncated loops break the chain
+        for layer in model.backbone.layers:
+            for param in layer.parameters():
+                if param.requires_grad:
+                    assert param.grad is not None, (
+                        "Backbone layer params should have gradients"
+                    )
+                    assert not torch.isnan(param.grad).any(), (
+                        "Gradients should not be NaN"
+                    )
+
+        # Verify policy/value heads have gradients
+        for param in model.policy_head.parameters():
+            if param.requires_grad:
+                assert param.grad is not None, (
+                    "Policy head params should have gradients"
+                )
+
+        for param in model.value_head.parameters():
+            if param.requires_grad:
+                assert param.grad is not None, "Value head params should have gradients"
+
+    def test_tbptl_input_embed_receives_gradients(self, small_config):
+        """Test that input_embed receives gradients during training.
+
+        With the fixed TBPTL implementation, input_embeddings are added at each
+        loop iteration, including the gradient-enabled loops. This preserves
+        the gradient flow to input_embed.
+        """
+        model = URMModel(small_config)
+        model.train()
+
+        x = torch.randn(2, 4, 8, 8)
+        policy, value = model(x)
+        loss = policy.sum() + value.sum()
+        loss.backward()
+
+        # input_embed should receive gradients for the model to learn properly
+        for param in model.input_embed.parameters():
+            if param.requires_grad:
+                assert param.grad is not None, "input_embed should receive gradients"
 
     def test_save_load_pretrained(self, small_config):
         """Test PreTrainedModel save and load functionality."""

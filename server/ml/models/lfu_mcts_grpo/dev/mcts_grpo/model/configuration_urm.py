@@ -27,7 +27,7 @@ class URMConfig(PretrainedConfig):
         expansion_ratio: MLP expansion ratio (default: 4, uses 2/3 scaling per official code)
         conv_kernel_size: Depthwise convolution kernel size (default: 2)
         dropout: Dropout rate (default: 0.0)
-        layer_norm_eps: Layer normalization epsilon (default: 1e-5)
+        rms_norm_eps: RMS normalization epsilon (default: 1e-5)
         input_channels: Number of input channels for board state (default: 4)
     """
 
@@ -43,7 +43,7 @@ class URMConfig(PretrainedConfig):
         expansion_ratio: int = 4,
         conv_kernel_size: int = 2,
         dropout: float = 0.0,
-        layer_norm_eps: float = 1e-5,
+        rms_norm_eps: float = 1e-5,
         input_channels: int = 4,
         **kwargs,
     ):
@@ -63,7 +63,7 @@ class URMConfig(PretrainedConfig):
         self.expansion_ratio = expansion_ratio
         self.conv_kernel_size = conv_kernel_size
         self.dropout = dropout
-        self.layer_norm_eps = layer_norm_eps
+        self.rms_norm_eps = rms_norm_eps
         self.input_channels = input_channels
 
     @property
