@@ -226,3 +226,309 @@ class TestComputeAllLosses:
         assert torch.isclose(total_loss, expected), (
             "Total loss should match weighted sum"
         )
+
+
+class TestGradientFlowThroughLoss:
+    """Tests for gradient flow through actual training loss."""
+
+    def test_parameters_updated_after_training_step(self):
+        """Verify that model parameters are updated after a complete training step."""
+        from mcts_grpo.model.configuration_urm import URMConfig
+        from mcts_grpo.model.modeling_urm import URMModel
+
+        # Setup model with no truncation to ensure gradients flow
+        config = URMConfig(
+            hidden_size=64,
+            num_attention_heads=4,
+            num_layers=1,
+            truncation_steps=0,
+        )
+        model = URMModel(config)
+        model.train()
+
+        training_config = TrainingConfig(
+            batch_size=4,
+            replay_buffer_size=1000,
+            learning_rate=1e-3,
+            weight_decay=0.01,
+            total_training_steps=100,
+            games_per_iteration=10,
+            training_steps_per_iteration=10,
+            warmup_steps=10,
+            lambda_value=1.0,
+        )
+        grpo_config = TreeGRPOConfig(lambda_grpo=1.5, grpo_num_pairs=3)
+        loss_calc = LossCalculator(training_config, grpo_config)
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+
+        # Save initial weights
+        initial_weights = {
+            name: param.data.clone() for name, param in model.named_parameters()
+        }
+
+        # Create sample data
+        batch_size = 4
+        states = torch.zeros(batch_size, 4, 8, 8)
+        states[:, 3, 2, 3] = 1.0  # legal moves
+        states[:, 3, 3, 2] = 1.0
+        states[:, 3, 4, 5] = 1.0
+        states[:, 3, 5, 4] = 1.0
+
+        pis = torch.zeros(batch_size, 8, 8)
+        pis[:, 2, 3] = 0.25
+        pis[:, 3, 2] = 0.25
+        pis[:, 4, 5] = 0.25
+        pis[:, 5, 4] = 0.25
+
+        outcomes = torch.tensor([1.0, -1.0, 0.0, 1.0])
+
+        q_vals = torch.zeros(batch_size, 8, 8)
+        q_vals[:, 2, 3] = 0.5
+        q_vals[:, 3, 2] = 0.3
+        q_vals[:, 4, 5] = -0.1
+        q_vals[:, 5, 4] = 0.2
+
+        visit_counts = torch.zeros(batch_size, 8, 8)
+        visit_counts[:, 2, 3] = 10.0
+        visit_counts[:, 3, 2] = 8.0
+        visit_counts[:, 4, 5] = 5.0
+        visit_counts[:, 5, 4] = 7.0
+
+        # Forward pass
+        optimizer.zero_grad()
+        policy_logits, value = model(states)
+
+        losses = loss_calc.compute_all_losses(
+            policy_logits,
+            value.unsqueeze(-1),
+            states,
+            pis,
+            outcomes,
+            q_vals,
+            visit_counts,
+        )
+        total_loss = loss_calc.compute_total_loss(losses)
+
+        # Verify loss has gradient
+        # Backward + step
+        total_loss.backward()
+
+        # Check ALL trainable parameters have gradients
+        params_with_grad = []
+        params_without_grad = []
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                if param.grad is not None and param.grad.abs().sum() > 0:
+                    params_with_grad.append(name)
+                else:
+                    params_without_grad.append(name)
+
+        assert len(params_without_grad) == 0, (
+            f"All trainable parameters should have non-zero gradients.\n"
+            f"Params WITH gradients ({len(params_with_grad)}): {params_with_grad}\n"
+            f"Params WITHOUT gradients ({len(params_without_grad)}): {params_without_grad}"
+        )
+
+        # Now apply optimizer step
+        optimizer.step()
+
+        # Count changed weights
+        weights_changed = []
+        weights_unchanged = []
+        for name, param in model.named_parameters():
+            if not torch.equal(param.data, initial_weights[name]):
+                weights_changed.append(name)
+            else:
+                weights_unchanged.append(name)
+
+        assert len(weights_changed) > 0, (
+            f"At least some weights should change after training step.\n"
+            f"Changed: {weights_changed}\n"
+            f"Unchanged: {weights_unchanged}"
+        )
+
+    def test_all_loss_components_contribute_gradients(self):
+        """Verify each loss component contributes to gradients."""
+        from mcts_grpo.model.configuration_urm import URMConfig
+        from mcts_grpo.model.modeling_urm import URMModel
+
+        config = URMConfig(
+            hidden_size=64,
+            num_attention_heads=4,
+            num_layers=1,
+            truncation_steps=0,
+        )
+        model = URMModel(config)
+        model.train()
+
+        training_config = TrainingConfig(
+            batch_size=4,
+            replay_buffer_size=1000,
+            learning_rate=1e-3,
+            weight_decay=0.01,
+            total_training_steps=100,
+            games_per_iteration=10,
+            training_steps_per_iteration=10,
+            warmup_steps=10,
+            lambda_value=1.0,
+        )
+        grpo_config = TreeGRPOConfig(lambda_grpo=1.5, grpo_num_pairs=3)
+        loss_calc = LossCalculator(training_config, grpo_config)
+
+        # Create sample data with enough explored nodes for GRPO
+        batch_size = 4
+        states = torch.zeros(batch_size, 4, 8, 8)
+        states[:, 3, 2, 3] = 1.0
+        states[:, 3, 3, 2] = 1.0
+        states[:, 3, 4, 5] = 1.0
+        states[:, 3, 5, 4] = 1.0
+
+        pis = torch.zeros(batch_size, 8, 8)
+        pis[:, 2, 3] = 0.25
+        pis[:, 3, 2] = 0.25
+        pis[:, 4, 5] = 0.25
+        pis[:, 5, 4] = 0.25
+
+        outcomes = torch.tensor([1.0, -1.0, 0.0, 1.0])
+
+        q_vals = torch.zeros(batch_size, 8, 8)
+        q_vals[:, 2, 3] = 0.5
+        q_vals[:, 3, 2] = 0.3
+        q_vals[:, 4, 5] = -0.1
+        q_vals[:, 5, 4] = 0.2
+
+        visit_counts = torch.zeros(batch_size, 8, 8)
+        visit_counts[:, 2, 3] = 10.0
+        visit_counts[:, 3, 2] = 8.0
+        visit_counts[:, 4, 5] = 5.0
+        visit_counts[:, 5, 4] = 7.0
+
+        # Forward
+        policy_logits, value = model(states)
+
+        losses = loss_calc.compute_all_losses(
+            policy_logits,
+            value.unsqueeze(-1),
+            states,
+            pis,
+            outcomes,
+            q_vals,
+            visit_counts,
+        )
+
+        # Check each loss has gradient
+        assert losses["value_loss"].requires_grad, "Value loss should require gradients"
+        assert losses["policy_loss"].requires_grad, (
+            "Policy loss should require gradients"
+        )
+        # GRPO may be 0 if no valid pairs, but should still be a tensor
+        assert isinstance(losses["grpo_loss"], torch.Tensor), (
+            "GRPO loss should be tensor"
+        )
+
+    def test_gradients_with_production_truncation(self):
+        """Test gradient flow with production config (truncation_steps=2).
+
+        This tests the TBPTL mechanism where early loops run without gradients.
+        The model should still learn - backbone layers and heads should receive
+        gradients from the non-truncated loops.
+        """
+        from mcts_grpo.model.configuration_urm import URMConfig
+        from mcts_grpo.model.modeling_urm import URMModel
+
+        # Production-like config with truncation
+        config = URMConfig(
+            hidden_size=64,
+            num_attention_heads=4,
+            num_layers=1,
+            num_inner_loops=4,
+            truncation_steps=2,  # Half of loops truncated
+        )
+        model = URMModel(config)
+        model.train()
+
+        training_config = TrainingConfig(
+            batch_size=4,
+            replay_buffer_size=1000,
+            learning_rate=1e-3,
+            weight_decay=0.01,
+            total_training_steps=100,
+            games_per_iteration=10,
+            training_steps_per_iteration=10,
+            warmup_steps=10,
+            lambda_value=1.0,
+        )
+        grpo_config = TreeGRPOConfig(lambda_grpo=1.5, grpo_num_pairs=3)
+        loss_calc = LossCalculator(training_config, grpo_config)
+
+        # Create sample data
+        batch_size = 4
+        states = torch.zeros(batch_size, 4, 8, 8)
+        states[:, 3, 2, 3] = 1.0
+        states[:, 3, 3, 2] = 1.0
+        states[:, 3, 4, 5] = 1.0
+        states[:, 3, 5, 4] = 1.0
+
+        pis = torch.zeros(batch_size, 8, 8)
+        pis[:, 2, 3] = 0.25
+        pis[:, 3, 2] = 0.25
+        pis[:, 4, 5] = 0.25
+        pis[:, 5, 4] = 0.25
+
+        outcomes = torch.tensor([1.0, -1.0, 0.0, 1.0])
+
+        q_vals = torch.zeros(batch_size, 8, 8)
+        q_vals[:, 2, 3] = 0.5
+        q_vals[:, 3, 2] = 0.3
+        q_vals[:, 4, 5] = -0.1
+        q_vals[:, 5, 4] = 0.2
+
+        visit_counts = torch.zeros(batch_size, 8, 8)
+        visit_counts[:, 2, 3] = 10.0
+        visit_counts[:, 3, 2] = 8.0
+        visit_counts[:, 4, 5] = 5.0
+        visit_counts[:, 5, 4] = 7.0
+
+        # Forward
+        policy_logits, value = model(states)
+
+        losses = loss_calc.compute_all_losses(
+            policy_logits,
+            value.unsqueeze(-1),
+            states,
+            pis,
+            outcomes,
+            q_vals,
+            visit_counts,
+        )
+        total_loss = loss_calc.compute_total_loss(losses)
+        total_loss.backward()
+
+        # Check gradients for critical components
+        params_with_grad = []
+        params_without_grad = []
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                if param.grad is not None and param.grad.abs().sum() > 0:
+                    params_with_grad.append(name)
+                else:
+                    params_without_grad.append(name)
+
+        # With TBPTL, input_embed should still receive gradients
+        # because input_embeddings are added at each loop iteration
+        input_embed_has_grad = any("input_embed" in p for p in params_with_grad)
+        backbone_has_grad = any("backbone" in p for p in params_with_grad)
+        policy_head_has_grad = any("policy_head" in p for p in params_with_grad)
+        value_head_has_grad = any("value_head" in p for p in params_with_grad)
+
+        assert backbone_has_grad, (
+            f"Backbone should have gradients even with truncation.\n"
+            f"Params with grad: {params_with_grad}\n"
+            f"Params without grad: {params_without_grad}"
+        )
+        assert policy_head_has_grad, "Policy head should have gradients"
+        assert value_head_has_grad, "Value head should have gradients"
+        assert input_embed_has_grad, (
+            f"input_embed should have gradients (added at each loop).\n"
+            f"Params with grad: {params_with_grad}"
+        )
