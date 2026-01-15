@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 from accelerate import Accelerator
 from accelerate.utils import release_memory, set_seed
@@ -22,7 +21,6 @@ def train():
     )
     accelerator.init_trackers("reversi-mcts-grpo", config=settings.model_dump())
 
-    ongoing_games_data = [[] for _ in range(settings.training.batch_size)]
     num_iterations = (
         settings.training.total_training_steps
         // settings.training.training_steps_per_iteration
@@ -41,7 +39,6 @@ def train():
             lr_scheduler,
             env,
             replay_buffer,
-            ongoing_games_data,
         )
 
     accelerator.end_training()
@@ -59,10 +56,9 @@ def _run_iteration(
     lr_scheduler: torch.optim.lr_scheduler.LRScheduler,
     env: ReversiEnvironment,
     replay_buffer: ReplayBuffer,
-    ongoing_games_data: list[list[dict[str, np.ndarray]]],
 ):
     """1つのイテレーション（Self-Play + Training）を実行"""
-    executor = SelfPlayExecutor(settings, env, replay_buffer, ongoing_games_data)
+    executor = SelfPlayExecutor(settings, env, replay_buffer)
     executor.run_self_play(iteration, model, device)
 
     release_memory()
