@@ -38,19 +38,20 @@ class MCTSConfig(BaseModel):
     states_per_inference: int = Field(
         description="Number of states to process per inference call"
     )
+    parallel_games: int = Field(description="Number of parallel games during self-play")
+    games_per_iteration: int = Field(
+        description="Number of games to complete per iteration"
+    )
 
 
 class TrainingConfig(BaseModel):
     """Configuration for model training."""
 
-    batch_size: int = Field(description="Training batch size")
+    train_batch_size: int = Field(description="Training batch size")
     replay_buffer_size: int = Field(description="Size of the experience replay buffer")
     learning_rate: float = Field(description="Learning rate for the optimizer")
     weight_decay: float = Field(description="Weight decay for the optimizer")
     total_training_steps: int = Field(description="Total number of training steps")
-    games_per_iteration: int = Field(
-        description="Number of self-play games per training iteration"
-    )
     training_steps_per_iteration: int = Field(
         description="Training steps per iteration"
     )

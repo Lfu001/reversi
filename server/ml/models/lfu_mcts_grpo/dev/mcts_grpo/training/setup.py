@@ -35,7 +35,7 @@ class GameSetup:
         accelerator = self._create_accelerator()
         device = accelerator.device
         model, optimizer, lr_scheduler = self._setup_model_and_optimizer(accelerator)
-        env = ReversiEnvironment(batch_size=self.settings.training.batch_size)
+        env = ReversiEnvironment(batch_size=self.settings.mcts.parallel_games)
         replay_buffer = ReplayBuffer(self.settings.training.replay_buffer_size)
         return accelerator, device, model, optimizer, lr_scheduler, env, replay_buffer
 

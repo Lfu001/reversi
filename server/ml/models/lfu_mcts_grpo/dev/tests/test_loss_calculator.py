@@ -13,12 +13,11 @@ from mcts_grpo.settings import TrainingConfig, TreeGRPOConfig
 def loss_calculator():
     """Create a LossCalculator with default configs."""
     training_config = TrainingConfig(
-        batch_size=4,
+        train_batch_size=4,
         replay_buffer_size=1000,
         learning_rate=1e-3,
         weight_decay=0.01,
         total_training_steps=100,
-        games_per_iteration=10,
         training_steps_per_iteration=10,
         warmup_steps=10,
         lambda_value=1.0,
@@ -247,12 +246,11 @@ class TestGradientFlowThroughLoss:
         model.train()
 
         training_config = TrainingConfig(
-            batch_size=4,
+            train_batch_size=4,
             replay_buffer_size=1000,
             learning_rate=1e-3,
             weight_decay=0.01,
             total_training_steps=100,
-            games_per_iteration=10,
             training_steps_per_iteration=10,
             warmup_steps=10,
             lambda_value=1.0,
@@ -362,12 +360,11 @@ class TestGradientFlowThroughLoss:
         model.train()
 
         training_config = TrainingConfig(
-            batch_size=4,
+            train_batch_size=4,
             replay_buffer_size=1000,
             learning_rate=1e-3,
             weight_decay=0.01,
             total_training_steps=100,
-            games_per_iteration=10,
             training_steps_per_iteration=10,
             warmup_steps=10,
             lambda_value=1.0,
@@ -448,12 +445,11 @@ class TestGradientFlowThroughLoss:
         model.train()
 
         training_config = TrainingConfig(
-            batch_size=4,
+            train_batch_size=4,
             replay_buffer_size=1000,
             learning_rate=1e-3,
             weight_decay=0.01,
             total_training_steps=100,
-            games_per_iteration=10,
             training_steps_per_iteration=10,
             warmup_steps=10,
             lambda_value=1.0,

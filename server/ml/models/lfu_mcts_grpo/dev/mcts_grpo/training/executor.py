@@ -51,7 +51,7 @@ class TrainingExecutor:
         self, step: int, iteration: int, replay_buffer: ReplayBuffer, pbar: tqdm
     ):
         """1ステップのトレーニング"""
-        experiences = replay_buffer.sample(self.settings.training.batch_size)
+        experiences = replay_buffer.sample(self.settings.training.train_batch_size)
         batch = self._prepare_batch(experiences)
         losses = self._compute_losses(batch)
         total_loss = self._compute_total_loss(losses)

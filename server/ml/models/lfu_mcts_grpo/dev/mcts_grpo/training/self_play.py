@@ -43,11 +43,11 @@ class SelfPlayExecutor:
 
         games_completed = 0
         ongoing_games_data: OngoingGamesData = [
-            [] for _ in range(self.settings.training.batch_size)
+            [] for _ in range(self.settings.mcts.parallel_games)
         ]
 
         current_states = self.env.reset()
-        while games_completed < self.settings.training.games_per_iteration:
+        while games_completed < self.settings.mcts.games_per_iteration:
             pi, q_values, visit_counts = mcts.run_simulations(
                 model=model,
                 states=current_states,
@@ -60,7 +60,7 @@ class SelfPlayExecutor:
             pi_reshaped = pi.reshape(-1, 8, 8)
             next_states, dones = self.env.step_batch(pi_reshaped, deterministic=False)
 
-            for i in range(self.settings.training.batch_size):
+            for i in range(self.settings.mcts.parallel_games):
                 self._record_step(
                     ongoing_games_data,
                     i,
