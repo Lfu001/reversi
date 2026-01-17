@@ -35,7 +35,6 @@ class TrainingExecutor:
     def run_training(self, iteration: int, replay_buffer: ReplayBuffer):
         """トレーニングループを実行"""
         self.model.train()
-        self.optimizer.zero_grad()
 
         pbar = tqdm(
             total=self.settings.training.training_steps_per_iteration,
@@ -51,6 +50,8 @@ class TrainingExecutor:
         self, step: int, iteration: int, replay_buffer: ReplayBuffer, pbar: tqdm
     ):
         """1ステップのトレーニング"""
+        self.optimizer.zero_grad()
+
         experiences = replay_buffer.sample(self.settings.training.train_batch_size)
         batch = self._prepare_batch(experiences)
         losses = self._compute_losses(batch)
