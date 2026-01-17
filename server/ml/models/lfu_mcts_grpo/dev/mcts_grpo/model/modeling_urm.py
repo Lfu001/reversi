@@ -351,7 +351,7 @@ class URMModel(PreTrainedModel):
         self.backbone = URMBackbone(config)
 
         # Policy head: predict move probabilities
-        self.policy_head = nn.Linear(config.hidden_size, 1)
+        self.policy_head = nn.Linear(config.hidden_size, 1, bias=False)
 
         # Value head: predict position evaluation
         self.value_head = nn.Sequential(
