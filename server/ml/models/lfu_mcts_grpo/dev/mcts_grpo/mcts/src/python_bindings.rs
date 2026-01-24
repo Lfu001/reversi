@@ -199,6 +199,8 @@ impl Mcts {
         );
         pbar.set_message(format!("MCTS Batch Search (Step {})", current_sim));
 
+        let shared_tt = TranspositionTable::new();
+
         let results = py.detach(|| {
             self.thread_pool.install(|| {
                 rust_states
@@ -218,7 +220,6 @@ impl Mcts {
                             sender: sender.clone(),
                         };
 
-                        let tt = TranspositionTable::new();
                         let mut tree = Tree::new(*state);
 
                         let params = SearchParams {
@@ -227,7 +228,7 @@ impl Mcts {
                             config: puct_config,
                             pbar: Some(pbar),
                         };
-                        get_move_second(&mut tree, params, &py_model, &tt, &mut rng)
+                        get_move_second(&mut tree, params, &py_model, &shared_tt, &mut rng)
                     })
                     .collect()
             })
