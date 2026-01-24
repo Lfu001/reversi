@@ -259,6 +259,7 @@ fn batch_mcts<T: TreeLike>(
     rng: &mut impl rand::Rng,
     is_root: bool,
     second_move_ctx: Option<&SecondMoveContext>,
+    get_batch: bool,
 ) -> PuctResult {
     let state = *tree.arena().get(node_id).state();
 
@@ -269,21 +270,36 @@ fn batch_mcts<T: TreeLike>(
 
     // Algorithm 1/8: if s ∉ t then
     if !tree.arena().get(node_id).is_expanded() {
-        // Use atomic try_reserve to prevent duplicate inference requests
-        match ctx.tt.try_reserve(state) {
-            ReserveResult::Reserved => {
-                // This thread won the reservation - add state to batch
-                return PuctResult::Unknown(state);
+        if get_batch {
+            // GetBatch=True: Use try_reserve for parallel batch collection
+            match ctx.tt.try_reserve(state) {
+                ReserveResult::Reserved => {
+                    // This thread won the reservation - caller will add to batch
+                    return PuctResult::Unknown(state);
+                }
+                ReserveResult::AlreadyReserved => {
+                    // Another thread is handling this state
+                    return PuctResult::Pending;
+                }
+                ReserveResult::AlreadyEvaluated(v) => {
+                    // Inference result available - expand and return value
+                    expand_node(tree.arena_mut(), node_id, &state);
+                    return PuctResult::Value(v);
+                }
             }
-            ReserveResult::AlreadyReserved => {
-                // Another thread is handling this state - apply VirtualMean
-                return PuctResult::Pending;
+        } else {
+            // GetBatch=False: Just check TT (don't reserve - we're updating tree)
+            if let Some(eval) = ctx.tt.get(&state) {
+                if !eval.is_pending() {
+                    // Inference result available - expand and return value
+                    let v = (*eval).value();
+                    drop(eval);
+                    expand_node(tree.arena_mut(), node_id, &state);
+                    return PuctResult::Value(v);
+                }
             }
-            ReserveResult::AlreadyEvaluated(v) => {
-                // Inference result available - expand and use value
-                expand_node(tree.arena_mut(), node_id, &state);
-                return PuctResult::Value(v);
-            }
+            // Not in TT or pending - return Unknown
+            return PuctResult::Unknown(state);
         }
     }
 
@@ -308,6 +324,7 @@ fn batch_mcts<T: TreeLike>(
         rng,
         false,
         second_move_ctx,
+        get_batch,
     );
 
     // Update statistics using the tree-type-specific strategy
@@ -395,14 +412,7 @@ fn get_batch_second(
     let mut descent = 0;
     while batch.len() < batch_size && descent < MAX_DESCENTS_PER_BATCH {
         descent += 1;
-        let res = batch_mcts(
-            &mut tree_batch,
-            root_id,
-            ctx,
-            rng,
-            true, // is_root
-            Some(smc),
-        );
+        let res = batch_mcts(&mut tree_batch, root_id, ctx, rng, true, Some(smc), true);
 
         if let PuctResult::Unknown(state) = res {
             batch.push(state);
@@ -434,7 +444,7 @@ fn put_batch_second(
     // when all reachable states are already in TT
     let max_iterations = batch.states.len().max(1) * 2;
     for _ in 0..max_iterations {
-        let res = batch_mcts(tree, root_id, ctx, rng, true, Some(smc));
+        let res = batch_mcts(tree, root_id, ctx, rng, true, Some(smc), false);
         if let PuctResult::Unknown(_) = res {
             break;
         }
@@ -460,7 +470,7 @@ fn last_iteration(
     while nb_unknown < target_unknown && total_descents < LAST_ITERATION_MAX_DESCENTS {
         total_descents += 1;
         // Use batch_mcts without SecondMoveContext (no Second Move forcing)
-        let res = batch_mcts(&mut tree_batch, root_id, ctx, rng, true, None);
+        let res = batch_mcts(&mut tree_batch, root_id, ctx, rng, true, None, true);
         if let PuctResult::Unknown(_) = res {
             nb_unknown += 1;
         }
@@ -678,9 +688,27 @@ mod tests {
             config,
             pbar: None,
         };
-        get_move_second(&mut tree, params, &model, &tt, &mut rng);
+        let results = get_move_second(&mut tree, params, &model, &tt, &mut rng);
 
+        // Root should have visits
         assert!(tree.arena().get(tree.root()).visit_count() > 0);
+
+        // Check that children have visit counts (critical: proves the fix works)
+        let mut total_child_visits = 0u32;
+        for child_id in tree.arena().children(tree.root()) {
+            total_child_visits += tree.arena().get(child_id).visit_count();
+        }
+        assert!(
+            total_child_visits > 0,
+            "Children must have visit counts for MCTS to train properly"
+        );
+
+        // Check SearchResults has non-zero visit counts
+        let total_vc: u32 = results.visit_counts.iter().sum();
+        assert!(
+            total_vc > 0,
+            "SearchResults must have non-zero visit counts"
+        );
     }
 
     #[test]

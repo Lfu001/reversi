@@ -44,7 +44,6 @@ impl ModelEvaluator for PythonModel {
 
 #[pyclass(unsendable)]
 pub struct Mcts {
-    transposition_table: TranspositionTable,
     max_inference_batch_size: usize,
     states_per_inference: usize,
     runtime: tokio::runtime::Runtime,
@@ -72,7 +71,6 @@ impl Mcts {
             .expect("Failed to create Rayon thread pool");
 
         Mcts {
-            transposition_table: TranspositionTable::new(),
             max_inference_batch_size,
             states_per_inference,
             runtime,
@@ -188,7 +186,6 @@ impl Mcts {
         let (mut worker, sender) = Worker::new(self.max_inference_batch_size, callback);
         worker.start();
 
-        let tt = &self.transposition_table;
         let num_inferences = num_simulations.div_ceil(self.states_per_inference);
         let current_sim = self.simulation_count.fetch_add(1, Ordering::SeqCst);
 
@@ -221,6 +218,7 @@ impl Mcts {
                             sender: sender.clone(),
                         };
 
+                        let tt = TranspositionTable::new();
                         let mut tree = Tree::new(*state);
 
                         let params = SearchParams {
@@ -229,7 +227,7 @@ impl Mcts {
                             config: puct_config,
                             pbar: Some(pbar),
                         };
-                        get_move_second(&mut tree, params, &py_model, tt, &mut rng)
+                        get_move_second(&mut tree, params, &py_model, &tt, &mut rng)
                     })
                     .collect()
             })
@@ -262,8 +260,6 @@ impl Mcts {
             for j in 0..64 {
                 if total_visits > 0 {
                     pi[i * 64 + j] = result.visit_counts[j] as f64 / total_visits as f64;
-                } else {
-                    pi[i * 64 + j] = 1.0 / 64.0;
                 }
                 q_values[i * 64 + j] = result.q_values[j];
                 visit_counts[i * 64 + j] = result.visit_counts[j];

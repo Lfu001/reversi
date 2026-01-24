@@ -85,7 +85,19 @@ class SelfPlayExecutor:
         q_values: np.ndarray,
         visit_counts: np.ndarray,
     ) -> None:
-        """ゲームの1ステップを記録（ongoing_games_dataを変更）"""
+        """ゲームの1ステップを記録（ongoing_games_dataを変更）
+
+        Skip terminal states (no legal moves) and states with no visits,
+        as they would produce invalid training data (pi=0 everywhere).
+        """
+        # Skip if terminal state (no legal moves)
+        if state[3].sum() == 0:
+            return
+
+        # Skip if no visits
+        if visit_counts.sum() == 0:
+            return
+
         ongoing_games_data[game_idx].append(
             {
                 "state": state,
