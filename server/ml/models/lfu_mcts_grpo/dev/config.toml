@@ -30,9 +30,9 @@ weight_decay = 1e-4
 total_training_steps = 12_000
 training_steps_per_iteration = 50
 warmup_steps = 400
-lambda_value = 1.0
+lambda_value = 1.4
 
 # Tree-GRPO settings
 [grpo]
-lambda_grpo = 1.5
+lambda_grpo = 1.6
 grpo_num_pairs = 16
