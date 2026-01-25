@@ -21,15 +21,15 @@ class TrainingExecutor:
         accelerator: Accelerator,
         device: torch.device,
         model: torch.nn.Module,
-        optimizer: torch.optim.Optimizer,
-        lr_scheduler: torch.optim.lr_scheduler.LRScheduler,
+        optimizers: list[torch.optim.Optimizer],
+        lr_schedulers: list[torch.optim.lr_scheduler.LRScheduler],
     ):
         self.settings = settings
         self.accelerator = accelerator
         self.device = device
         self.model = model
-        self.optimizer = optimizer
-        self.lr_scheduler = lr_scheduler
+        self.optimizers = optimizers
+        self.lr_schedulers = lr_schedulers
         self.loss_calculator = LossCalculator(settings.training, settings.grpo)
 
     def run_training(self, iteration: int, replay_buffer: ReplayBuffer):
@@ -50,7 +50,8 @@ class TrainingExecutor:
         self, step: int, iteration: int, replay_buffer: ReplayBuffer, pbar: tqdm
     ):
         """1ステップのトレーニング"""
-        self.optimizer.zero_grad()
+        for optimizer in self.optimizers:
+            optimizer.zero_grad()
 
         experiences = replay_buffer.sample(self.settings.training.train_batch_size)
         batch = self._prepare_batch(experiences)
@@ -58,8 +59,11 @@ class TrainingExecutor:
         total_loss = self._compute_total_loss(losses)
 
         self.accelerator.backward(total_loss)
-        self.optimizer.step()
-        self.lr_scheduler.step()
+
+        for optimizer in self.optimizers:
+            optimizer.step()
+        for lr_scheduler in self.lr_schedulers:
+            lr_scheduler.step()
 
         pbar.update(1)
         self._log_metrics(losses, total_loss, step, iteration)

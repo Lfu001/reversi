@@ -26,18 +26,18 @@ class GameSetup:
         Accelerator,
         torch.device,
         torch.nn.Module,
-        torch.optim.Optimizer,
-        torch.optim.lr_scheduler.LRScheduler,
+        list[torch.optim.Optimizer],
+        list[torch.optim.lr_scheduler.LRScheduler],
         ReversiEnvironment,
         ReplayBuffer,
     ]:
         """全ての必要なコンポーネントを初期化して返す"""
         accelerator = self._create_accelerator()
         device = accelerator.device
-        model, optimizer, lr_scheduler = self._setup_model_and_optimizer(accelerator)
+        model, optimizers, lr_schedulers = self._setup_model_and_optimizers(accelerator)
         env = ReversiEnvironment(batch_size=self.settings.mcts.parallel_games)
         replay_buffer = ReplayBuffer(self.settings.training.replay_buffer_size)
-        return accelerator, device, model, optimizer, lr_scheduler, env, replay_buffer
+        return accelerator, device, model, optimizers, lr_schedulers, env, replay_buffer
 
     def _create_accelerator(self) -> Accelerator:
         """Acceleratorを作成"""
@@ -49,10 +49,12 @@ class GameSetup:
             ),
         )
 
-    def _setup_model_and_optimizer(
+    def _setup_model_and_optimizers(
         self, accelerator: Accelerator
     ) -> tuple[
-        torch.nn.Module, torch.optim.Optimizer, torch.optim.lr_scheduler.LRScheduler
+        torch.nn.Module,
+        list[torch.optim.Optimizer],
+        list[torch.optim.lr_scheduler.LRScheduler],
     ]:
         """モデル、オプティマイザ、スケジューラを初期化"""
         model = URMModel(URMConfig(**self.settings.model.model_dump()))
@@ -68,55 +70,34 @@ class GameSetup:
                 else:
                     adamw_params.append(param)
 
-        # MuonとAdamWを組み合わせたChainedOptimizer
-        optimizer = ChainedOptimizer(
-            torch.optim.Muon(
-                muon_params,
-                lr=self.settings.training.learning_rate,
-                weight_decay=self.settings.training.weight_decay,
-            ),
-            torch.optim.AdamW(
-                adamw_params,
-                lr=self.settings.training.learning_rate,
-                weight_decay=self.settings.training.weight_decay,
-            ),
+        # 各オプティマイザを個別に作成
+        muon_optimizer = torch.optim.Muon(
+            muon_params,
+            lr=self.settings.training.learning_rate,
+            weight_decay=self.settings.training.weight_decay,
         )
-        lr_scheduler = get_constant_schedule_with_warmup(
-            optimizer, num_warmup_steps=self.settings.training.warmup_steps
+        adamw_optimizer = torch.optim.AdamW(
+            adamw_params,
+            lr=self.settings.training.learning_rate,
+            weight_decay=self.settings.training.weight_decay,
         )
-        model, optimizer, lr_scheduler = accelerator.prepare(
-            model, optimizer, lr_scheduler
+
+        # 各オプティマイザに対応するスケジューラを作成
+        muon_scheduler = get_constant_schedule_with_warmup(
+            muon_optimizer, num_warmup_steps=self.settings.training.warmup_steps
         )
-        return model, optimizer, lr_scheduler
+        adamw_scheduler = get_constant_schedule_with_warmup(
+            adamw_optimizer, num_warmup_steps=self.settings.training.warmup_steps
+        )
 
+        model, muon_optimizer, adamw_optimizer, muon_scheduler, adamw_scheduler = (
+            accelerator.prepare(
+                model, muon_optimizer, adamw_optimizer, muon_scheduler, adamw_scheduler
+            )
+        )
 
-class ChainedOptimizer(torch.optim.Optimizer):
-    """複数のオプティマイザを1つとして扱うラッパー"""
-
-    def __init__(self, *optimizers: torch.optim.Optimizer):
-        self.optimizers = list(optimizers)
-        # 全param_groupsを統合（LRScheduler互換性のため）
-        param_groups = []
-        for opt in self.optimizers:
-            param_groups.extend(opt.param_groups)
-        # Optimizer基底クラスの初期化をスキップし、必要な属性のみ設定
-        self.param_groups = param_groups
-        self.defaults = {}
-        self.state: dict = {}
-
-    def zero_grad(self, set_to_none: bool = True):
-        for opt in self.optimizers:
-            opt.zero_grad(set_to_none=set_to_none)
-
-    def step(self, closure=None):
-        loss = None
-        for opt in self.optimizers:
-            loss = opt.step(closure)
-        return loss
-
-    def state_dict(self):
-        return {"optimizers": [opt.state_dict() for opt in self.optimizers]}
-
-    def load_state_dict(self, state_dict):
-        for opt, sd in zip(self.optimizers, state_dict["optimizers"]):
-            opt.load_state_dict(sd)
+        return (
+            model,
+            [muon_optimizer, adamw_optimizer],
+            [muon_scheduler, adamw_scheduler],
+        )

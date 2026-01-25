@@ -16,7 +16,7 @@ def train():
     set_seed(0)
     settings = Settings()
     setup = GameSetup(settings)
-    accelerator, device, model, optimizer, lr_scheduler, env, replay_buffer = (
+    accelerator, device, model, optimizers, lr_schedulers, env, replay_buffer = (
         setup.initialize()
     )
     accelerator.init_trackers("reversi-mcts-grpo", config=settings.model_dump())
@@ -35,8 +35,8 @@ def train():
             accelerator,
             device,
             model,
-            optimizer,
-            lr_scheduler,
+            optimizers,
+            lr_schedulers,
             env,
             replay_buffer,
         )
@@ -52,8 +52,8 @@ def _run_iteration(
     accelerator: Accelerator,
     device: torch.device,
     model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
-    lr_scheduler: torch.optim.lr_scheduler.LRScheduler,
+    optimizers: list[torch.optim.Optimizer],
+    lr_schedulers: list[torch.optim.lr_scheduler.LRScheduler],
     env: ReversiEnvironment,
     replay_buffer: ReplayBuffer,
 ):
@@ -64,7 +64,7 @@ def _run_iteration(
     release_memory()
 
     trainer = TrainingExecutor(
-        settings, accelerator, device, model, optimizer, lr_scheduler
+        settings, accelerator, device, model, optimizers, lr_schedulers
     )
     trainer.run_training(iteration, replay_buffer)
 
