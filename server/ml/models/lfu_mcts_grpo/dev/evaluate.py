@@ -1,3 +1,9 @@
+"""Evaluation script for MCTS model against various opponents.
+
+This script evaluates the performance of an MCTS-based model by playing
+games against different baseline agents (random, greedy, mobility).
+"""
+
 import argparse
 import random
 
@@ -14,189 +20,204 @@ from mcts_grpo.settings import Settings
 from mcts_grpo.training import GameSetup
 
 
-class Agent:
-    """Base class for evaluation agents."""
+def get_initial_state() -> np.ndarray:
+    """Returns the initial Reversi game state.
 
-    def act(
-        self,
-        valid_moves: list[np.ndarray],
-        current_states: np.ndarray | None = None,
-        env: ReversiEnvironment | None = None,
-    ) -> list[np.ndarray]:
-        """
-        Selects a move for each game state.
+    Returns:
+        A (4, 8, 8) array representing the initial board state.
+        - Channel 0: Dark disks (1 where disk exists)
+        - Channel 1: Light disks (1 where disk exists)
+        - Channel 2: Turn indicator (1 for Dark, -1 for Light)
+        - Channel 3: Legal moves for current player
+    """
+    state = np.zeros((4, 8, 8), dtype=np.int8)
 
-        Args:
-            valid_moves: A list of length batch_size, where each element is a boolean mask
-                         of shape (64,) indicating valid moves.
-            current_states: Current states (batch, 4, 8, 8). Used for lookahead agents.
-            env: ReversiEnvironment instance. Used for lookahead agents.
+    # Initial disk positions (center 2x2)
+    # Dark at d5, e4; Light at d4, e5
+    state[0, 3, 4] = 1  # Dark at e4 (row 3, col 4)
+    state[0, 4, 3] = 1  # Dark at d5 (row 4, col 3)
+    state[1, 3, 3] = 1  # Light at d4 (row 3, col 3)
+    state[1, 4, 4] = 1  # Light at e5 (row 4, col 4)
 
-        Returns:
-            A list of length batch_size, where each element is a one-hot encoded policy
-            of shape (64,).
-        """
-        raise NotImplementedError
+    # Dark moves first
+    state[2, :, :] = 1
 
+    # Initial legal moves for Dark: c4, d3, e6, f5
+    state[3, 2, 3] = 1  # d3
+    state[3, 3, 2] = 1  # c4
+    state[3, 4, 5] = 1  # f5
+    state[3, 5, 4] = 1  # e6
 
-class RandomAgent(Agent):
-    """A simple agent that plays random legal moves."""
-
-    def act(
-        self,
-        valid_moves: list[np.ndarray],
-        current_states: np.ndarray | None = None,
-        env: ReversiEnvironment | None = None,
-    ) -> list[np.ndarray]:
-        actions = []
-        for valid_mask in valid_moves:
-            legal_indices = np.where(valid_mask)[0]
-            action = np.zeros(64, dtype=np.float32)
-            if len(legal_indices) > 0:
-                chosen_idx = random.choice(legal_indices)
-                action[chosen_idx] = 1.0
-            actions.append(action)
-        return actions
+    return state
 
 
-class GreedyAgent(Agent):
-    """Agent that chooses the move maximizing the score difference."""
-
-    def act(
-        self,
-        valid_moves: list[np.ndarray],
-        current_states: np.ndarray | None = None,
-        env: ReversiEnvironment | None = None,
-    ) -> list[np.ndarray]:
-        if current_states is None or env is None:
-            raise ValueError("GreedyAgent requires current_states and env.")
-
-        actions = []
-        # Process each game in the batch
-        for i, valid_mask in enumerate(valid_moves):
-            legal_indices = np.where(valid_mask)[0]
-            action = np.zeros(64, dtype=np.float32)
-
-            if len(legal_indices) > 0:
-                best_score = -float("inf")
-                best_idx = legal_indices[0]
-
-                # Get single game state (4, 8, 8)
-                state = current_states[i]
-
-                # Turn information to know which color is maximizing
-                # MCTS uses 1.0 for Dark, -1.0 for Light in Channel 2.
-                # Here we just want to maximize (My Disks - Opp Disks).
-                # ReversiEnvironment.get_next_state returns state.
-                # Channel 0: Dark, Channel 1: Light.
-                # If current player is Dark, we max (Dark - Light).
-                # If Light, we max (Light - Dark).
-                # Wait, get_next_state might normalize the state for the NEXT player?
-                # Let's check get_next_state.
-                # It returns Absolute Board State if I recall correctly?
-                # No, get_state returns Absolute Board State (Channel 0 Dark, Channel 1 Light).
-                # But ML models usually expect "My Color" in Ch 0.
-                # However, ReversiEnvironment implementation showed:
-                # Ch 0: Dark Plane, Ch 1: Light Plane. (Absolute)
-                # So we need to know OUR color.
-
-                turn_val = state[
-                    2, 0, 0
-                ]  # 1.0 if Dark, -1.0 if Light (Wait, check implementation)
-                # In get_state_vec:
-                # let turn_val = if turn == DiskColor::Dark { 1.0 } else { -1.0 };
-                # state_vec[idx + 128] = turn_val;
-                # So Yes.
-
-                is_dark = turn_val > 0
-
-                for idx in legal_indices:
-                    # Lookahead
-                    # Note: get_next_state is static.
-                    next_state = ReversiEnvironment.get_next_state(state, idx)
-                    # next_state is (4, 8, 8)
-
-                    dark_count = np.sum(next_state[0])
-                    light_count = np.sum(next_state[1])
-
-                    if is_dark:
-                        score = dark_count - light_count
-                    else:
-                        score = light_count - dark_count
-
-                    if score > best_score:
-                        best_score = score
-                        best_idx = idx
-
-                action[best_idx] = 1.0
-
-            actions.append(action)
-        return actions
+def is_game_over(state: np.ndarray) -> bool:
+    """Check if the game is over (no legal moves for current player)."""
+    return state[3].sum() == 0
 
 
-class MobilityMinimizationAgent(Agent):
-    """Agent that chooses the move minimizing the opponent's mobility (legal moves)."""
+def get_winner(state: np.ndarray) -> int:
+    """Determine the winner of a finished game.
 
-    def act(
-        self,
-        valid_moves: list[np.ndarray],
-        current_states: np.ndarray | None = None,
-        env: ReversiEnvironment | None = None,
-    ) -> list[np.ndarray]:
-        if current_states is None or env is None:
-            raise ValueError(
-                "MobilityMinimizationAgent requires current_states and env."
+    Returns:
+        1 for Dark win, -1 for Light win, 0 for draw.
+    """
+    dark_count = state[0].sum()
+    light_count = state[1].sum()
+
+    if dark_count > light_count:
+        return 1
+    elif light_count > dark_count:
+        return -1
+    else:
+        return 0
+
+
+def select_random_move(state: np.ndarray) -> int:
+    """Select a random legal move."""
+    legal_moves = state[3].flatten()
+    legal_indices = np.where(legal_moves > 0)[0]
+    return int(random.choice(legal_indices))
+
+
+def select_greedy_move(state: np.ndarray) -> int:
+    """Select the move that maximizes disk count difference for current player."""
+    legal_moves = state[3].flatten()
+    legal_indices = np.where(legal_moves > 0)[0]
+
+    turn_val = state[2, 0, 0]
+    is_dark = turn_val > 0
+
+    best_score = -float("inf")
+    best_idx = legal_indices[0]
+
+    for idx in legal_indices:
+        next_state = ReversiEnvironment.get_next_state(state, idx)
+        dark_count = next_state[0].sum()
+        light_count = next_state[1].sum()
+
+        if is_dark:
+            score = dark_count - light_count
+        else:
+            score = light_count - dark_count
+
+        if score > best_score:
+            best_score = score
+            best_idx = idx
+
+    return int(best_idx)
+
+
+def select_mobility_move(state: np.ndarray) -> int:
+    """Select the move that minimizes opponent's mobility (legal moves)."""
+    legal_moves = state[3].flatten()
+    legal_indices = np.where(legal_moves > 0)[0]
+
+    best_mobility = float("inf")
+    best_idx = legal_indices[0]
+
+    for idx in legal_indices:
+        next_state = ReversiEnvironment.get_next_state(state, idx)
+        # Channel 3 of next_state contains legal moves for the NEXT player (opponent)
+        opponent_mobility = next_state[3].sum()
+
+        if opponent_mobility < best_mobility:
+            best_mobility = opponent_mobility
+            best_idx = idx
+
+    return int(best_idx)
+
+
+def play_single_game(
+    mcts_agent: MCTS,
+    model: torch.nn.Module,
+    device: torch.device,
+    settings: Settings,
+    mcts_is_dark: bool,
+    opponent_type: str,
+) -> int:
+    """Play a single game and return the result for MCTS.
+
+    Args:
+        mcts_agent: MCTS instance.
+        model: The neural network model.
+        device: Device to run inference on.
+        settings: MCTS settings.
+        mcts_is_dark: True if MCTS plays as Dark (first player).
+        opponent_type: Type of opponent ('random', 'greedy', 'mobility').
+
+    Returns:
+        1 for MCTS win, 0 for draw, -1 for MCTS loss.
+    """
+    state = get_initial_state()
+    mcts_color_val = 1 if mcts_is_dark else -1
+
+    while not is_game_over(state):
+        turn_val = state[2, 0, 0]
+        is_mcts_turn = (turn_val > 0) == mcts_is_dark
+
+        if is_mcts_turn:
+            # MCTS move
+            # Need to expand state to batch dimension (1, 4, 8, 8)
+            state_batch = state[np.newaxis, :].astype(np.float32)
+
+            pi, _, _ = mcts_agent.run_simulations(
+                model=model,
+                states=state_batch,
+                device=device,
+                num_simulations=settings.mcts.num_simulations,
+                dirichlet_epsilon=0.0,  # Disable noise for evaluation
+                dirichlet_alpha=settings.mcts.dirichlet_alpha,
+                c_puct=settings.mcts.c_puct,
             )
 
-        actions = []
-        for i, valid_mask in enumerate(valid_moves):
-            legal_indices = np.where(valid_mask)[0]
-            action = np.zeros(64, dtype=np.float32)
+            # Select the move with highest probability among legal moves
+            legal_mask = state[3].flatten() > 0
+            pi_masked = np.where(legal_mask, pi[0], -np.inf)
+            action_idx = int(np.argmax(pi_masked))
+        else:
+            # Opponent move
+            if opponent_type == "random":
+                action_idx = select_random_move(state)
+            elif opponent_type == "greedy":
+                action_idx = select_greedy_move(state)
+            elif opponent_type == "mobility":
+                action_idx = select_mobility_move(state)
+            else:
+                raise ValueError(f"Unknown opponent type: {opponent_type}")
 
-            if len(legal_indices) > 0:
-                best_mobility = float("inf")
-                best_idx = legal_indices[0]
+        # Apply the action using stateless API
+        state = ReversiEnvironment.get_next_state(state, action_idx)
 
-                state = current_states[i]
+    # Determine winner
+    winner = get_winner(state)
 
-                for idx in legal_indices:
-                    next_state = ReversiEnvironment.get_next_state(state, idx)
-                    # Next state Channel 3 is Legal Moves for the NEXT player (Opponent).
-                    # We want to MINIMIZE this sum.
-
-                    opponent_mobility = np.sum(next_state[3])
-
-                    if opponent_mobility < best_mobility:
-                        best_mobility = opponent_mobility
-                        best_idx = idx
-
-                action[best_idx] = 1.0
-            actions.append(action)
-        return actions
+    # Return result from MCTS perspective
+    if winner == mcts_color_val:
+        return 1  # MCTS win
+    elif winner == 0:
+        return 0  # Draw
+    else:
+        return -1  # MCTS loss
 
 
 def evaluate(
     num_games: int = 100,
-    batch_size: int = 64,
     mcts_sims: int = 50,
     checkpoint: str | None = None,
     opponent_type: str = "random",
     model: torch.nn.Module | None = None,
     device: torch.device | None = None,
-    env: ReversiEnvironment | None = None,
 ) -> dict[str, float]:
-    """
-    Evaluates the MCTS model against a Baseline Agent.
+    """Evaluates the MCTS model against a baseline agent.
 
     Args:
         num_games: Total number of games to play.
-        batch_size: Number of parallel games.
         mcts_sims: Number of MCTS simulations per move.
         checkpoint: Path to checkpoint directory to load.
         opponent_type: Type of opponent ('random', 'greedy', 'mobility').
         model: Pre-loaded model instance (optional).
         device: Device to run evaluation on (optional).
-        env: Pre-loaded environment (optional).
 
     Returns:
         Dictionary containing win rate and other metrics.
@@ -207,13 +228,11 @@ def evaluate(
 
     # Initialize Settings
     settings = Settings()
-    # Override settings for evaluation
-    settings.training.batch_size = batch_size
     settings.mcts.num_simulations = mcts_sims
 
     if model is None:
         setup = GameSetup(settings)
-        accelerator, device, model, _, _, env, _ = setup.initialize()
+        accelerator, device, model, _, _, _, _ = setup.initialize()
 
         # Load checkpoint if provided or available
         if checkpoint:
@@ -223,7 +242,6 @@ def evaluate(
             # Try to find latest checkpoint
             from pathlib import Path
 
-            # Helper to find latest checkpoint
             base_dir = Path("logs/checkpoints")
             if base_dir.exists():
                 checkpoints = sorted(
@@ -253,162 +271,35 @@ def evaluate(
         if device is None:
             device = next(model.parameters()).device
 
-        if env is None:
-            env = ReversiEnvironment(batch_size=batch_size)
-
     model.eval()
 
-    # Initialize Agents
+    # Initialize MCTS agent
     mcts_agent = MCTS(
         max_inference_batch_size=settings.mcts.max_inference_batch_size,
         states_per_inference=settings.mcts.states_per_inference,
     )
 
-    if opponent_type == "random":
-        opponent_agent = RandomAgent()
-    elif opponent_type == "greedy":
-        opponent_agent = GreedyAgent()
-    elif opponent_type == "mobility":
-        opponent_agent = MobilityMinimizationAgent()
-    else:
-        raise ValueError(f"Unknown opponent type: {opponent_type}")
-
     results = {"wins": 0, "losses": 0, "draws": 0}
-    games_completed = 0
-    pbar = tqdm(total=num_games, desc="Evaluated Games")
 
-    # We will alternate colors every batch to ensure fairness
-    # Batch 0: MCTS=Black, Batch 1: MCTS=White, etc.
-    batch_idx = 0
+    # Play games, alternating colors for fairness
+    for game_idx in tqdm(range(num_games), desc="Evaluating"):
+        mcts_is_dark = game_idx % 2 == 0
 
-    while games_completed < num_games:
-        # Determine MCTS color for this batch
-        # Alternating: Even batches -> MCTS is Black (Player 1 in my logic, but DiskColor::Dark is usually Black/First)
-        # ReversiEnvironment Channel 2: 1.0 for Dark (Black), -1.0 for Light (White)
-        mcts_is_black = batch_idx % 2 == 0
-        mcts_color_val = 1.0 if mcts_is_black else -1.0
+        result = play_single_game(
+            mcts_agent=mcts_agent,
+            model=model,
+            device=device,
+            settings=settings,
+            mcts_is_dark=mcts_is_dark,
+            opponent_type=opponent_type,
+        )
 
-        desc = "MCTS=Black" if mcts_is_black else "MCTS=White"
-        pbar.set_description(f"Evaluated Games ({desc})")
-
-        current_states = env.reset()
-        dones = np.zeros(batch_size, dtype=bool)
-
-        while not np.all(dones):
-            # Check turns
-            # State shape: (batch, 4, 8, 8)
-            # Channel 2 is turn plane.
-            # We can take the mean or just one value since it's a plane
-            turns = current_states[:, 2, 0, 0]  # (batch,)
-
-            # Prepare policies
-            final_actions = np.zeros((batch_size, 8, 8), dtype=np.float32)
-
-            # Helper to get mask of active games that need action from a specific agent
-            # We only care about games that are NOT done.
-            active_mask = ~dones
-
-            # Identify which games are MCTS turn
-            # MCTS moves if (turn == mcts_color_val)
-            # Use a small epsilon for float comparison safety
-            is_mcts_turn = (np.abs(turns - mcts_color_val) < 0.1) & active_mask
-            is_opponent_turn = (~is_mcts_turn) & active_mask
-
-            # MCTS Step
-            if np.any(is_mcts_turn):
-                # Extract states for MCTS
-                # mcts.run_simulations expects full batch usually, or we can filter?
-                # The MCTS wrapper usually takes the whole batch or a list of states.
-                # Looking at `self_play.py`, it passes `current_states` (full batch).
-                # `mcts.run_simulations` returns pi, q for ALL states provided.
-                # Efficiency optimization: We could theoretically only run MCTS on relevant states,
-                # but the current MCTS implementation might expect fixed batch size or mapping.
-                # However, MCTS.run_simulations takes `states` and returns results.
-                # If we pass a subset, we get a subset back.
-
-                mcts_indices = np.where(is_mcts_turn)[0]
-                mcts_states_subset = current_states[mcts_indices]
-
-                pi_subset, _ = mcts_agent.run_simulations(
-                    model=model,
-                    states=mcts_states_subset,
-                    device=device,
-                    num_simulations=settings.mcts.num_simulations,
-                    dirichlet_epsilon=0.0,  # Disable noise for evaluation
-                    dirichlet_alpha=settings.mcts.dirichlet_alpha,
-                    c_puct=settings.mcts.c_puct,
-                )
-
-                # MCTS returns (N, 64) -> reshape to (N, 8, 8)
-                pi_subset_reshaped = pi_subset.reshape(-1, 8, 8)
-
-                # Assign to final actions
-                # We need to make sure we map back to correct indices
-                for i, idx in enumerate(mcts_indices):
-                    final_actions[idx] = pi_subset_reshaped[i]
-
-            # Opponent Step
-            if np.any(is_opponent_turn):
-                opp_indices = np.where(is_opponent_turn)[0]
-                opp_states_subset = current_states[opp_indices]
-
-                # We need valid moves. Format: Channel 3 of state
-                valid_moves_subset = opp_states_subset[:, 3, :, :]  # (N, 8, 8)
-                valid_moves_flat = valid_moves_subset.reshape(-1, 64) > 0.5
-                valid_moves_list = list(valid_moves_flat)
-
-                # Pass necessary info for Lookahead agents
-                opp_actions = opponent_agent.act(
-                    valid_moves=valid_moves_list,
-                    current_states=opp_states_subset,
-                    env=env,
-                )
-
-                for i, idx in enumerate(opp_indices):
-                    final_actions[idx] = opp_actions[i].reshape(8, 8)
-
-            # Perform Step
-            # Use deterministic step for evaluation
-            next_states, step_dones = env.step_batch(final_actions, deterministic=True)
-
-            # Handle Dones
-            new_dones_indices = np.where(step_dones & ~dones)[0]
-            for idx in new_dones_indices:
-                # Calculate winner
-                black_count = np.sum(next_states[idx][0])
-                white_count = np.sum(next_states[idx][1])
-
-                winner = 0  # 0=Draw, 1=Black, -1=White
-                if black_count > white_count:
-                    winner = 1
-                elif white_count > black_count:
-                    winner = -1
-
-                # Did MCTS win?
-                # MCTS is Black (1) if mcts_is_black=True
-                # MCTS is White (-1) if mcts_is_black=False
-
-                mcts_val = 1 if mcts_is_black else -1
-
-                if winner == mcts_val:
-                    results["wins"] += 1
-                elif winner == 0:
-                    results["draws"] += 1
-                else:
-                    results["losses"] += 1
-
-                games_completed += 1
-                pbar.update(1)
-
-            current_states = next_states
-            dones = step_dones
-
-            if games_completed >= num_games:
-                break
-
-        batch_idx += 1
-
-    pbar.close()
+        if result == 1:
+            results["wins"] += 1
+        elif result == 0:
+            results["draws"] += 1
+        else:
+            results["losses"] += 1
 
     total = results["wins"] + results["losses"] + results["draws"]
     win_rate = results["wins"] / total if total > 0 else 0.0
@@ -425,17 +316,9 @@ def evaluate(
     return results
 
 
-def _calculate_score_diff(state: np.ndarray) -> int:
-    """Calculates Black - White score difference."""
-    black = np.sum(state[0])
-    white = np.sum(state[1])
-    return int(black - white)
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--num-games", type=int, default=100)
-    parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument(
         "--checkpoint", type=str, default=None, help="Path to checkpoint directory"
     )
@@ -446,17 +329,20 @@ if __name__ == "__main__":
         choices=["random", "greedy", "mobility"],
         help="Opponent type",
     )
+    parser.add_argument(
+        "--mcts-sims",
+        type=int,
+        default=50,
+        help="Number of MCTS simulations per move",
+    )
     args = parser.parse_args()
 
     AutoConfig.register("urm", URMConfig)
     AutoModel.register(URMConfig, URMModel)
-    # model = AutoModel.from_pretrained("reversi_zero_model_final").to("mps")
 
     evaluate(
         args.num_games,
-        args.batch_size,
+        mcts_sims=args.mcts_sims,
         checkpoint=args.checkpoint,
         opponent_type=args.opponent,
-        mcts_sims=800,
-        # model=model,
     )
