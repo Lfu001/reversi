@@ -1,0 +1,38 @@
+# Model architecture settings
+[model]
+hidden_size = 512
+num_attention_heads = 8
+num_layers = 4
+num_inner_loops = 8
+truncation_steps = 2
+expansion_ratio = 4
+conv_kernel_size = 2
+dropout = 0.0
+layer_norm_eps = 1e-5
+
+# MCTS settings
+[mcts]
+num_simulations = 800
+dirichlet_epsilon = 0.25
+dirichlet_alpha = 0.3
+c_puct = 1.25
+max_inference_batch_size = 2048
+states_per_inference = 32
+parallel_games = 16
+games_per_iteration = 16
+
+# Training settings
+[training]
+train_batch_size = 64
+replay_buffer_size = 30_000
+learning_rate = 3e-4
+weight_decay = 1e-4
+total_training_steps = 12_000
+training_steps_per_iteration = 50
+warmup_steps = 400
+lambda_value = 1.4
+
+# Tree-GRPO settings
+[grpo]
+lambda_grpo = 1.6
+clip_epsilon = 0.2

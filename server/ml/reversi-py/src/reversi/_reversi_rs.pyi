@@ -1,11 +1,10 @@
-from typing import Any
-
 import numpy as np
-from typing_extensions import TypeAlias
+from numpy.typing import NDArray
 
-NDArray: TypeAlias = np.ndarray[Any, Any]
-BoardState: TypeAlias = NDArray  # Shape: (batch, 4, 8, 8)
-Dones: TypeAlias = NDArray  # Shape: (batch,)
+# Type aliases for better readability and performance
+BoardState = NDArray[np.int8]  # Shape: (batch, 4, 8, 8) or (4, 8, 8)
+ActionProbs = NDArray[np.float32]  # Shape: (batch, 8, 8)
+Dones = NDArray[np.bool_]  # Shape: (batch,)
 
 class ReversiEnvironment:
     def __init__(self, batch_size: int, seed: int) -> None: ...

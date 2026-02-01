@@ -6,10 +6,15 @@ optimized for reinforcement learning with batch processing support.
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ._core import ReversiEnvironment as _ReversiEnvironment
 from .exceptions import InvalidMoveError, ReversiError
-from .types import BoardState, NDArray
+
+# Type aliases for better readability
+BoardState = NDArray[np.int8]  # Shape: (batch, 4, 8, 8) or (4, 8, 8)
+ActionProbs = NDArray[np.float32]  # Shape: (batch, 8, 8)
+Dones = NDArray[np.bool_]  # Shape: (batch,)
 
 __version__ = "0.1.0"
 __all__ = ["ReversiEnvironment", "BoardState", "ReversiError", "InvalidMoveError"]
@@ -84,13 +89,16 @@ class ReversiEnvironment:
         Returns:
             Next game state with shape (4, 8, 8) after applying the action.
         """
+        # Ensure state is of the correct int8 dtype for the Rust extension.
+        if state.dtype != np.int8:
+            state = state.astype(np.int8)
         return _ReversiEnvironment.get_next_state(state, action)
 
     def step_batch(
         self,
-        actions: NDArray,
+        actions: ActionProbs,
         deterministic: bool,
-    ) -> tuple[BoardState, NDArray]:
+    ) -> tuple[BoardState, Dones]:
         """
         Apply actions to all games in the batch and advance them by one step.
 
