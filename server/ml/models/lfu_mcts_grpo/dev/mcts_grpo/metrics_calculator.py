@@ -37,7 +37,7 @@ class MetricsCalculator:
 
         # エントロピー: -sum(p * log(p))、0の確率は無視
         # log(0)を避けるためclamp
-        log_probs = torch.log(probs.clamp(min=1e-10))
+        log_probs = torch.log(probs.clamp(min=1e-6))
         entropy = -(probs * log_probs).sum(dim=-1)
 
         # NaN/Infをフィルタ（全て非合法のサンプルがあり得る）
@@ -118,9 +118,10 @@ class MetricsCalculator:
         Returns:
             全パラメータの勾配L2ノルム
         """
+        # Cast to float32 to avoid overflow with fp16 gradients
         return (
             sum(
-                param.grad.data.norm(2).item() ** 2
+                param.grad.data.float().norm(2).item() ** 2
                 for param in model.parameters()
                 if param.grad is not None
             )

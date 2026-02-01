@@ -386,7 +386,8 @@ class URMModel(PreTrainedModel):
         input_embeddings = self.input_embed(x)  # [batch, 64, hidden_size]
 
         # Initialize hidden state (broadcast to batch)
-        hidden_states = self.init_hidden.expand(
+        # Cast to match input dtype/device for fp16 compatibility
+        hidden_states = self.init_hidden.to(dtype=input_embeddings.dtype).expand(
             batch_size, -1, -1
         )  # [batch, 1, hidden]
         hidden_states = hidden_states.expand(-1, 64, -1)  # [batch, 64, hidden]
