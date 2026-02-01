@@ -21,6 +21,26 @@ from .configuration_urm import URMConfig
 __all__ = ["URMModel"]
 
 
+class RMSNorm(nn.Module):
+    """RMSNorm with dtype-matching for mixed precision compatibility.
+
+    PyTorch's nn.RMSNorm fused CUDA kernel requires input and weight to have
+    the same dtype. With autocast, inputs are cast to lower precision while
+    weights stay fp32, disabling the fused implementation. This class casts
+    weights to match input dtype during forward, enabling the fused kernel
+    while keeping fp32 master weights for training stability.
+    """
+
+    def __init__(self, normalized_shape: int, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(normalized_shape))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Cast weight to match input dtype for fused kernel compatibility
+        return F.rms_norm(x, (x.size(-1),), self.weight.to(x.dtype), self.eps)
+
+
 class ConvSwiGLU(nn.Module):
     """
     SwiGLU FFN with depthwise 1D convolution.
@@ -246,8 +266,8 @@ class URMBlock(nn.Module):
         super().__init__()
         self.self_attn = URMAttention(config)
         self.mlp = ConvSwiGLU(config)
-        self.post_attn_norm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
-        self.post_mlp_norm = nn.RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attn_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_mlp_norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
     def forward(
         self,
