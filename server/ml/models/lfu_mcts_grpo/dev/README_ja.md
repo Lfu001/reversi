@@ -40,11 +40,32 @@ $$ L_{policy} = - \pi \cdot \log(p(S)) $$
 
 #### c. MCTS-GRPO損失
 
-本手法の核心部分である。保存されたQ値のセット `{Q(S, a)}` を用いて、相対的なポリシー損失を計算する。まず、Q値が最も高かったアクション `a_best` を特定する。次に、それ以外の合法手の中から、劣後手 `a_suboptimal` を複数サンプリングする。これらのペア `(a_best, a_suboptimal)` それぞれに対して、以下の損失を計算する。
+本手法の核心部分である。Tree-GRPO論文に基づき、MCTSが算出したQ値を用いてPPO-styleの損失関数を計算する。
 
-$$ L_{GRPO\_pair} = \log(1 + \exp(-(\log p(S, a_{best}) - \log p(S, a_{suboptimal})))) $$
+##### アドバンテージ計算
 
-この損失は、ネットワークのポリシー出力において、`a_best` の確率が `a_suboptimal` の確率よりも高くなるように促す。最終的なMCTS-GRPO損失は、サンプリングした全てのペアに対する損失の平均となる。
+探索済みアクション（visit_count > 0のアクション）のQ値を正規化してアドバンテージを計算する。論文に従い、**Intra-tree**（各サンプル内）と**Inter-tree**（バッチ全体）の2種類のアドバンテージを使用する：
+
+**Intra-tree アドバンテージ**（同一盤面内での比較）:
+$$ A_{\text{intra}}(a) = \frac{Q(S, a) - \mu_{\text{sample}}}{\sigma_{\text{sample}}} $$
+
+**Inter-tree アドバンテージ**（バッチ全体での比較）:
+$$ A_{\text{inter}}(a) = \frac{Q(S, a) - \mu_{\text{batch}}}{\sigma_{\text{batch}}} $$
+
+**合成アドバンテージ**:
+$$ A(a) = A_{\text{intra}}(a) + A_{\text{inter}}(a) $$
+
+##### Importance Sampling Ratio
+
+$$ r(a) = \frac{p_\theta(S, a)}{\pi_{\text{old}}(S, a)} $$
+
+ここで $p_\theta$ は現在のポリシー、$\pi_{\text{old}}$ はリプレイバッファ保存時のポリシーである。
+
+##### PPO-style Clipped Objective
+
+$$ L_{GRPO} = -\frac{1}{B}\sum_{i=1}^{B}\sum_{a \in E_i} \min\left(r(a) \cdot A(a), \text{clip}(r(a), 1-\epsilon, 1+\epsilon) \cdot A(a)\right) $$
+
+> **Note**: 論文ではKL正則化項（$\beta \cdot D_{KL}(\pi_\theta || \pi_{ref})$）も含まれるが、MCTSの文脈では適切な参照ポリシー $\pi_{ref}$ の定義が困難なため省略している。importance sampling ratioのクリッピングで学習安定性を確保する。
 
 ### 3. 合計損失
 

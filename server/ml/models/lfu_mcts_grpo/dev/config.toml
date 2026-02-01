@@ -35,4 +35,4 @@ lambda_value = 1.4
 # Tree-GRPO settings
 [grpo]
 lambda_grpo = 1.6
-grpo_num_pairs = 16
+clip_epsilon = 0.2

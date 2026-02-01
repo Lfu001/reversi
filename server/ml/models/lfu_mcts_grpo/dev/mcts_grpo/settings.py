@@ -63,7 +63,9 @@ class TreeGRPOConfig(BaseModel):
     """Configuration for Tree-GRPO algorithm."""
 
     lambda_grpo: float = Field(description="Lambda value for GRPO loss")
-    grpo_num_pairs: int = Field(description="Number of state-action pairs for GRPO")
+    clip_epsilon: float = Field(
+        default=0.2, description="Clipping epsilon for PPO-style objective"
+    )
 
 
 class Settings(BaseSettings):

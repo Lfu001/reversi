@@ -42,11 +42,32 @@ $$ L_{policy} = - \pi \cdot \log(p(S)) $$
 
 #### c. MCTS-GRPO Loss
 
-This is the core of our proposed method. We use the stored set of Q-values `{Q(S, a)}` to compute a relative policy loss. First, we identify the action `a_best` with the highest Q-value. Next, we sample multiple suboptimal actions `a_suboptimal` from the remaining legal moves. For each pair `(a_best, a_suboptimal)`, we compute the following loss:
+This is the core of our proposed method, based on the Tree-GRPO paper. We use the Q-values computed by MCTS to calculate a PPO-style loss function.
 
-$$ L_{GRPO\_pair} = \log(1 + \exp(-(\log p(S, a_{best}) - \log p(S, a_{suboptimal})))) $$
+##### Advantage Computation
 
-This loss encourages the network's policy output to assign a higher probability to `a_best` than to `a_suboptimal`. The final MCTS-GRPO loss is the average loss over all sampled pairs.
+We normalize the Q-values of explored actions (those with visit_count > 0) to compute advantages. Following the paper, we use two types of advantages: **Intra-tree** (within each sample) and **Inter-tree** (across the batch):
+
+**Intra-tree Advantage** (comparison within the same board state):
+$$ A_{\text{intra}}(a) = \frac{Q(S, a) - \mu_{\text{sample}}}{\sigma_{\text{sample}}} $$
+
+**Inter-tree Advantage** (comparison across the batch):
+$$ A_{\text{inter}}(a) = \frac{Q(S, a) - \mu_{\text{batch}}}{\sigma_{\text{batch}}} $$
+
+**Combined Advantage**:
+$$ A(a) = A_{\text{intra}}(a) + A_{\text{inter}}(a) $$
+
+##### Importance Sampling Ratio
+
+$$ r(a) = \frac{p_\theta(S, a)}{\pi_{\text{old}}(S, a)} $$
+
+where $p_\theta$ is the current policy and $\pi_{\text{old}}$ is the policy at the time the sample was stored in the replay buffer.
+
+##### PPO-style Clipped Objective
+
+$$ L_{GRPO} = -\frac{1}{B}\sum_{i=1}^{B}\sum_{a \in E_i} \min\left(r(a) \cdot A(a), \text{clip}(r(a), 1-\epsilon, 1+\epsilon) \cdot A(a)\right) $$
+
+> **Note**: The paper includes a KL regularization term ($\beta \cdot D_{KL}(\pi_\theta || \pi_{ref})$), but in the MCTS context, defining an appropriate reference policy $\pi_{ref}$ is challenging, so we omit it. Training stability is ensured through the clipping of the importance sampling ratio.
 
 ### 3. Total Loss
 

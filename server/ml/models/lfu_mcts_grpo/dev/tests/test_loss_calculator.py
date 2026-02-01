@@ -22,7 +22,7 @@ def loss_calculator():
         warmup_steps=10,
         lambda_value=1.0,
     )
-    grpo_config = TreeGRPOConfig(lambda_grpo=0.1, grpo_num_pairs=3)
+    grpo_config = TreeGRPOConfig(lambda_grpo=0.1, clip_epsilon=0.2)
     return LossCalculator(training_config, grpo_config)
 
 
@@ -103,7 +103,7 @@ class TestValueLoss:
 
 
 class TestGRPOLoss:
-    """Tests for GRPO Loss computation."""
+    """Tests for GRPO Loss computation (Tree-GRPO paper approach)."""
 
     def test_grpo_loss_explored_filtering(self, loss_calculator):
         """Only actions with visit_count > 0 should be considered explored."""
@@ -112,6 +112,7 @@ class TestGRPOLoss:
         q_vals = torch.zeros(batch_size, 64)
         legal_moves = torch.zeros(batch_size, 8, 8)
         visit_counts = torch.zeros(batch_size, 64)
+        pis = torch.zeros(batch_size, 8, 8)
         non_terminal_mask = torch.tensor([True])
 
         # 4 legal moves at positions 0, 1, 2, 3
@@ -119,6 +120,12 @@ class TestGRPOLoss:
         legal_moves[:, 0, 1] = 1.0
         legal_moves[:, 0, 2] = 1.0
         legal_moves[:, 0, 3] = 1.0
+
+        # Set old probabilities for importance sampling
+        pis[:, 0, 0] = 0.3
+        pis[:, 0, 1] = 0.3
+        pis[:, 0, 2] = 0.2
+        pis[:, 0, 3] = 0.2
 
         # Only 2 of them have visit_count > 0
         visit_counts[:, 0] = 10  # explored
@@ -131,11 +138,11 @@ class TestGRPOLoss:
         q_vals[:, 1] = 0.3  # suboptimal
 
         grpo_loss = loss_calculator._compute_grpo_loss(
-            pred_logits, q_vals, legal_moves, visit_counts, non_terminal_mask
+            pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
 
-        assert grpo_loss > 0, (
-            "GRPO loss should be positive when we have 2+ explored nodes"
+        assert grpo_loss != 0, (
+            "GRPO loss should be non-zero when we have 2+ explored nodes with Q diff"
         )
         assert torch.isfinite(grpo_loss), "GRPO loss should be finite"
 
@@ -146,6 +153,7 @@ class TestGRPOLoss:
         q_vals = torch.zeros(batch_size, 64)
         legal_moves = torch.zeros(batch_size, 8, 8)
         visit_counts = torch.zeros(batch_size, 64)
+        pis = torch.zeros(batch_size, 8, 8)
         non_terminal_mask = torch.tensor([True])
 
         # 4 legal moves
@@ -154,11 +162,16 @@ class TestGRPOLoss:
         legal_moves[:, 0, 2] = 1.0
         legal_moves[:, 0, 3] = 1.0
 
+        pis[:, 0, 0] = 0.25
+        pis[:, 0, 1] = 0.25
+        pis[:, 0, 2] = 0.25
+        pis[:, 0, 3] = 0.25
+
         # Only 1 has visit_count > 0
         visit_counts[:, 0] = 10  # only one explored
 
         grpo_loss = loss_calculator._compute_grpo_loss(
-            pred_logits, q_vals, legal_moves, visit_counts, non_terminal_mask
+            pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
 
         assert torch.isclose(grpo_loss, torch.tensor(0.0)), (
@@ -172,15 +185,134 @@ class TestGRPOLoss:
         q_vals = torch.zeros(batch_size, 64)
         legal_moves = torch.zeros(batch_size, 8, 8)  # No legal moves
         visit_counts = torch.zeros(batch_size, 64)
+        pis = torch.zeros(batch_size, 8, 8)
         non_terminal_mask = torch.tensor([False])  # Terminal
 
         grpo_loss = loss_calculator._compute_grpo_loss(
-            pred_logits, q_vals, legal_moves, visit_counts, non_terminal_mask
+            pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
 
         assert torch.isclose(grpo_loss, torch.tensor(0.0)), (
             "GRPO loss should be 0 for terminal states"
         )
+
+    def test_grpo_loss_advantage_normalization(self, loss_calculator):
+        """Q-values should be normalized to advantages with mean 0 and std 1."""
+        batch_size = 1
+        pred_logits = torch.zeros(batch_size, 64)  # uniform logits
+        q_vals = torch.zeros(batch_size, 64)
+        legal_moves = torch.zeros(batch_size, 8, 8)
+        visit_counts = torch.zeros(batch_size, 64)
+        pis = torch.zeros(batch_size, 8, 8)
+        non_terminal_mask = torch.tensor([True])
+
+        # 4 legal moves, all explored
+        legal_moves[:, 0, 0] = 1.0
+        legal_moves[:, 0, 1] = 1.0
+        legal_moves[:, 0, 2] = 1.0
+        legal_moves[:, 0, 3] = 1.0
+
+        visit_counts[:, 0] = 10
+        visit_counts[:, 1] = 10
+        visit_counts[:, 2] = 10
+        visit_counts[:, 3] = 10
+
+        # Uniform old policy
+        pis[:, 0, 0] = 0.25
+        pis[:, 0, 1] = 0.25
+        pis[:, 0, 2] = 0.25
+        pis[:, 0, 3] = 0.25
+
+        # Q-values with known mean and std
+        # Q = [1.0, 0.5, 0.0, -0.5], mean=0.25, std≈0.56
+        q_vals[:, 0] = 1.0
+        q_vals[:, 1] = 0.5
+        q_vals[:, 2] = 0.0
+        q_vals[:, 3] = -0.5
+
+        grpo_loss = loss_calculator._compute_grpo_loss(
+            pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
+        )
+
+        # Loss should be non-zero with these Q-value differences
+        assert grpo_loss != 0, "GRPO loss should be non-zero with Q-value variance"
+        assert torch.isfinite(grpo_loss), "GRPO loss should be finite"
+
+    def test_grpo_loss_same_q_values(self, loss_calculator):
+        """GRPO loss should be 0 when all Q-values are the same (no advantage)."""
+        batch_size = 1
+        pred_logits = torch.randn(batch_size, 64)
+        q_vals = torch.zeros(batch_size, 64)
+        legal_moves = torch.zeros(batch_size, 8, 8)
+        visit_counts = torch.zeros(batch_size, 64)
+        pis = torch.zeros(batch_size, 8, 8)
+        non_terminal_mask = torch.tensor([True])
+
+        # 4 legal moves, all explored
+        legal_moves[:, 0, 0] = 1.0
+        legal_moves[:, 0, 1] = 1.0
+        legal_moves[:, 0, 2] = 1.0
+        legal_moves[:, 0, 3] = 1.0
+
+        visit_counts[:, 0] = 10
+        visit_counts[:, 1] = 10
+        visit_counts[:, 2] = 10
+        visit_counts[:, 3] = 10
+
+        pis[:, 0, 0] = 0.25
+        pis[:, 0, 1] = 0.25
+        pis[:, 0, 2] = 0.25
+        pis[:, 0, 3] = 0.25
+
+        # All Q-values are the same
+        q_vals[:, 0] = 0.5
+        q_vals[:, 1] = 0.5
+        q_vals[:, 2] = 0.5
+        q_vals[:, 3] = 0.5
+
+        grpo_loss = loss_calculator._compute_grpo_loss(
+            pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
+        )
+
+        assert torch.isclose(grpo_loss, torch.tensor(0.0)), (
+            "GRPO loss should be 0 when all Q-values are the same"
+        )
+
+    def test_grpo_loss_importance_ratio_clipping(self, loss_calculator):
+        """Importance ratio should be clipped when policy changes significantly."""
+        batch_size = 1
+        # Create logits that will produce very different probabilities from old policy
+        pred_logits = torch.zeros(batch_size, 64)
+        pred_logits[:, 0] = 10.0  # Will have very high probability
+        pred_logits[:, 1] = -10.0  # Will have very low probability
+
+        q_vals = torch.zeros(batch_size, 64)
+        legal_moves = torch.zeros(batch_size, 8, 8)
+        visit_counts = torch.zeros(batch_size, 64)
+        pis = torch.zeros(batch_size, 8, 8)
+        non_terminal_mask = torch.tensor([True])
+
+        # 2 legal moves
+        legal_moves[:, 0, 0] = 1.0
+        legal_moves[:, 0, 1] = 1.0
+
+        visit_counts[:, 0] = 10
+        visit_counts[:, 1] = 10
+
+        # Old policy was uniform
+        pis[:, 0, 0] = 0.5
+        pis[:, 0, 1] = 0.5
+
+        # Different Q-values
+        q_vals[:, 0] = 0.8
+        q_vals[:, 1] = 0.2
+
+        grpo_loss = loss_calculator._compute_grpo_loss(
+            pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
+        )
+
+        # Loss should be finite (clipping prevents extreme values)
+        assert torch.isfinite(grpo_loss), "GRPO loss should be finite with clipping"
 
 
 class TestComputeAllLosses:
@@ -255,7 +387,7 @@ class TestGradientFlowThroughLoss:
             warmup_steps=10,
             lambda_value=1.0,
         )
-        grpo_config = TreeGRPOConfig(lambda_grpo=1.5, grpo_num_pairs=3)
+        grpo_config = TreeGRPOConfig(lambda_grpo=1.5, clip_epsilon=0.2)
         loss_calc = LossCalculator(training_config, grpo_config)
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 
@@ -369,7 +501,7 @@ class TestGradientFlowThroughLoss:
             warmup_steps=10,
             lambda_value=1.0,
         )
-        grpo_config = TreeGRPOConfig(lambda_grpo=1.5, grpo_num_pairs=3)
+        grpo_config = TreeGRPOConfig(lambda_grpo=1.5, clip_epsilon=0.2)
         loss_calc = LossCalculator(training_config, grpo_config)
 
         # Create sample data with enough explored nodes for GRPO
@@ -454,7 +586,7 @@ class TestGradientFlowThroughLoss:
             warmup_steps=10,
             lambda_value=1.0,
         )
-        grpo_config = TreeGRPOConfig(lambda_grpo=1.5, grpo_num_pairs=3)
+        grpo_config = TreeGRPOConfig(lambda_grpo=1.5, clip_epsilon=0.2)
         loss_calc = LossCalculator(training_config, grpo_config)
 
         # Create sample data
@@ -527,4 +659,141 @@ class TestGradientFlowThroughLoss:
         assert input_embed_has_grad, (
             f"input_embed should have gradients (added at each loop).\n"
             f"Params with grad: {params_with_grad}"
+        )
+
+
+class TestGRPOGradientFlow:
+    """Specific tests for GRPO loss gradient flow through vectorized operations."""
+
+    def test_grpo_loss_has_gradient(self, loss_calculator):
+        """Verify that GRPO loss maintains computation graph and gradients flow."""
+        batch_size = 4
+        # Create logits that require grad
+        pred_logits = torch.randn(batch_size, 64, requires_grad=True)
+        q_vals = torch.zeros(batch_size, 64)
+        legal_moves = torch.zeros(batch_size, 8, 8)
+        visit_counts = torch.zeros(batch_size, 64)
+        pis = torch.zeros(batch_size, 8, 8)
+        non_terminal_mask = torch.tensor([True, True, True, True])
+
+        # Set up 4 legal moves per sample, all explored
+        for i in range(4):
+            legal_moves[:, 0, i] = 1.0
+            visit_counts[:, i] = 10.0
+            pis[:, 0, i] = 0.25
+
+        # Different Q-values to ensure non-zero advantage
+        q_vals[:, 0] = 0.8
+        q_vals[:, 1] = 0.5
+        q_vals[:, 2] = 0.2
+        q_vals[:, 3] = -0.1
+
+        grpo_loss = loss_calculator._compute_grpo_loss(
+            pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
+        )
+
+        # Verify loss requires grad
+        assert grpo_loss.requires_grad, "GRPO loss should require gradients"
+
+        # Backward and check gradient exists
+        grpo_loss.backward()
+        assert pred_logits.grad is not None, "pred_logits should have gradients"
+        assert pred_logits.grad.abs().sum() > 0, "Gradients should be non-zero"
+
+    def test_grpo_vectorized_gradients_match_expected_direction(self, loss_calculator):
+        """Verify gradients push probabilities in expected direction based on advantages."""
+        batch_size = 1
+        # Start with uniform logits
+        pred_logits = torch.zeros(batch_size, 64, requires_grad=True)
+
+        q_vals = torch.zeros(batch_size, 64)
+        legal_moves = torch.zeros(batch_size, 8, 8)
+        visit_counts = torch.zeros(batch_size, 64)
+        pis = torch.zeros(batch_size, 8, 8)
+        non_terminal_mask = torch.tensor([True])
+
+        # 2 legal moves
+        legal_moves[:, 0, 0] = 1.0
+        legal_moves[:, 0, 1] = 1.0
+        visit_counts[:, 0] = 10.0
+        visit_counts[:, 1] = 10.0
+        pis[:, 0, 0] = 0.5
+        pis[:, 0, 1] = 0.5
+
+        # Action 0 is better (higher Q-value)
+        q_vals[:, 0] = 0.9
+        q_vals[:, 1] = 0.1
+
+        grpo_loss = loss_calculator._compute_grpo_loss(
+            pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
+        )
+        grpo_loss.backward()
+
+        # Gradient for action 0 should be negative (decrease loss = increase probability)
+        # Gradient for action 1 should be positive (decrease loss = decrease probability)
+        grad = pred_logits.grad[0]
+        assert grad[0] < grad[1], (
+            f"Better action should have lower gradient (to increase prob). "
+            f"grad[0]={grad[0].item():.4f}, grad[1]={grad[1].item():.4f}"
+        )
+
+    def test_inter_tree_advantage_contributes(self, loss_calculator):
+        """Verify inter-tree advantage (batch-wide normalization) contributes to loss."""
+        batch_size = 2
+        pred_logits = torch.zeros(batch_size, 64, requires_grad=True)
+
+        q_vals = torch.zeros(batch_size, 64)
+        legal_moves = torch.zeros(batch_size, 8, 8)
+        visit_counts = torch.zeros(batch_size, 64)
+        pis = torch.zeros(batch_size, 8, 8)
+        non_terminal_mask = torch.tensor([True, True])
+
+        # Sample 0: Q-values [0.8, 0.2]
+        # Sample 1: Q-values [0.6, 0.4]
+        for i in range(2):
+            legal_moves[:, 0, i] = 1.0
+            visit_counts[:, i] = 10.0
+            pis[:, 0, i] = 0.5
+
+        q_vals[0, 0] = 0.8
+        q_vals[0, 1] = 0.2
+        q_vals[1, 0] = 0.6
+        q_vals[1, 1] = 0.4
+
+        grpo_loss = loss_calculator._compute_grpo_loss(
+            pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
+        )
+
+        # Loss should be non-zero (both intra and inter-tree contribute)
+        assert grpo_loss != 0, "GRPO loss should be non-zero with inter-tree"
+        assert grpo_loss.requires_grad, "GRPO loss should require gradients"
+
+        grpo_loss.backward()
+        assert pred_logits.grad is not None, "Gradients should flow"
+        assert pred_logits.grad.abs().sum() > 0, "Gradients should be non-zero"
+
+    def test_nanstd_gradient_flow(self):
+        """Verify custom _nanstd function preserves gradient flow."""
+        from mcts_grpo.loss_calculator import _nanstd
+
+        x = torch.tensor([[1.0, 2.0, float("nan"), 4.0]], requires_grad=True)
+        std = _nanstd(x, dim=1)
+
+        assert std.requires_grad, "_nanstd should preserve requires_grad"
+
+        std.sum().backward()
+        assert x.grad is not None, "Gradient should flow through _nanstd"
+        # Non-NaN positions should have finite gradients
+        assert torch.isfinite(x.grad[0, 0]), (
+            "Valid position 0 should have finite gradient"
+        )
+        assert torch.isfinite(x.grad[0, 1]), (
+            "Valid position 1 should have finite gradient"
+        )
+        assert torch.isfinite(x.grad[0, 3]), (
+            "Valid position 3 should have finite gradient"
+        )
+        # At least some non-NaN positions should have non-zero gradients
+        assert (x.grad[0, 0] != 0) or (x.grad[0, 1] != 0) or (x.grad[0, 3] != 0), (
+            "Valid positions should have non-zero gradients"
         )
