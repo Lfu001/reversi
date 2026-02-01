@@ -232,6 +232,7 @@ def evaluate(
     model: torch.nn.Module | None = None,
     device: torch.device | None = None,
     max_random_moves: int = 6,
+    quiet: bool = False,
 ) -> dict[str, float]:
     """Evaluates the MCTS model against a baseline agent.
 
@@ -243,15 +244,17 @@ def evaluate(
         model: Pre-loaded model instance (optional).
         device: Device to run evaluation on (optional).
         max_random_moves: Max random moves for opening randomization (1 to this).
+        quiet: If True, suppress print statements.
 
     Returns:
         Dictionary containing win rate and other metrics.
     """
     assert num_games % 2 == 0, "num_games must be even for fair paired evaluation"
 
-    print(
-        f"Starting evaluation: MCTS vs {opponent_type.capitalize()} ({num_games} games)"
-    )
+    if not quiet:
+        print(
+            f"Starting evaluation: MCTS vs {opponent_type.capitalize()} ({num_games} games)"
+        )
 
     # Initialize Settings
     settings = Settings()
@@ -310,7 +313,7 @@ def evaluate(
 
     # Play paired games: same opening, alternating colors for fairness
     num_pairs = num_games // 2
-    for pair_idx in tqdm(range(num_pairs), desc="Evaluating (pairs)"):
+    for pair_idx in tqdm(range(num_pairs), desc="Evaluating (pairs)", disable=quiet):
         # Generate random opening for this pair
         opening_state = _generate_random_opening(max_random_moves)
 
@@ -347,12 +350,13 @@ def evaluate(
     total = results["wins"] + results["losses"] + results["draws"]
     win_rate = results["wins"] / total if total > 0 else 0.0
 
-    print("\nEvaluation Results:")
-    print(f"Total Games: {total}")
-    print(f"Wins: {results['wins']}")
-    print(f"Losses: {results['losses']}")
-    print(f"Draws: {results['draws']}")
-    print(f"Win Rate: {win_rate:.2%}")
+    if not quiet:
+        print("\nEvaluation Results:")
+        print(f"Total Games: {total}")
+        print(f"Wins: {results['wins']}")
+        print(f"Losses: {results['losses']}")
+        print(f"Draws: {results['draws']}")
+        print(f"Win Rate: {win_rate:.2%}")
 
     results["total_games"] = total
     results["win_rate"] = win_rate

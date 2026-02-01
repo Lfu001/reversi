@@ -137,7 +137,7 @@ class TestGRPOLoss:
         q_vals[:, 0] = 0.8  # best
         q_vals[:, 1] = 0.3  # suboptimal
 
-        grpo_loss = loss_calculator._compute_grpo_loss(
+        grpo_loss, clip_frac = loss_calculator._compute_grpo_loss(
             pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
 
@@ -170,7 +170,7 @@ class TestGRPOLoss:
         # Only 1 has visit_count > 0
         visit_counts[:, 0] = 10  # only one explored
 
-        grpo_loss = loss_calculator._compute_grpo_loss(
+        grpo_loss, clip_frac = loss_calculator._compute_grpo_loss(
             pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
 
@@ -188,7 +188,7 @@ class TestGRPOLoss:
         pis = torch.zeros(batch_size, 8, 8)
         non_terminal_mask = torch.tensor([False])  # Terminal
 
-        grpo_loss = loss_calculator._compute_grpo_loss(
+        grpo_loss, clip_frac = loss_calculator._compute_grpo_loss(
             pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
 
@@ -230,7 +230,7 @@ class TestGRPOLoss:
         q_vals[:, 2] = 0.0
         q_vals[:, 3] = -0.5
 
-        grpo_loss = loss_calculator._compute_grpo_loss(
+        grpo_loss, clip_frac = loss_calculator._compute_grpo_loss(
             pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
 
@@ -270,7 +270,7 @@ class TestGRPOLoss:
         q_vals[:, 2] = 0.5
         q_vals[:, 3] = 0.5
 
-        grpo_loss = loss_calculator._compute_grpo_loss(
+        grpo_loss, clip_frac = loss_calculator._compute_grpo_loss(
             pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
 
@@ -307,7 +307,7 @@ class TestGRPOLoss:
         q_vals[:, 0] = 0.8
         q_vals[:, 1] = 0.2
 
-        grpo_loss = loss_calculator._compute_grpo_loss(
+        grpo_loss, clip_frac = loss_calculator._compute_grpo_loss(
             pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
 
@@ -688,7 +688,7 @@ class TestGRPOGradientFlow:
         q_vals[:, 2] = 0.2
         q_vals[:, 3] = -0.1
 
-        grpo_loss = loss_calculator._compute_grpo_loss(
+        grpo_loss, clip_frac = loss_calculator._compute_grpo_loss(
             pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
 
@@ -724,7 +724,7 @@ class TestGRPOGradientFlow:
         q_vals[:, 0] = 0.9
         q_vals[:, 1] = 0.1
 
-        grpo_loss = loss_calculator._compute_grpo_loss(
+        grpo_loss, clip_frac = loss_calculator._compute_grpo_loss(
             pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
         grpo_loss.backward()
@@ -760,7 +760,7 @@ class TestGRPOGradientFlow:
         q_vals[1, 0] = 0.6
         q_vals[1, 1] = 0.4
 
-        grpo_loss = loss_calculator._compute_grpo_loss(
+        grpo_loss, clip_frac = loss_calculator._compute_grpo_loss(
             pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
 

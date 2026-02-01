@@ -71,7 +71,7 @@ class LossCalculator:
         legal_moves = states[:, 3, :, :]
         non_terminal_mask = self._compute_non_terminal_mask(legal_moves)
 
-        policy_loss, grpo_loss = self._compute_policy_and_grpo_loss(
+        policy_loss, grpo_loss, clip_fraction = self._compute_policy_and_grpo_loss(
             pred_logits, pis, legal_moves, q_vals, visit_counts, non_terminal_mask
         )
 
@@ -79,6 +79,7 @@ class LossCalculator:
             "value_loss": value_loss,
             "policy_loss": policy_loss,
             "grpo_loss": grpo_loss,
+            "clip_fraction": clip_fraction,
         }
 
     def compute_total_loss(self, losses: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -109,18 +110,22 @@ class LossCalculator:
         q_vals: torch.Tensor,
         visit_counts: torch.Tensor,
         non_terminal_mask: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Policy LossとGRPO Lossを計算"""
         if not non_terminal_mask.any():
             device = pred_logits.device
-            return torch.tensor(0.0, device=device), torch.tensor(0.0, device=device)
+            return (
+                torch.tensor(0.0, device=device),
+                torch.tensor(0.0, device=device),
+                torch.tensor(0.0, device=device),
+            )
 
         policy_loss = self._compute_policy_loss(pred_logits, pis, non_terminal_mask)
-        grpo_loss = self._compute_grpo_loss(
+        grpo_loss, clip_fraction = self._compute_grpo_loss(
             pred_logits, q_vals, legal_moves, visit_counts, pis, non_terminal_mask
         )
 
-        return policy_loss, grpo_loss
+        return policy_loss, grpo_loss, clip_fraction
 
     def _compute_policy_loss(
         self,
@@ -145,7 +150,7 @@ class LossCalculator:
         visit_counts: torch.Tensor,
         pis: torch.Tensor,
         non_terminal_mask: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """GRPO Lossを計算（Tree-GRPO論文に基づくPPO-style clipped objective）
 
         ベクトル化された実装:
@@ -162,7 +167,7 @@ class LossCalculator:
             non_terminal_mask: 非終局盤面のマスク (batch,)
 
         Returns:
-            GRPO損失値
+            (grpo_loss, clip_fraction) のタプル
         """
         # マスク適用してflatten
         pred_logits = pred_logits[non_terminal_mask].view(-1, 64)  # (B, 64)
@@ -173,7 +178,10 @@ class LossCalculator:
 
         batch_size = pred_logits.shape[0]
         if batch_size == 0:
-            return torch.tensor(0.0, device=pred_logits.device)
+            return (
+                torch.tensor(0.0, device=pred_logits.device),
+                torch.tensor(0.0, device=pred_logits.device),
+            )
 
         # 探索済みマスク: 合法手かつvisit_count > 0
         explored_mask = legal_mask & visit_mask  # (B, 64)
@@ -183,7 +191,10 @@ class LossCalculator:
         valid_samples = explored_count >= 2  # (B,)
 
         if not valid_samples.any():
-            return torch.tensor(0.0, device=pred_logits.device)
+            return (
+                torch.tensor(0.0, device=pred_logits.device),
+                torch.tensor(0.0, device=pred_logits.device),
+            )
 
         # 有効サンプルのみ抽出
         pred_logits = pred_logits[valid_samples]  # (B', 64)
@@ -256,4 +267,10 @@ class LossCalculator:
 
         # 最大化 -> 最小化のため負号、各サンプルで合計してからバッチ平均
         loss_per_sample = -masked_loss.sum(dim=1)  # (B',)
-        return loss_per_sample.mean()
+
+        # === Clip Fraction計算 ===
+        # ratio != clipped_ratio となった割合（探索済みアクションのみ）
+        is_clipped = (ratio != clipped_ratio) & explored_mask
+        clip_fraction = is_clipped.sum().float() / explored_mask.sum().float()
+
+        return loss_per_sample.mean(), clip_fraction

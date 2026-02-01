@@ -8,6 +8,7 @@ from accelerate import Accelerator
 from tqdm.rich import tqdm
 
 from ..loss_calculator import LossCalculator
+from ..metrics_calculator import MetricsCalculator
 from ..replay_buffer import Experience, ReplayBuffer
 from ..settings import Settings
 
@@ -55,18 +56,27 @@ class TrainingExecutor:
 
         experiences = replay_buffer.sample(self.settings.training.train_batch_size)
         batch = self._prepare_batch(experiences)
-        losses = self._compute_losses(batch)
+        losses, pred_logits, pred_values = self._compute_losses(batch)
         total_loss = self._compute_total_loss(losses)
 
         self.accelerator.backward(total_loss)
+
+        # Gradient Normをbackwardの後、stepの前に計算
+        gradient_norm = MetricsCalculator.compute_gradient_norm(self.model)
 
         for optimizer in self.optimizers:
             optimizer.step()
         for lr_scheduler in self.lr_schedulers:
             lr_scheduler.step()
 
+        # 追加メトリクスを計算
+        additional_metrics = self._compute_additional_metrics(
+            pred_logits, pred_values, batch
+        )
+        additional_metrics["gradient_norm"] = gradient_norm
+
         pbar.update(1)
-        self._log_metrics(losses, total_loss, step, iteration)
+        self._log_metrics(losses, total_loss, additional_metrics, step, iteration)
         pbar.set_postfix({"loss": f"{total_loss.item():.4f}"})
 
     def _prepare_batch(self, experiences: list[Experience]) -> dict[str, torch.Tensor]:
@@ -94,7 +104,7 @@ class TrainingExecutor:
 
     def _compute_losses(
         self, batch: dict[str, torch.Tensor]
-    ) -> dict[str, torch.Tensor]:
+    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         """損失を計算"""
         states = batch["states"]
         pis = batch["pis"]
@@ -104,28 +114,66 @@ class TrainingExecutor:
 
         pred_logits, pred_values = self.model(states)
 
-        return self.loss_calculator.compute_all_losses(
+        losses = self.loss_calculator.compute_all_losses(
             pred_logits, pred_values, states, pis, outcomes, q_vals, visit_counts
         )
+        return losses, pred_logits, pred_values
 
     def _compute_total_loss(self, losses: dict[str, torch.Tensor]) -> torch.Tensor:
         """総損失を計算"""
         return self.loss_calculator.compute_total_loss(losses)
 
+    def _compute_additional_metrics(
+        self,
+        pred_logits: torch.Tensor,
+        pred_values: torch.Tensor,
+        batch: dict[str, torch.Tensor],
+    ) -> dict[str, float]:
+        """追加メトリクスを計算"""
+        states = batch["states"]
+        outcomes = batch["outcomes"]
+        legal_mask = states[:, 3, :, :]  # Channel 3 is legal moves
+
+        with torch.no_grad():
+            policy_entropy = MetricsCalculator.compute_policy_entropy(
+                pred_logits, legal_mask
+            )
+            value_accuracy = MetricsCalculator.compute_value_accuracy(
+                pred_values, outcomes
+            )
+            illegal_move_prob = MetricsCalculator.compute_illegal_move_prob(
+                pred_logits, legal_mask
+            )
+
+        return {
+            "policy_entropy": policy_entropy,
+            "value_accuracy": value_accuracy,
+            "illegal_move_prob": illegal_move_prob,
+        }
+
     def _log_metrics(
         self,
         losses: dict[str, torch.Tensor],
         total_loss: torch.Tensor,
+        additional_metrics: dict[str, float],
         step: int,
         iteration: int,
     ):
         """メトリクスをログ出力"""
+        global_step = (
+            iteration * self.settings.training.training_steps_per_iteration + step
+        )
         self.accelerator.log(
             {
                 "loss/total": total_loss.item(),
                 "loss/value": losses["value_loss"].item(),
                 "loss/policy": losses["policy_loss"].item(),
                 "loss/grpo": losses["grpo_loss"].item(),
+                "metrics/clip_fraction": losses["clip_fraction"].item(),
+                "metrics/policy_entropy": additional_metrics["policy_entropy"],
+                "metrics/value_accuracy": additional_metrics["value_accuracy"],
+                "metrics/illegal_move_prob": additional_metrics["illegal_move_prob"],
+                "metrics/gradient_norm": additional_metrics["gradient_norm"],
             },
-            step=iteration * self.settings.training.training_steps_per_iteration + step,
+            step=global_step,
         )
