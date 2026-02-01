@@ -9,6 +9,7 @@ import random
 
 import numpy as np
 import torch
+from accelerate.utils import set_seed
 from mcts import MCTS
 from reversi import ReversiEnvironment
 from tqdm.rich import tqdm
@@ -135,6 +136,7 @@ def play_single_game(
     settings: Settings,
     mcts_is_dark: bool,
     opponent_type: str,
+    initial_state: np.ndarray | None = None,
 ) -> int:
     """Play a single game and return the result for MCTS.
 
@@ -145,11 +147,12 @@ def play_single_game(
         settings: MCTS settings.
         mcts_is_dark: True if MCTS plays as Dark (first player).
         opponent_type: Type of opponent ('random', 'greedy', 'mobility').
+        initial_state: Optional initial state to start from (4, 8, 8).
 
     Returns:
         1 for MCTS win, 0 for draw, -1 for MCTS loss.
     """
-    state = get_initial_state()
+    state = initial_state if initial_state is not None else get_initial_state()
     mcts_color_val = 1 if mcts_is_dark else -1
 
     while not is_game_over(state):
@@ -201,6 +204,26 @@ def play_single_game(
         return -1  # MCTS loss
 
 
+def _generate_random_opening(max_random_moves: int = 6) -> np.ndarray:
+    """Generate a random opening by playing random moves from initial state.
+
+    Args:
+        max_random_moves: Maximum number of random moves to play (1 to this value).
+
+    Returns:
+        A game state array of shape (4, 8, 8) after random moves.
+    """
+    temp_env = ReversiEnvironment(batch_size=1)
+    num_moves = random.randint(1, max_random_moves)
+
+    for _ in range(num_moves):
+        states, _ = temp_env.step_batch(
+            np.ones((8, 8), dtype=float), deterministic=False
+        )
+
+    return states[0]
+
+
 def evaluate(
     num_games: int = 100,
     mcts_sims: int = 50,
@@ -208,20 +231,24 @@ def evaluate(
     opponent_type: str = "random",
     model: torch.nn.Module | None = None,
     device: torch.device | None = None,
+    max_random_moves: int = 6,
 ) -> dict[str, float]:
     """Evaluates the MCTS model against a baseline agent.
 
     Args:
-        num_games: Total number of games to play.
+        num_games: Total number of games to play (must be even).
         mcts_sims: Number of MCTS simulations per move.
         checkpoint: Path to checkpoint directory to load.
         opponent_type: Type of opponent ('random', 'greedy', 'mobility').
         model: Pre-loaded model instance (optional).
         device: Device to run evaluation on (optional).
+        max_random_moves: Max random moves for opening randomization (1 to this).
 
     Returns:
         Dictionary containing win rate and other metrics.
     """
+    assert num_games % 2 == 0, "num_games must be even for fair paired evaluation"
+
     print(
         f"Starting evaluation: MCTS vs {opponent_type.capitalize()} ({num_games} games)"
     )
@@ -281,25 +308,41 @@ def evaluate(
 
     results = {"wins": 0, "losses": 0, "draws": 0}
 
-    # Play games, alternating colors for fairness
-    for game_idx in tqdm(range(num_games), desc="Evaluating"):
-        mcts_is_dark = game_idx % 2 == 0
+    # Play paired games: same opening, alternating colors for fairness
+    num_pairs = num_games // 2
+    for pair_idx in tqdm(range(num_pairs), desc="Evaluating (pairs)"):
+        # Generate random opening for this pair
+        opening_state = _generate_random_opening(max_random_moves)
 
-        result = play_single_game(
+        # Game 1: MCTS as Dark
+        result1 = play_single_game(
             mcts_agent=mcts_agent,
             model=model,
             device=device,
             settings=settings,
-            mcts_is_dark=mcts_is_dark,
+            mcts_is_dark=True,
             opponent_type=opponent_type,
+            initial_state=opening_state.copy(),
         )
 
-        if result == 1:
-            results["wins"] += 1
-        elif result == 0:
-            results["draws"] += 1
-        else:
-            results["losses"] += 1
+        # Game 2: MCTS as Light (same opening)
+        result2 = play_single_game(
+            mcts_agent=mcts_agent,
+            model=model,
+            device=device,
+            settings=settings,
+            mcts_is_dark=False,
+            opponent_type=opponent_type,
+            initial_state=opening_state.copy(),
+        )
+
+        for result in [result1, result2]:
+            if result == 1:
+                results["wins"] += 1
+            elif result == 0:
+                results["draws"] += 1
+            else:
+                results["losses"] += 1
 
     total = results["wins"] + results["losses"] + results["draws"]
     win_rate = results["wins"] / total if total > 0 else 0.0
@@ -335,7 +378,22 @@ if __name__ == "__main__":
         default=50,
         help="Number of MCTS simulations per move",
     )
+    parser.add_argument(
+        "--max-random-moves",
+        type=int,
+        default=6,
+        help="Max random moves for opening randomization (1 to this value)",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility",
+    )
     args = parser.parse_args()
+
+    # Set seed for reproducibility
+    set_seed(args.seed)
 
     AutoConfig.register("urm", URMConfig)
     AutoModel.register(URMConfig, URMModel)
@@ -345,4 +403,5 @@ if __name__ == "__main__":
         mcts_sims=args.mcts_sims,
         checkpoint=args.checkpoint,
         opponent_type=args.opponent,
+        max_random_moves=args.max_random_moves,
     )
