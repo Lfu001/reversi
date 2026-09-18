@@ -17,10 +17,16 @@
         },
         {
             "path": "server/ml/reversi-py"
+        },
+        {
+            "path": "server/ml/models/lfu_mcts_grpo/dev"
+        },
+        {
+            "path": "server/ml/models/lfu_mcts_grpo/dev/mcts_grpo/mcts"
         }
     ],
     "settings": {
         "conventionalCommits.scopes": ["app", "game", "gateway", "ml"],
-        "cSpell.words": ["bitboard", "Reversi"]
+        "cSpell.words": ["bitboard", "mcts", "Reversi"]
     }
 }
