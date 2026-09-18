@@ -1,113 +1,191 @@
-# MCTS-GRPO: Efficient Self-Play Reinforcement Learning via Relative Policy Optimization using Monte Carlo Tree Search
+# Tree-Structured Terminal Trajectories for Othello Self-Play: Experimental Plan
 
-[**日本語版はこちら (Click here for the Japanese version)**](README_ja.md)
+[日本語版](README_ja.md)
 
-## Abstract
+Revised 2026-09-18. This document specifies a research question and experimental protocol, not demonstrated results. The existing `mcts-grpo` implementation does not implement this plan; implementation and validation remain future work.
 
-This research introduces MCTS-GRPO, a novel method designed to enhance the sample efficiency of self-play reinforcement learning frameworks such as AlphaZero. In conventional AlphaZero, the training signal relies primarily on the final game outcome, resulting in sparse rewards and requiring an enormous number of self-play games for an agent to learn effectively. To address this challenge, we leverage the rich information generated during the Monte Carlo Tree Search (MCTS) process to create a denser training signal. Specifically, we incorporate a Group Relative Policy Optimization (GRPO) loss term to update the policy head. This is achieved by comparing the action-values (Q-values) of multiple moves evaluated from the same board state by MCTS and directly training the network on their relative superiority. This allows the model to learn not just from the final outcome but also to develop a more nuanced understanding of the quality of moves at each state, thereby accelerating the learning process. We aim to validate this approach by applying it to the game of Othello and measuring the improvement in learning speed compared to a standard AlphaZero baseline.
+## 1. Research question and scope
 
-## Introduction
+**Can generating tree-structured trajectories from the same board position all the way to game termination, and learning the relative quality of branches from their outcomes, produce a stronger agent with less computation than conventional self-play?**
 
-Since the advent of AlphaGo, the combination of self-play reinforcement learning and Monte Carlo Tree Search (MCTS) has become the de facto standard for achieving superhuman performance in perfect information games like Go, chess, and shogi. At the core of this framework, AlphaZero employs a neural network to provide policy and value guidance to the MCTS engine. The search results from MCTS are then used as training data to continuously improve the network.
+Supervision comes from actual terminal wins, draws, and losses. This replaces the earlier proposal to add an auxiliary loss based on MCTS Q-values estimated at intermediate positions. The tree generates training data; it does not require search during evaluation or deployment.
 
-However, a significant challenge remains in this powerful learning loop: sample efficiency. The primary supervisory signal for the value network is the singular outcome of the game—a win, loss, or draw. This single label is applied to every state visited throughout the game's dozens of moves, leading to a substantial loss of information and slowing down the convergence of the learning process.
+The primary baseline is independent self-play trajectories with policy and value updates from terminal returns. An AlphaZero-style system is an additional practical baseline. An improvement over independent self-play does not establish superiority over AlphaZero.
 
-This problem motivates our work, which draws inspiration from the concepts presented in Tree-GRPO. Tree-GRPO is a technique that improves sample efficiency by generating multiple simulation trajectories from a given state and using the relative difference in their final rewards as a training signal. We adapt this idea to the AlphaZero MCTS framework. The MCTS process is, in essence, an evaluation of countless partial trajectories branching from a single board state. The Q-value for each action calculated by MCTS can be seen as a condensed, high-quality evaluation of the promise of that trajectory.
+Separate three hypotheses:
 
-The MCTS-GRPO method proposed in this paper uses these MCTS search results (specifically, the Q-values) as training data, teaching the policy network to reproduce the relative evaluations between promising and suboptimal moves. We hypothesize that this richer supervisory signal will enable faster learning compared to the standard AlphaZero approach.
+- H1: Sharing computation and storage for common prefixes reduces the cost of generating a specified collection of terminal trajectories.
+- H2: Comparing sibling branches from the same position provides more effective updates than ordinary terminal-return updates.
+- H3: After accounting for correlated trajectories, reduced diversity, tree management, and training costs, the total cost of reaching a target playing strength decreases.
 
-## MCTS-GRPO
+H1 alone is not research success. More terminal leaves without improved playing strength do not support H3.
 
-MCTS-GRPO is built upon the standard AlphaZero learning cycle (self-play and training) and is implemented as an extension to the loss function used in the training phase.
+## 2. Relationship to Tree-GRPO and design choices
 
-### 1. Self-Play and Storing Search Data
+The inspiration from Tree-GRPO is shared-prefix trajectory generation and relative learning from terminal rewards. The original paper studies groups of LLM trajectories for the same input. This plan adapts those ideas to an alternating-turn game; it does not inherit the paper's theoretical guarantees or empirical results.
 
-As in AlphaZero, self-play games are generated using the latest neural network. At each turn, MCTS is executed to determine the next move. When storing training data, in addition to the standard tuple `(Board State S, MCTS Search Probabilities π, Final Game Outcome Z)`, we also save the set of **Q-values for all actions `{Q(S, a)}`** at the root node to a replay buffer.
+| Approach | Benefit | Limitation | Timing |
+|---|---|---|---|
+| Shallow trees with fixed width and level count, with locations drawn separately for each tree before rollout | Avoids concentrating on specific move numbers while keeping sampling and budgets traceable | Some expansions may be uninformative | Primary experiment |
+| Adaptive expansion based on uncertainty or other signals | May concentrate resources on informative positions | Introduces selection bias and correction requirements | After foundational experiments |
+| MCTS trees guided by PUCT or similar search | Can combine learning with strong action selection | Makes sharing, search, and learning effects harder to separate | Follow-up research |
 
-### 2. The Extended Loss Function
+Initially, neither predicted values nor observed outcomes select expansion locations. The value head supplies a training baseline only; it never substitutes for playing a trajectory to termination.
 
-During training, mini-batches are sampled from the replay buffer. For each sample `(S, π, Z, {Q})`, the following three loss components are calculated.
+## 3. Minimal tree generation
 
-#### a. Value Loss
+1. Freeze the collection policy as π_old at the start of each round. Both players sample legal moves from it. Weights do not change during collection.
+2. Draw root positions using a common rule across methods. The initial proposal is 0–8 random legal placements from the initial board. Separate training, tuning, and final-evaluation seed sets.
+3. Use width 4 and at most 2 branching levels. If the root has H empty squares, uniformly sample `min(2, H)` distinct locations without replacement from `{0, …, H−1}` before rollout. Location d means immediately before choosing the next move after d disk placements from the root; d=0 branches at the root. All paths within a tree share its sampled schedule; each new tree draws a new schedule. Passes do not count as placements.
+4. At each scheduled branching node, draw 4 actions independently with replacement from π_old. Repeated actions are allowed; each sample uses an independent continuation random stream. Do not force four distinct actions.
+5. Generate single paths between branching locations and play every path to termination. Each small tree has at most 16 terminal leaves. If a path terminates before a scheduled location, skip that expansion. Do not relocate skipped expansions or redraw locations after observing outcomes. H=0 has no branching and is handled as terminal.
+6. Reuse the policy output at a shared parent, but do not collapse sibling samples that selected the same action into one terminal trial. Record sample counts and distinct-action counts separately.
 
-Consistent with standard AlphaZero, we compute the mean squared error between the network's value output `v(S)` and the actual game outcome `Z`.
+Schedule sampling uses a separate random stream from action sampling and is independent of value estimates and observed outcomes. Locations are drawn without replacement; actions are drawn with replacement. Conditional on the sampled schedule, sibling continuation trials use independent randomness.
 
-$$ L_{value} = (v(S) - Z)^2 $$
+For illustration, if all paths last 60 placements and the sampled locations happen to be 20 and 40, the tree generates 20 + 4×20 + 16×20 = 420 new transitions, compared with 16×60 = 960 for independent paths. This is not a prescription to fix the primary experiment at moves 20 and 40. It is an idealized transition count excluding tree management, training, and batching effects, not a wall-clock speedup claim.
 
-#### b. Policy Loss
+Othello inference depends on the current board. Unlike sharing long LLM histories, the main savings are policy evaluations and environment transitions along a common prefix. Give the independent baseline normal batched inference rather than an unnecessarily sequential implementation.
 
-Also consistent with standard AlphaZero, we compute the cross-entropy between the network's policy output `p(S)` and the MCTS visit count distribution `π`.
+Uniform schedule sampling does not make the board-position distribution uniform. Reachability depends on the self-play policy, and early termination prevents some deep expansions. Record scheduled expansions, executed expansions, and sibling-comparison update weights by root-relative move count, phase measured by occupied squares, player to move, and legal-action count. Measure the resulting bias; do not count leaves as independent samples.
 
-$$ L_{policy} = - \pi \cdot \log(p(S)) $$
+Compare no branching, one randomly located level, and two randomly located levels. Separately, hold width and level count fixed when ablating location selection: uniform sampling over all candidate locations, phase-stratified sampling, and fixed locations. The initial stratified condition partitions candidate locations into three contiguous, approximately equal intervals, chooses up to two nonempty intervals with equal probability, then samples one location uniformly from each. The fixed condition uses locations 20 and 40 without replacing out-of-range or unreached locations. B and C use the same schedule-generation rule. Report differences in executed expansions and actual cost. Defer large hyperparameter searches until the minimal configuration has demonstrated value.
 
-#### c. MCTS-GRPO Loss
+## 4. Outcome aggregation and learning objective
 
-This is the core of our proposed method, based on the Tree-GRPO paper. We use the Q-values computed by MCTS to calculate a PPO-style loss function.
+### 4.1 Perspective and terminal returns
 
-##### Advantage Computation
+Store each terminal outcome z from Black's perspective: +1 for a Black win, 0 for a draw, and −1 for a Black loss. At each comparison, express every return from the parent position's player-to-move perspective. Passes make depth parity or unconditional sign reversal incorrect.
 
-We normalize the Q-values of explored actions (those with visit_count > 0) to compute advantages. Following the paper, we use two types of advantages: **Intra-tree** (within each sample) and **Inter-tree** (across the batch):
+The return R_j of branch sample j is the conditional average of its descendant terminal outcomes. Recursively average child samples equally at each node, retaining Black's perspective during aggregation and converting when constructing a training target. If early termination produces unequal descendant counts, do not flatten all leaves and accidentally change branch weights.
 
-**Intra-tree Advantage** (comparison within the same board state):
-$$ A_{\text{intra}}(a) = \frac{Q(S, a) - \mu_{\text{sample}}}{\sigma_{\text{sample}}} $$
+This estimates Monte Carlo returns under the frozen self-play policy π_old, not minimax results against optimal play or absolute move strength.
 
-**Inter-tree Advantage** (comparison across the batch):
-$$ A_{\text{inter}}(a) = \frac{Q(S, a) - \mu_{\text{batch}}}{\sigma_{\text{batch}}} $$
+### 4.2 Initial advantage estimator
 
-**Combined Advantage**:
-$$ A(a) = A_{\text{intra}}(a) + A_{\text{inter}}(a) $$
+For K sibling samples at the same position, use a leave-one-out baseline:
 
-##### Importance Sampling Ratio
+    A_j = R_j − (1 / (K−1)) Σ_{k≠j} R_k
 
-$$ r(a) = \frac{p_\theta(S, a)}{\pi_{\text{old}}(S, a)} $$
+Initially keep the fixed reward scale of −1 to +1 rather than dividing by the group's standard deviation. Avoid amplifying small differences from small samples.
 
-where $p_\theta$ is the current policy and $\pi_{\text{old}}$ is the policy at the time the sample was stored in the replay buffer.
+The intended benefit is reduced update variance through same-position comparisons, not changing the expected policy-gradient objective. This may not outperform a well-trained value baseline; the B/C comparison tests that question.
 
-##### PPO-style Clipped Objective
+At nodes without sibling samples, use A = R − V_old(s). V_old is the frozen collection model's value estimate, not a replacement for the actual terminal return. Policy and value heads share a small network.
 
-$$ L_{GRPO} = -\frac{1}{B}\sum_{i=1}^{B}\sum_{a \in E_i} \min\left(r(a) \cdot A(a), \text{clip}(r(a), 1-\epsilon, 1+\epsilon) \cdot A(a)\right) $$
+If all sibling returns are equal, their relative advantages are zero. Do not inject noise to manufacture preferences. Record the fraction of such groups.
 
-> **Note**: The paper includes a KL regularization term ($\beta \cdot D_{KL}(\pi_\theta || \pi_{ref})$), but in the MCTS context, defining an appropriate reference policy $\pi_{ref}$ is challenging, so we omit it. Training stability is ensured through the clipping of the importance sampling ratio.
+This estimator is a proposal for this experiment, not a reproduction of the original intra/inter-tree advantage. Do not normalize Q-values across unrelated positions and players in a minibatch. Comparisons across multiple trees for the same root, closer to the original formulation, are a later ablation.
 
-### 3. Total Loss
+### 4.3 Policy updates and shared-prefix weights
 
-The final loss function is a weighted sum of these three components:
+Start with small PPO-style updates:
 
-$$ L_{total} = L_{value} + L_{policy} + \lambda_{GRPO} \cdot L_{GRPO} $$
+    r_j = π_θ(a_j | s) / π_old(a_j | s)
+    f_j = min(r_j A_j, clip(r_j,1−ε,1＋ε) A_j)
+    L_policy = − (1 / (60 × N_roots)) Σ_tree Σ_edge w_edge f_edge
 
-where `λ_GRPO` is a hyperparameter that balances the contribution of the GRPO loss.
+Store the log of the actual sampling probability, including legal-action masking and temperature. Apply the same mask and temperature transformation to the numerator. Initially fix temperature to 1 and test that all ratios equal 1 at θ=old. Average over sampled actions rather than summing ratios over the entire action set without probability weights. Detach advantages and old probabilities from gradients.
 
-## Experiments
+Do not update a shared prefix once per terminal leaf. Assign each root weight 1 and divide the path weight by K for each of its K sampled branches. Sum weighted edge losses, divide by the common fixed constant 60, and average over roots. The K samples at a branching node sum to their parent's weight. For A with K independent paths from a root, assign each path weight 1/K and use the same constant 60. Do not normalize by realized trajectory length or leaf count. Branching must not multiply a shared move's weight or introduce a length-dependent objective.
 
-### TODO
+Train the value head with MSE to the mean terminal-return target using the same perspectives and path weights. If an entropy term is included, use identical coefficients across groups.
 
-- **Game**: Othello (8x8)
-- **Model Architecture**: ResNet architecture compliant with AlphaZero.
-- **Baseline**: Standard AlphaZero implementation (i.e., λ_GRPO = 0).
-- **Evaluation Metric**: The agent's strength (win rate against a benchmark AI) as a function of training steps.
-- **Hyperparameters**:
-  - Number of MCTS simulations
-  - Batch size
-  - Learning rate
-  - λ_GRPO
-  - ...
+This is a PPO-style surrogate objective on trees collected under a frozen policy. It does not assert an unbiased gradient for the complete self-play process or monotonic improvement in playing strength. Validate the conditional expectation of the leave-one-out baseline, given a sampled schedule, and the interpretation of path weights in a small enumerable game.
 
-## Results and Discussion
+Initial settings are clipping width 0.2 and one epoch per collected dataset. Measure update size before trying additional epochs. Persisting old trees does not justify unrestricted mixing of old model generations into policy updates.
 
-### TODO
+## 5. Comparison experiments
 
-- Present a graph comparing the learning curves of the baseline and the proposed model.
-- Provide a table showing the final win rates of each model against the benchmark AI.
-- Discuss whether the MCTS-GRPO loss was particularly effective in the early stages of training or if it improved final convergence.
-- Include a graph demonstrating the suppression of the periodic loss spike phenomenon.
+| Group | Generation | Learning | Purpose |
+|---|---|---|---|
+| A: independent self-play | Independent terminal trajectories | PPO with terminal return minus V_old | Primary baseline |
+| B: tree self-play | The proposed tree structure | PPO with terminal return minus V_old | Tree collection and return aggregation |
+| C: proposed method | The same structure as B | Sibling comparisons at branches; otherwise identical to B | Additional benefit of branch comparisons |
+| D: AlphaZero-style | Validated MCTS self-play | Visit-distribution policy loss plus terminal-outcome value loss | Practical search-based comparison |
 
-## Conclusion
+Match networks, initial weights, optimizers, root-generation rules, legal masks, evaluation, and tuning budgets for A/B/C. B/C use randomized locations per tree in the primary experiment. First compare short B/C updates from the same saved trees and model initialization; then run separate online training experiments.
 
-### TODO
+Use the pilot to set a common target for new environment transitions per collection round. Finish small trees or games already in progress before updating, and count target overshoot in actual cost. Include the one-epoch training cost. Report differences in root count, leaf count, and update count. If using ordinary inference batching or same-generation board-evaluation caches, give A the same opportunity and memory limits.
 
-- Based on the experimental results, state whether the hypothesis that MCTS-GRPO improves the sample efficiency of AlphaZero is supported.
-- Discuss the limitations of the current study and future work, such as applying the method to other games.
+For H1, replay the same sampled tree and randomness with shared-prefix reuse enabled and disabled. Match output data and learning weights; compare generation time, inference count, and memory. This implementation control alone does not establish a playing-strength advantage over independent self-play.
+
+Do not use the current MCTS implementation unchanged as D. Validate perspectives, terminal handling, concurrency, and visit counts first. Beating A without beating D is not superiority over AlphaZero.
+
+## 6. Compute, playing strength, and statistics
+
+The primary metric is collection plus training time to a fixed target strength on the same machine. Treat runs that do not reach it within budget as non-attainment. Also compare equal-budget scores and area under the learning curve.
+
+Record separately:
+
+- Collection, updates, persistence, and evaluation time. Report research time excluding evaluation and operational time including it.
+- Positions evaluated, training forward/backward sample counts, and batch-size distributions. A backward pass or a different model is not an equivalent single inference.
+- Completed trees, terminal outcomes, distinct positions/actions, sharing ratio, zero-advantage groups, and expansion/update distributions by phase, player, and legal-action count.
+- RSS, peak device memory, waiting time, and persisted data size.
+
+Primary evaluation uses the policy without search to measure learned playing strength, with action selection fixed across groups. For the practical comparison including AlphaZero, additionally report equal per-move search-time budgets separately from policy-only results.
+
+Opponents include random, greedy, mobility, and independently prepared frozen reference agents. Predefine opponents, aggregate weights, and tuning/final opening sets. Play both colors from each opening and use score = (wins + 0.5×draws) / games. Preserve opponent-specific results.
+
+Initial planning values are 3 training seeds for small comparisons and at least 5 for confirmation. A starting evaluation budget is 100 openings × 2 colors = 200 games per opponent per seed. Finalize counts using pilot variance and cost before confirmation, rather than adding games until a favorable result appears.
+
+Leaves from one tree are not independent replications. Report training reproducibility across seeds and account for paired-opening dependence in evaluation uncertainty. Do not use final openings for tuning or best-model selection. Check overlap using board, player, and symmetries. Different seeds do not guarantee unseen positions; identify shared standard positions explicitly. Do not claim evaluation positions were never reached during training or that the experiment establishes generalization to unseen boards.
+
+After a pilot, fix an attainable target before confirmation; an example is 70% score against the frozen pool. A candidate practical threshold is a 20% time reduction. These are provisional choices, not findings. Non-attainment or wide uncertainty leaves superiority unconfirmed.
+
+For budget T, save and evaluate at the first safe update boundary after each 0.1T increment of collection plus training time. Use actual checkpoint times and report overshoot. Detected attainment is the second of two consecutive tuning evaluations at or above target. Match schedules across groups and do not select models on the final set.
+
+Do not average attainment times only over successful seeds. Report attainment rates and the all-seed average of min(detected attainment time, T), interpreting the latter as a restricted-time metric within T. The candidate adoption rule requires no decrease in attainment rate, a point estimate of at least 20% improvement in this metric, and a 95% interval for improvement excluding zero. This does not statistically guarantee at least 20% savings. Insufficient seed precision means unconfirmed results. If both groups frequently miss the target, report fixed-budget scores and curve area without claiming a target-attainment cost advantage.
+
+## 7. Execution stages and stopping rules
+
+### Stage 0: Semantic correctness
+
+Check terminal outcomes, passes, color exchange, legal-only probabilities, zero relative advantage for equal sibling returns, and increased probability for winning branches in controlled cases. Verify equal loss/path weights with shared execution enabled and disabled, and identical model computation depth during training and evaluation.
+
+Check schedule reproducibility and bounds, location versus action sampling, no resampling after early termination, H=0 and H=1, and move-range coverage.
+
+In an enumerable game or endgame, compare Monte Carlo returns with exact expectations under the frozen policy, not minimax values. Freeze the opponent and differentiate only one player's policy; compare the conditional policy gradient and leave-one-out baseline with enumeration. Repeat for both colors.
+
+### Stage 1: System viability
+
+Start with a common small network (candidate: four residual blocks, width 64), AdamW, and batch size 32. Measure memory and time. Defer URM and Muon comparisons. Batch small trees and choose inference batch size/concurrency from measurements.
+
+Before long runs, demonstrate recovery after forced termination, exclusion of incomplete trees, and no duplicate consumption of completed data.
+
+### Stage 2: Small learning-signal comparison
+
+Compare B/C on identical trees and initial models, measuring legal probabilities, KL, clipping fraction, and expected terminal returns. Freeze the opponent at π_old and replace only the evaluated player with the updated model. Evaluate Black and White separately; self-play win rate with both players changing is not an improvement metric. Then run A/B/C with 3 seeds and equal short budgets. Beating random is a smoke check, not research success.
+
+### Stage 3: Efficiency confirmation
+
+Freeze settings and thresholds after the pilot; compare A/B/C with at least 5 seeds and equal total budgets. Compare no branching, one random level, and two random levels. Hold width and level count fixed for location ablations. Avoid unrestricted width/depth searches. If C does not beat B, report no confirmed additional benefit from relative comparison. If B/C lose to A, report tree generation's disadvantages, including correlation and diversity loss.
+
+### Stage 4: External comparison and extensions
+
+Add validated AlphaZero-style D. Subsequently investigate adaptive branching, historical-opponent pools, normalization closer to the original multiple-tree formulation, or URM, one change at a time. Do not simultaneously change search and architecture.
+
+## 8. Persistence and recovery
+
+Separate collection, training, and evaluation into explicit phases on one machine. A distributed system is not initially required.
+
+- Persist each completed tree with parent IDs, positions, players, actions, old log probabilities/values, model generation, schedule, path weights, terminal results, randomness metadata, and compute cost.
+- Publish complete trees using temporary files plus atomic rename or SQLite transactions. Never train on partially written trees.
+- Save model, optimizer, scheduler, RNG, model generation, consumed-data position, phase, accumulated compute, and configuration as a consistent checkpoint.
+- Tie model state and consumption to the same manifest. After interruption, reuse completed trees and discard only incomplete small trees.
+- Finalize a checkpoint before evaluation so evaluation failure cannot erase updates. Also save periodically during training by time or update count.
+- Retain old trees for reproducibility and analysis. Storage availability and eligibility for current-policy updates are separate concerns.
+
+## 9. Settings to freeze and reporting
+
+The primary baseline is independent self-play. Primary tree experiments draw random locations per tree; fixed locations are an ablation only. Preserve terminal-reward supervision, frozen evaluation opponents, and accounting for compute and correlation.
+
+Before confirmation, freeze network/optimizer settings, collection target, total budget, branching conditions, seeds, opponents/openings, evaluation counts, attainment thresholds, and statistical procedure in machine-readable configuration. Distinguish pilot from confirmation results, and do not retrospectively select favorable seeds or checkpoints.
+
+No confirmation results for this plan are available yet. Report hypotheses separately, including H1 alone succeeding, B helping without additional benefit from C, or improvement over independent self-play but not over AlphaZero.
 
 ## References
 
- (TODO: Add formal citation for the original Tree-GRPO paper)
+- [Tree Search for LLM Agent Reinforcement Learning, §3](https://arxiv.org/html/2509.21240v1#S3): shared trajectories and relative learning from terminal rewards.
+- [Proximal Policy Optimization Algorithms](https://arxiv.org/abs/1707.06347): the policy-update surrogate objective.
+- [Mastering Chess and Shogi by Self-Play with a General Reinforcement Learning Algorithm](https://arxiv.org/abs/1712.01815): the additional AlphaZero-style comparison.
