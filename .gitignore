@@ -279,3 +279,6 @@ rust-project.json
 
 ### Weights & Biases ###
 wandb/
+
+logs*/
+*model_final/

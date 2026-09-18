@@ -36,7 +36,7 @@ def test_reset_return_spec(single_env: ReversiEnvironment):
     # Assert - Focus on I/O specification
     assert isinstance(state, np.ndarray)
     assert state.shape == (1, 4, 8, 8)
-    assert state.dtype == np.float32
+    assert state.dtype == np.int8
 
 
 def test_reset_indices_return_spec(batch_env: ReversiEnvironment):
@@ -50,7 +50,7 @@ def test_reset_indices_return_spec(batch_env: ReversiEnvironment):
     # Assert - Focus on I/O specification
     assert isinstance(state, np.ndarray)
     assert state.shape == (2, 4, 8, 8)
-    assert state.dtype == np.float32
+    assert state.dtype == np.int8
 
     assert not np.array_equal(state[0], before_state[0])
     np.testing.assert_array_equal(state[1], before_state[1])
@@ -65,8 +65,8 @@ def test_initial_board_state(single_env: ReversiEnvironment):
     turn_plane = state[0, 2]
 
     # Assert initial disks
-    expected_dark = np.zeros((8, 8), dtype=np.float32)
-    expected_light = np.zeros((8, 8), dtype=np.float32)
+    expected_dark = np.zeros((8, 8), dtype=np.int8)
+    expected_light = np.zeros((8, 8), dtype=np.int8)
     expected_dark[3, 4] = 1
     expected_dark[4, 3] = 1
     expected_light[3, 3] = 1
@@ -75,7 +75,7 @@ def test_initial_board_state(single_env: ReversiEnvironment):
     np.testing.assert_array_equal(light_disks, expected_light)
 
     # Assert it's Dark's turn (plane of 1s)
-    np.testing.assert_array_equal(turn_plane, np.ones((8, 8), dtype=np.float32))
+    np.testing.assert_array_equal(turn_plane, np.ones((8, 8), dtype=np.int8))
 
 
 def test_initial_legal_moves(single_env: ReversiEnvironment):
@@ -83,7 +83,7 @@ def test_initial_legal_moves(single_env: ReversiEnvironment):
     state = single_env.reset()
     legal_moves_plane = state[0, 3]
 
-    expected_legal_moves = np.zeros((8, 8), dtype=np.float32)
+    expected_legal_moves = np.zeros((8, 8), dtype=np.int8)
     expected_legal_moves[2, 3] = 1  # D3
     expected_legal_moves[3, 2] = 1  # C4
     expected_legal_moves[4, 5] = 1  # F5
@@ -104,7 +104,7 @@ def test_step_return_spec(single_env: ReversiEnvironment):
     # Assert
     assert isinstance(next_state, np.ndarray)
     assert next_state.shape == (1, 4, 8, 8)
-    assert next_state.dtype == np.float32
+    assert next_state.dtype == np.int8
 
     assert isinstance(done, np.ndarray)
     assert done.shape == (1,)
@@ -126,11 +126,11 @@ def test_step_deterministic_board_mutation(single_env: ReversiEnvironment):
     turn_plane = next_state[0, 2]
 
     # Assert turn changed to Light (plane of -1s)
-    np.testing.assert_array_equal(turn_plane, -np.ones((8, 8), dtype=np.float32))
+    np.testing.assert_array_equal(turn_plane, -np.ones((8, 8), dtype=np.int8))
     assert not done[0]
 
     # Check dark disks: original 2, 1 new, 1 flipped
-    expected_dark = np.zeros((8, 8), dtype=np.float32)
+    expected_dark = np.zeros((8, 8), dtype=np.int8)
     expected_dark[2, 3] = 1  # New disk at D3
     expected_dark[3, 3] = 1  # Flipped disk at D4
     expected_dark[3, 4] = 1  # Original disk at E4
@@ -138,7 +138,7 @@ def test_step_deterministic_board_mutation(single_env: ReversiEnvironment):
     np.testing.assert_array_equal(dark_disks, expected_dark)
 
     # Check light disks: one was flipped
-    expected_light = np.zeros((8, 8), dtype=np.float32)
+    expected_light = np.zeros((8, 8), dtype=np.int8)
     expected_light[4, 4] = 1  # Original disk at E5
     np.testing.assert_array_equal(light_disks, expected_light)
 
@@ -159,14 +159,14 @@ def test_step_stochastic_selects_legal_move(single_env: ReversiEnvironment):
     dark_disks = next_state[0, 0]
 
     # Check if a disk was placed at D3 (resulting board)
-    board_if_d3 = np.zeros((8, 8), dtype=np.float32)
+    board_if_d3 = np.zeros((8, 8), dtype=np.int8)
     board_if_d3[2, 3] = 1
     board_if_d3[3, 3] = 1
     board_if_d3[3, 4] = 1
     board_if_d3[4, 3] = 1
 
     # Check if a disk was placed at C4 (resulting board)
-    board_if_c4 = np.zeros((8, 8), dtype=np.float32)
+    board_if_c4 = np.zeros((8, 8), dtype=np.int8)
     board_if_c4[3, 2] = 1
     board_if_c4[3, 3] = 1
     board_if_c4[4, 3] = 1
@@ -199,7 +199,7 @@ def test_batch_step_independent(batch_env: ReversiEnvironment):
 
     # Assert state of the first game (played at D3)
     dark_disks_game1 = next_states[0, 0]
-    expected_dark_game1 = np.zeros((8, 8), dtype=np.float32)
+    expected_dark_game1 = np.zeros((8, 8), dtype=np.int8)
     expected_dark_game1[2, 3] = 1
     expected_dark_game1[3, 3] = 1
     expected_dark_game1[3, 4] = 1
@@ -208,7 +208,7 @@ def test_batch_step_independent(batch_env: ReversiEnvironment):
 
     # Assert state of the second game (played at C4)
     dark_disks_game2 = next_states[1, 0]
-    expected_dark_game2 = np.zeros((8, 8), dtype=np.float32)
+    expected_dark_game2 = np.zeros((8, 8), dtype=np.int8)
     expected_dark_game2[3, 2] = 1
     expected_dark_game2[4, 3] = 1
     expected_dark_game2[3, 3] = 1
@@ -246,7 +246,7 @@ def test_step_invalid_action_shape(single_env: ReversiEnvironment):
 def test_get_next_state_initial_move():
     """Tests that the initial move is correctly applied."""
     # Arrange
-    initial_state = np.zeros((4, 8, 8), dtype=np.float32)
+    initial_state = np.zeros((4, 8, 8), dtype=np.int8)
     # Set up initial disks
     initial_state[0, 3, 4] = 1  # Dark disk
     initial_state[0, 4, 3] = 1  # Dark disk
@@ -272,7 +272,7 @@ def test_get_next_state_initial_move():
 def test_get_next_state_invalid_action():
     """Tests that an invalid action raises an appropriate error."""
     # Arrange
-    initial_state = np.zeros((4, 8, 8), dtype=np.float32)
+    initial_state = np.zeros((4, 8, 8), dtype=np.int8)
     # Set up initial disks
     initial_state[0, 3, 4] = 1  # Dark disk
     initial_state[1, 4, 4] = 1  # Light disk
@@ -291,7 +291,7 @@ def test_get_next_state_invalid_action():
 def test_get_next_state_invalid_state_shape():
     """Tests that invalid state shape raises ValueError."""
     # Arrange
-    invalid_state = np.zeros((3, 8, 8), dtype=np.float32)  # Wrong number of planes
+    invalid_state = np.zeros((3, 8, 8), dtype=np.int8)  # Wrong number of planes
 
     # Act & Assert - Match the exact error message without escaped parentheses
     with pytest.raises(ValueError, match=r"State must have shape \(4, 8, 8\)"):
@@ -301,7 +301,7 @@ def test_get_next_state_invalid_state_shape():
 def test_get_next_state_invalid_action_range():
     """Tests that action out of range raises appropriate error."""
     # Arrange
-    state = np.zeros((4, 8, 8), dtype=np.float32)
+    state = np.zeros((4, 8, 8), dtype=np.int8)
 
     # Act & Assert
     # Negative numbers cause an OverflowError due to Rust's unsigned integer type
