@@ -43,6 +43,8 @@ Initially, neither predicted values nor observed outcomes select expansion locat
 
 Schedule sampling uses a separate random stream from action sampling and is independent of value estimates and observed outcomes. Locations are drawn without replacement; actions are drawn with replacement. Conditional on the sampled schedule, sibling continuation trials use independent randomness.
 
+Process forced passes and terminal detection before checking the schedule immediately before the next disk placement. Execute each scheduled expansion at most once per path. A pass leaves the placement count unchanged but must not trigger another expansion at the same location.
+
 For illustration, if all paths last 60 placements and the sampled locations happen to be 20 and 40, the tree generates 20 + 4×20 + 16×20 = 420 new transitions, compared with 16×60 = 960 for independent paths. This is not a prescription to fix the primary experiment at moves 20 and 40. It is an idealized transition count excluding tree management, training, and batching effects, not a wall-clock speedup claim.
 
 Othello inference depends on the current board. Unlike sharing long LLM histories, the main savings are policy evaluations and environment transitions along a common prefix. Give the independent baseline normal batched inference rather than an unnecessarily sequential implementation.
@@ -141,7 +143,7 @@ Do not average attainment times only over successful seeds. Report attainment ra
 
 ### Stage 0: Semantic correctness
 
-Check terminal outcomes, passes, color exchange, legal-only probabilities, zero relative advantage for equal sibling returns, and increased probability for winning branches in controlled cases. Verify equal loss/path weights with shared execution enabled and disabled, and identical model computation depth during training and evaluation.
+Check terminal outcomes, passes, color exchange, legal-only probabilities, zero relative advantage for equal sibling returns, and increased probability for winning branches in controlled cases. Verify equal loss/path weights with shared execution enabled and disabled, and identical per-position network depth and recurrent iteration counts during training and evaluation.
 
 Check schedule reproducibility and bounds, location versus action sampling, no resampling after early termination, H=0 and H=1, and move-range coverage.
 
