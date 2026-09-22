@@ -1,0 +1,24 @@
+[package]
+name = "mcts"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+common = { version = "0.1.0", path = "../../../../../../common" }
+dashmap = { workspace = true }
+indicatif = { workspace = true }
+num-traits = { workspace = true }
+numpy = { workspace = true }
+pyo3 = { workspace = true, features = ["extension-module", "abi3-py311"] }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+rayon = { workspace = true }
+reversi-core = { version = "0.1.0", path = "../../../../../../reversi-core" }
+tokio = { workspace = true, features = ["full", "macros"] }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.5"

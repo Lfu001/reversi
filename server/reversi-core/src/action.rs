@@ -122,6 +122,7 @@ impl ActionExt for Action {
 }
 
 /// A bitboard that represents positions on the board that can be put.
+#[derive(Clone)]
 pub struct PuttablePositions(pub u64);
 
 impl PuttablePositions {
@@ -129,19 +130,41 @@ impl PuttablePositions {
     pub fn is_empty(&self) -> bool {
         self.0 == 0
     }
+}
 
-    /// Returns a list of positions that can be put.
-    pub fn to_vec(&self) -> Vec<Position> {
-        let mut positions = Vec::new();
-        for idx in 0..64 {
-            if self.0 & (1 << (63 - idx)) != 0 {
-                positions.push(Position::from((
-                    Row::from_u8(idx / 8).unwrap(),
-                    Column::from_u8(idx % 8).unwrap(),
-                )));
+pub struct PuttableIterator(u64);
+
+impl Iterator for PuttableIterator {
+    type Item = Position;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let leading_zeros = self.0.leading_zeros();
+
+        match leading_zeros {
+            64 => None,
+            _ => {
+                self.0 &= !(1u64 << (63 - leading_zeros));
+
+                let row_idx = leading_zeros / 8;
+                let col_idx = leading_zeros % 8;
+
+                let position = Position::from((
+                    Row::from_u8(row_idx as u8).unwrap(),
+                    Column::from_u8(col_idx as u8).unwrap(),
+                ));
+
+                Some(position)
             }
         }
-        positions
+    }
+}
+
+impl IntoIterator for PuttablePositions {
+    type Item = Position;
+    type IntoIter = PuttableIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        PuttableIterator(self.0)
     }
 }
 
@@ -395,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bit_puttable_position_to_vec() {
+    fn test_bit_puttable_position_into_iter() {
         let puttable_positions = PuttablePositions(
             0b00000000_00000001_00000000_00000000_10000000_00000000_00000000_00000000,
         );
@@ -403,7 +426,16 @@ mod tests {
             position!(Row::Two, Column::H),
             position!(Row::Five, Column::A),
         ];
-        assert_eq!(puttable_positions.to_vec(), expected);
+        let result: Vec<Position> = puttable_positions.into_iter().collect();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_bit_puttable_position_into_iter_empty() {
+        let puttable_positions = PuttablePositions(0);
+        let expected = vec![];
+        let result: Vec<Position> = puttable_positions.into_iter().collect();
+        assert_eq!(result, expected);
     }
 
     mod tests_get_puttable_positions {
