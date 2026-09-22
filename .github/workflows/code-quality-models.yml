@@ -3,6 +3,7 @@ on:
     branches: [main]
   pull_request:
     paths:
+      - .github/workflows/code-quality-models.yml
       - server/ml/inference_kit/**
       - server/ml/models/**
 
@@ -20,11 +21,13 @@ jobs:
         with:
           args: format --check
           src: ./server/ml/inference_kit
+          version: "0.14.4"
       - uses: astral-sh/ruff-action@v1
         name: Run ruff format
         with:
           args: format --check
           src: ./server/ml/models
+          version: "0.14.4"
 
   lint:
     runs-on: ubuntu-latest
@@ -37,8 +40,10 @@ jobs:
         with:
           args: check
           src: ./server/ml/inference_kit
+          version: "0.14.4"
       - uses: astral-sh/ruff-action@v1
         name: Run ruff lint
         with:
           args: check
           src: ./server/ml/models
+          version: "0.14.4"
