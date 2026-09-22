@@ -11,14 +11,13 @@ import numpy as np
 import torch
 from accelerate.utils import set_seed
 from mcts import MCTS
-from reversi import ReversiEnvironment
-from tqdm.rich import tqdm
-from transformers import AutoConfig, AutoModel
-
 from mcts_grpo.model.configuration_urm import URMConfig
 from mcts_grpo.model.modeling_urm import URMModel
 from mcts_grpo.settings import Settings
 from mcts_grpo.training import GameSetup
+from reversi import ReversiEnvironment
+from tqdm.rich import tqdm
+from transformers import AutoConfig, AutoModel
 
 
 def get_initial_state() -> np.ndarray:
@@ -287,7 +286,9 @@ def evaluate(
                     try:
                         accelerator.load_state(str(latest))
                         print("Loaded latest checkpoint.")
-                    except Exception as e:
+                    # Checkpoint backends can surface different errors; any failure
+                    # intentionally falls back to random weights for evaluation.
+                    except Exception as e:  # noqa: BLE001
                         print(f"Failed to load checkpoint: {e}")
                         print("Running with random weights.")
                 else:

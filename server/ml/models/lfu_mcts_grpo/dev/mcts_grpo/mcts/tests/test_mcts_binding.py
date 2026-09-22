@@ -60,7 +60,7 @@ def test_mcts_run(initial_states):
     c_puct = 1.0
 
     # Run MCTS - now returns (pi, q_values, visit_counts) where pi is already normalized
-    pi, q_values, visit_counts = mcts_instance.run(
+    pi, q_values, _visit_counts = mcts_instance.run(
         initial_states,
         model.inference,
         num_simulations,
@@ -124,7 +124,7 @@ def test_mcts_seed_argument(initial_states):
     seed = 42
 
     # Run with seed
-    pi, q, visit_counts = mcts_instance.run_simulations(
+    pi, q, _visit_counts = mcts_instance.run_simulations(
         model.inference,
         initial_states,
         None,  # device (not used by MockModel)

@@ -9,11 +9,9 @@ A Universal Transformer with:
 - Truncated Backpropagation Through Loops (TBPTL)
 """
 
-from typing import Optional
-
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 from transformers import PreTrainedModel
 
 from .configuration_urm import URMConfig
@@ -210,7 +208,7 @@ class URMAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -272,7 +270,7 @@ class URMBlock(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:
@@ -313,7 +311,7 @@ class URMBackbone(nn.Module):
         self,
         hidden_states: torch.Tensor,
         input_embeddings: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
+        attention_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Args:

@@ -3,7 +3,7 @@ MCTS Python Library
 Provides high-level Python interface to the Rust MCTS implementation.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 
@@ -41,7 +41,7 @@ class MCTS:
         dirichlet_epsilon: float,
         dirichlet_alpha: float,
         c_puct: float,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Run MCTS simulations for a batch of states.

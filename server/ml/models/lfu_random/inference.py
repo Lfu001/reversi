@@ -1,5 +1,6 @@
+from collections.abc import Callable
 from random import randint
-from typing import Any, Callable, override
+from typing import Any, override
 
 from inference_kit.api_model import Position, SuggestedPosition, TableState
 from inference_kit.base_inference_handler import BaseInferenceHandler

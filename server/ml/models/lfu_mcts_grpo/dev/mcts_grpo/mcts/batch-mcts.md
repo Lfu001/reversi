@@ -86,7 +86,7 @@ Algorithm 1 give the main PUCT search algorithm using a transposition table and 
 
 Algorithm 2 gives the usual way of updating the statistics used for the main tree. Algorithm 3 gives the update of the statistics for the second tree.
 
-The main algorithm is the GetMove algorithm (algorithm 6). It calls the GetBatch algorithm (algorithm 4) that descends the second tree many times in order to fill the batch. It then makes inferences on the built batch and calls the PutBatch algorithm (algorithm 5) that put the results of the inferences in the transposition table and then upadtes the main tree. GetBatch, forward and PutBatch are called B times. In the end the GetMove algorithm returns the most simulated move of the main tree.
+The main algorithm is the GetMove algorithm (algorithm 6). It calls the GetBatch algorithm (algorithm 4) that descends the second tree many times in order to fill the batch. It then makes inferences on the built batch and calls the PutBatch algorithm (algorithm 5) that put the results of the inferences in the transposition table and then updates the main tree. GetBatch, forward and PutBatch are called B times. In the end the GetMove algorithm returns the most simulated move of the main tree.
 
 ### B. The Virtual Mean
 
@@ -100,7 +100,7 @@ Algorithm 4 give the main algorithm to build the batch. In order to present the 
 
 ### C. The Last Iteration
 
-At the end of the GetMove algorithm, many states are evaluated in the transposition table but have not been used in the tree. In order to gain more information it is possible to continue searching for unused state evaluations at the price of small inacurracies.
+At the end of the GetMove algorithm, many states are evaluated in the transposition table but have not been used in the tree. In order to gain more information it is possible to continue searching for unused state evaluations at the price of small inaccuracies.
 
 The principle is to call the BatchPUCT algorithm with GetBatch as True as long as the number of Unknown values sent back does not reach a threshold.
 
