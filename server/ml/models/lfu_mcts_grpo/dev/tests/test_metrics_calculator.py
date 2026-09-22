@@ -4,8 +4,8 @@ Verifies Policy Entropy, Value Accuracy, Illegal Move Prob, and Gradient Norm co
 """
 
 import torch
-import torch.nn as nn
 from mcts_grpo.metrics_calculator import MetricsCalculator
+from torch import nn
 
 
 class TestPolicyEntropy:

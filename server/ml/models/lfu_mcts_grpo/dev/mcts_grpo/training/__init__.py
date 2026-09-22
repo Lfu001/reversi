@@ -8,9 +8,9 @@ from .self_play import SelfPlayExecutor
 from .setup import GameSetup
 
 __all__ = [
+    "GameResultProcessor",
     "GameSetup",
     "SelfPlayExecutor",
-    "GameResultProcessor",
     "TrainingExecutor",
     "Winner",
 ]
