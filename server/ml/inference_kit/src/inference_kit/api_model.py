@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 from enum import Enum
-from typing import Union
 
 import numpy as np
 from pydantic import BaseModel, Field, field_validator
@@ -41,10 +42,10 @@ class Position(BaseModel):
     Position on the game board using string labels (e.g., "One", "A")
     """
 
-    row: Union[str, int] = Field(
+    row: str | int = Field(
         ..., description="Row label (e.g., 'One', 'Two') or index (0-7)"
     )
-    column: Union[str, int] = Field(
+    column: str | int = Field(
         ..., description="Column label (e.g., 'A', 'B') or index (0-7)"
     )
 
@@ -54,7 +55,7 @@ class Position(BaseModel):
 
     @field_validator("row", mode="before")
     @classmethod
-    def validate_row(cls, v: Union[str, int]) -> Union[str, int]:
+    def validate_row(cls, v: str | int) -> str | int:
         """
         Validates the row label or index.
 
@@ -77,7 +78,7 @@ class Position(BaseModel):
 
     @field_validator("column", mode="before")
     @classmethod
-    def validate_column(cls, v: Union[str, int]) -> Union[str, int]:
+    def validate_column(cls, v: str | int) -> str | int:
         """
         Validates the column label or index.
 
