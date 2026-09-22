@@ -12,7 +12,7 @@ from .exceptions import InvalidMoveError, ReversiError
 from .types import BoardState, NDArray
 
 __version__ = "0.1.0"
-__all__ = ["ReversiEnvironment", "BoardState", "ReversiError", "InvalidMoveError"]
+__all__ = ["BoardState", "InvalidMoveError", "ReversiEnvironment", "ReversiError"]
 
 
 class ReversiEnvironment:

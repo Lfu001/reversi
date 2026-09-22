@@ -1,7 +1,6 @@
-from typing import Any, TypeVar
+from typing import Any, TypeAlias, TypeVar
 
 import numpy as np
-from typing_extensions import TypeAlias
 
 # Type variables
 T = TypeVar("T", bound=np.generic)
