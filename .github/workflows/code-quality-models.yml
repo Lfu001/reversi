@@ -19,15 +19,15 @@ jobs:
       - uses: astral-sh/ruff-action@v1
         name: Run ruff format
         with:
-          args: format --check
+          args: format --check --target-version py39
           src: ./server/ml/inference_kit
-          version: "0.14.4"
+          version: "0.16.8"
       - uses: astral-sh/ruff-action@v1
         name: Run ruff format
         with:
-          args: format --check
+          args: format --check --target-version py312
           src: ./server/ml/models
-          version: "0.14.4"
+          version: "0.16.8"
 
   lint:
     runs-on: ubuntu-latest
@@ -38,12 +38,12 @@ jobs:
       - uses: astral-sh/ruff-action@v1
         name: Run ruff lint
         with:
-          args: check
+          args: check --target-version py39
           src: ./server/ml/inference_kit
-          version: "0.14.4"
+          version: "0.16.8"
       - uses: astral-sh/ruff-action@v1
         name: Run ruff lint
         with:
-          args: check
+          args: check --target-version py312
           src: ./server/ml/models
-          version: "0.14.4"
+          version: "0.16.8"

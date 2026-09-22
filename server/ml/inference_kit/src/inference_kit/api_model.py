@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 from enum import Enum
 from typing import Union
 
 import numpy as np
 from pydantic import BaseModel, Field, field_validator
+
+# Pydantic resolves these annotations at runtime on supported Python 3.9, where
+# PEP 604 unions require an additional backport dependency.
+# ruff: noqa: UP007
 
 
 class RowLabel(Enum):
