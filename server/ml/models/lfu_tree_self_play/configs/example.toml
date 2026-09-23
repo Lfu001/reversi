@@ -1,0 +1,3 @@
+# 読込確認用の例です。実験設定のスキーマは T02 で定義します。
+[experiment]
+name = "foundation-smoke"

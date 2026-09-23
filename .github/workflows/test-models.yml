@@ -3,6 +3,7 @@ on:
     branches: [main]
   pull_request:
     paths:
+      - '.github/workflows/test-models.yml'
       - 'server/ml/inference_kit/**'
       - 'server/ml/models/**'
 
@@ -16,6 +17,7 @@ jobs:
       matrix:
         model: [
           'models/lfu_random',
+          'models/lfu_tree_self_play',
         ]
     steps:
       - uses: actions/checkout@v4
@@ -23,8 +25,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: Run tests for ${{ matrix.model }}
         working-directory: ./server/ml
