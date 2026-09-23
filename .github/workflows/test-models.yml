@@ -10,28 +10,6 @@ on:
 name: test (models)
 
 jobs:
-  tree-self-play:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./server/ml/models/lfu_tree_self_play
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          python-version: '3.14'
-      - name: Install locked dependencies
-        run: uv sync --locked
-      - name: Check package import
-        run: uv run --locked python -c "import lfu_tree_self_play"
-      - name: Collect unit tests
-        run: uv run --locked pytest --collect-only -q
-      - name: Run unit tests
-        run: uv run --locked pytest -q
-      - name: Verify installed wheel outside the source tree
-        run: bash scripts/check-wheel.sh
-
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -39,6 +17,7 @@ jobs:
       matrix:
         model: [
           'models/lfu_random',
+          'models/lfu_tree_self_play',
         ]
     steps:
       - uses: actions/checkout@v4
