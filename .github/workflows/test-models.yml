@@ -25,8 +25,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
+        uses: astral-sh/setup-uv@v10
 
       - name: Run tests for ${{ matrix.model }}
         working-directory: ./server/ml
