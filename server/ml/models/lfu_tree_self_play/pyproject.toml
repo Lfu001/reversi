@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Independent tree self-play experiment package."
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
-dependencies = []
+dependencies = [
+    "omegaconf==2.3.1",
+]
 
 [project.scripts]
 lfu-tree-self-play = "lfu_tree_self_play.cli:main"

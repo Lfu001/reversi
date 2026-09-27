@@ -35,13 +35,30 @@ def test_help_lists_config_command(run_cli):
 
 def test_check_config_accepts_valid_file(run_cli, tmp_path):
     path = tmp_path / "experiment.toml"
-    path.write_text('name = "smoke"\n', encoding="utf-8")
+    path.write_text(
+        '[experiment]\nname = "smoke"\n[seeds]\ntraining = [1]\n'
+        "tuning = [2]\nfinal_evaluation = [3]\n",
+        encoding="utf-8",
+    )
 
     result = run_cli("check-config", path)
 
     assert result.returncode == 0
     assert str(path) in result.stdout
+    assert "Experiment ID:" in result.stdout
     assert result.stderr == ""
+
+
+def test_check_config_reports_schema_errors_without_traceback(run_cli, tmp_path):
+    path = tmp_path / "invalid-schema.toml"
+    path.write_text('[experiment]\nname = "smoke"\n', encoding="utf-8")
+
+    result = run_cli("check-config", path)
+
+    assert result.returncode == 2
+    assert str(path) in result.stderr
+    assert "Traceback" not in result.stderr
+    assert result.stdout == ""
 
 
 @pytest.mark.parametrize("kind", ["missing", "invalid", "directory", "non-utf8"])

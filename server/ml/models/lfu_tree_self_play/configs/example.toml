@@ -1,3 +1,7 @@
-# 読込確認用の例です。実験設定のスキーマは T02 で定義します。
 [experiment]
 name = "foundation-smoke"
+
+[seeds]
+training = [1, 2, 3]
+tuning = [101]
+final_evaluation = [201]
