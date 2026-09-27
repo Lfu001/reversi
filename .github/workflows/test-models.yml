@@ -6,6 +6,9 @@ on:
       - '.github/workflows/test-models.yml'
       - 'server/ml/inference_kit/**'
       - 'server/ml/models/**'
+      - 'server/ml/reversi-py/**'
+      - 'server/reversi-core/**'
+      - 'server/common/**'
 
 name: test (models)
 

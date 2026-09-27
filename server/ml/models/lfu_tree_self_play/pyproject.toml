@@ -5,8 +5,13 @@ description = "Independent tree self-play experiment package."
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
 dependencies = [
+    "numpy>=2.3.3",
     "omegaconf==2.3.1",
+    "reversi==0.1.0",
 ]
+
+[tool.uv.sources]
+reversi = { path = "../../reversi-py" }
 
 [project.scripts]
 lfu-tree-self-play = "lfu_tree_self_play.cli:main"
