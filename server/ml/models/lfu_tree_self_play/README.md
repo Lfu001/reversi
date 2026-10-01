@@ -27,6 +27,19 @@ seed 集合の記載順と TOML の整形は experiment ID に影響しません
 独立した `random.Random` を返します。別の RNG 実装が必要な場合は
 `derive_seed(run_seed, purpose)` で同じ用途別 seed を取得できます。
 
+## Policy/value モデル
+
+`PolicyValueModel` は `GameState.observation` と同じ4面を `(batch, 4, 8, 8)` の
+float32 tensor で受け取り、`policy_logits` `(batch, 64)` と着手者視点の
+`value` `(batch,)` を返します。残差ブロックは Transformers の
+`ResNetBasicLayer` を4個使い、盤面の8×8を維持します。
+
+合法手確率が必要なときは、観測の第4面を `(batch, 64)` の bool mask に変換し、
+`masked_policy_logits(policy_logits, legal_mask).softmax(dim=-1)` を使います。
+終局局面には合法手がないため、この関数は `ValueError` を返します。
+モデル重みの保存と読込には `save_model(model, path)` と `load_model(path)` を使います。
+読込後のモデルは CPU 上に置かれます。
+
 ## テスト
 
 ```sh
