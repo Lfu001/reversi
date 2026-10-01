@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import torch
 from lfu_tree_self_play.game import ReversiPyGame
+from transformers import PreTrainedModel
 
 
 @pytest.mark.parametrize("batch_size", [1, 3])
@@ -72,20 +73,25 @@ def test_policy_and_value_heads_both_receive_gradients() -> None:
     assert torch.any(model.value_head[2].weight.grad != 0)
 
 
-def test_saved_model_reloads_with_identical_outputs(tmp_path) -> None:
-    from lfu_tree_self_play.model import PolicyValueModel, load_model, save_model
+def test_pretrained_model_round_trip_preserves_config_and_outputs(tmp_path) -> None:
+    from lfu_tree_self_play.model import PolicyValueConfig, PolicyValueModel
 
-    model = PolicyValueModel().eval()
+    model = PolicyValueModel(PolicyValueConfig(width=32, num_blocks=2)).eval()
+    assert isinstance(model, PreTrainedModel)
     observation = torch.from_numpy(
         np.stack([ReversiPyGame().initial_state().observation])
     )
     before = model(observation)
-    checkpoint = tmp_path / "policy-value.pt"
+    checkpoint = tmp_path / "policy-value"
 
-    save_model(model, checkpoint)
-    reloaded = load_model(checkpoint).eval()
+    model.save_pretrained(checkpoint)
+    reloaded = PolicyValueModel.from_pretrained(
+        checkpoint, local_files_only=True
+    ).eval()
     after = reloaded(observation)
 
+    assert reloaded.config.width == 32
+    assert reloaded.config.num_blocks == 2
     torch.testing.assert_close(
         after.policy_logits, before.policy_logits, rtol=0, atol=0
     )

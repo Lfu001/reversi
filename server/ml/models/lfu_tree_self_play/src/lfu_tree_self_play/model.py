@@ -1,10 +1,10 @@
 """Shared policy/value network for Reversi positions."""
 
-from pathlib import Path
 from typing import NamedTuple
 
 import torch
 from torch import Tensor, nn
+from transformers import PreTrainedConfig, PreTrainedModel
 from transformers.models.resnet.modeling_resnet import ResNetBasicLayer
 
 
@@ -13,23 +13,45 @@ class PolicyValueOutput(NamedTuple):
     value: Tensor
 
 
-class PolicyValueModel(nn.Module):
+class PolicyValueConfig(PreTrainedConfig):
+    """Architecture parameters saved alongside policy/value weights."""
+
+    model_type = "lfu_reversi_policy_value"
+
+    def __init__(self, width: int = 64, num_blocks: int = 4, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.width = width
+        self.num_blocks = num_blocks
+
+
+class PolicyValueModel(PreTrainedModel):
     """Predict 64 placement logits and a mover-perspective value."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    config_class = PolicyValueConfig
+    main_input_name = "observations"
+
+    def __init__(self, config: PolicyValueConfig | None = None) -> None:
+        config = config or PolicyValueConfig()
+        super().__init__(config)
         self.stem = nn.Sequential(
-            nn.Conv2d(4, 64, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(4, config.width, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(config.width),
             nn.ReLU(),
         )
         self.residual_blocks = nn.Sequential(
-            *(ResNetBasicLayer(64, 64, stride=1) for _ in range(4))
+            *(
+                ResNetBasicLayer(config.width, config.width, stride=1)
+                for _ in range(config.num_blocks)
+            )
         )
-        self.policy_head = nn.Conv2d(64, 1, kernel_size=1)
+        self.policy_head = nn.Conv2d(config.width, 1, kernel_size=1)
         self.value_head = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Linear(64, 1), nn.Tanh()
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(config.width, 1),
+            nn.Tanh(),
         )
+        self.post_init()
 
     def forward(self, observations: Tensor) -> PolicyValueOutput:
         features = self.residual_blocks(self.stem(observations))
@@ -53,15 +75,3 @@ def masked_policy_logits(policy_logits: Tensor, legal_mask: Tensor) -> Tensor:
     if not legal_mask.any(dim=-1).all():
         raise ValueError("each position must have at least one legal move")
     return policy_logits.masked_fill(~legal_mask, -torch.inf)
-
-
-def save_model(model: PolicyValueModel, path: str | Path) -> None:
-    """Save the network weights for inference or later training."""
-    torch.save(model.state_dict(), path)
-
-
-def load_model(path: str | Path) -> PolicyValueModel:
-    """Load network weights onto the CPU without accepting pickled objects."""
-    model = PolicyValueModel()
-    model.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
-    return model
