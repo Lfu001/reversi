@@ -8,6 +8,8 @@ dependencies = [
     "numpy>=2.3.3",
     "omegaconf==2.3.1",
     "reversi==0.1.0",
+    "torch==2.14.1",
+    "transformers==5.18.0",
 ]
 
 [tool.uv.sources]
