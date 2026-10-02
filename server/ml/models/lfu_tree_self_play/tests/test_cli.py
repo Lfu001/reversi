@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -30,7 +31,22 @@ def test_help_lists_config_command(run_cli):
 
     assert result.returncode == 0
     assert "check-config" in result.stdout
+    assert "verify-policy-gradient" in result.stdout
     assert result.stderr == ""
+
+
+def test_verify_policy_gradient_saves_report(run_cli, tmp_path):
+    output = tmp_path / "policy-gradient.json"
+    result = run_cli(
+        "verify-policy-gradient", "--output", output, "--pairs", "500", "--seed", "5"
+    )
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["passed"] is True
+    assert report["pairs_per_color"] == 500
+    assert "black" in report["conditions"] and "white" in report["conditions"]
 
 
 def test_check_config_accepts_valid_file(run_cli, tmp_path):

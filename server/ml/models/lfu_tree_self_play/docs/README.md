@@ -12,6 +12,8 @@
 
 モデル API の詳細は [Policy/value モデル](model.md) を参照してください。
 
+実装の利用方法は [設定と乱数の管理](configuration.md)、[期待リターンと方策勾配の検証](verification.md) を参照してください。
+
 研究設計の原典と数値を確認する場合は、[実験計画（日本語）](experiment-plan.md)または[Experimental plan (English)](experiment-plan.en.md)を参照してください。
 
 ## マイルストーン
