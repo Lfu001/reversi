@@ -1,10 +1,10 @@
 """Saved G0 evidence includes each required numerical comparison."""
 
-from lfu_tree_self_play.g0 import run_g0_verification
+from lfu_tree_self_play.verification import verify_policy_gradient
 
 
 def test_report_covers_both_colors_and_all_mathematical_conditions() -> None:
-    report = run_g0_verification(seed=5, pairs=500)
+    report = verify_policy_gradient(seed=5, pairs=500)
 
     assert report["passed"] is True
     assert report["seed"] == 5

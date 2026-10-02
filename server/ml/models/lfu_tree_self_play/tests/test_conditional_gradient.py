@@ -4,12 +4,12 @@ import random
 
 import numpy as np
 import pytest
-from lfu_tree_self_play.g0 import (
+from lfu_tree_self_play.game import ReversiPyGame
+from lfu_tree_self_play.verification import (
     endgame_position,
     exact_conditional_value_and_gradient,
     monte_carlo_value_and_gradient,
 )
-from lfu_tree_self_play.game import ReversiPyGame
 
 
 @pytest.mark.parametrize("color", [1, -1])

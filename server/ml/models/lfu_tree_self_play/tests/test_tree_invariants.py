@@ -4,13 +4,13 @@ import random
 
 import numpy as np
 import pytest
-from lfu_tree_self_play.g0 import (
+from lfu_tree_self_play.game import ReversiPyGame
+from lfu_tree_self_play.verification import (
     compare_shared_recomputed,
     endgame_position,
     importance_ratio,
     leave_one_out_advantages,
 )
-from lfu_tree_self_play.game import ReversiPyGame
 
 
 def test_identical_sibling_returns_have_zero_relative_advantage() -> None:

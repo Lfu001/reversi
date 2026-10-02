@@ -31,13 +31,15 @@ def test_help_lists_config_command(run_cli):
 
     assert result.returncode == 0
     assert "check-config" in result.stdout
-    assert "verify-g0" in result.stdout
+    assert "verify-policy-gradient" in result.stdout
     assert result.stderr == ""
 
 
-def test_verify_g0_saves_report(run_cli, tmp_path):
-    output = tmp_path / "g0.json"
-    result = run_cli("verify-g0", "--output", output, "--pairs", "500", "--seed", "5")
+def test_verify_policy_gradient_saves_report(run_cli, tmp_path):
+    output = tmp_path / "policy-gradient.json"
+    result = run_cli(
+        "verify-policy-gradient", "--output", output, "--pairs", "500", "--seed", "5"
+    )
 
     assert result.returncode == 0
     assert result.stderr == ""

@@ -1,4 +1,4 @@
-"""Small, reproducible checks for the G0 mathematical contracts."""
+"""Reproducible checks of expected returns, policy gradients, and tree losses."""
 
 import math
 import random
@@ -405,8 +405,8 @@ def compare_shared_recomputed(
     )
 
 
-def run_g0_verification(*, seed: int = 314159, pairs: int = 3000) -> dict:
-    """Run and summarize the reproducible G0 numerical checks."""
+def verify_policy_gradient(*, seed: int = 314159, pairs: int = 3000) -> dict:
+    """Verify expected returns, conditional policy gradients, and tree invariants."""
     if type(seed) is not int or seed < 0:
         raise ValueError("seed must be a nonnegative integer")
     if pairs < 2:
