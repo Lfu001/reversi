@@ -11,6 +11,7 @@
 uv sync --locked
 uv run --locked lfu-tree-self-play check-config configs/example.toml
 uv run --locked python -m lfu_tree_self_play check-config configs/example.toml
+uv run --locked lfu-tree-self-play verify-g0 --output docs/g0-verification.json
 ```
 
 `check-config` は TOML の型と seed 集合を検証し、experiment ID を表示します。
@@ -26,6 +27,13 @@ seed 集合の記載順と TOML の整形は experiment ID に影響しません
 `create_rng_streams(run_seed)` は位置抽選、行動抽出、兄弟の継続試行、評価用の
 独立した `random.Random` を返します。別の RNG 実装が必要な場合は
 `derive_seed(run_seed, purpose)` で同じ用途別 seed を取得できます。
+
+`verify-g0` は列挙可能な終盤局面で、固定方策の期待値と Monte Carlo 推定、
+黒・白それぞれの条件付き方策勾配を照合します。さらに importance ratio、
+leave-one-out advantage、共有経路と再計算の生成データ・重み・policy/value loss を検査します。
+既定では各色 3,000 組の独立した兄弟試行を使い、`--pairs` と `--seed` で変更できます。
+JSON レポートには推定値、標準誤差、許容誤差、各条件の合否を保存します。
+ゲーム規則の G0 条件は下記のテスト群で検証します。
 
 ## テスト
 
