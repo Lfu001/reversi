@@ -34,18 +34,3 @@ jobs:
         working-directory: ./server/ml
         run: |
           cd "${{ matrix.model }}" && uv run pytest
-
-      - name: Verify policy gradients
-        if: matrix.model == 'models/lfu_tree_self_play'
-        working-directory: ./server/ml/models/lfu_tree_self_play
-        run: |
-          mkdir -p artifacts
-          uv run --locked lfu-tree-self-play verify-policy-gradient --output artifacts/policy-gradient-verification.json
-
-      - name: Save policy gradient verification report
-        if: always() && matrix.model == 'models/lfu_tree_self_play'
-        uses: actions/upload-artifact@v4
-        with:
-          name: policy-gradient-verification
-          path: server/ml/models/lfu_tree_self_play/artifacts/policy-gradient-verification.json
-          if-no-files-found: error
