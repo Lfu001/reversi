@@ -4,6 +4,7 @@ import random
 
 import numpy as np
 import pytest
+
 from lfu_tree_self_play.game import ReversiPyGame
 from lfu_tree_self_play.verification import (
     compare_shared_recomputed,

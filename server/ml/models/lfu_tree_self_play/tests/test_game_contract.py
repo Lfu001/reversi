@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+
 from lfu_tree_self_play.game import GameState, ReversiPyGame
 
 

@@ -5,6 +5,7 @@ import random
 
 import numpy as np
 import pytest
+
 from lfu_tree_self_play.game import GameState, ReversiPyGame
 from lfu_tree_self_play.oracle import expected_black_return, sample_black_return
 
