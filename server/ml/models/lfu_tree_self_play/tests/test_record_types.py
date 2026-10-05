@@ -89,7 +89,7 @@ def test_state_keeps_existing_game_contract():
         black_result=None,
     )
     assert node.state is state
-    original_observation = state.observation
+    original_observation = state.observation.copy()
     observation = node.state.observation
     observation[0] = 0
     np.testing.assert_array_equal(node.state.observation, original_observation)
