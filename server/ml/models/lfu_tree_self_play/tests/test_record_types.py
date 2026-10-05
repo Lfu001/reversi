@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
@@ -39,9 +40,7 @@ def collection(**updates):
         "mode": "tree",
         "root_node_id": "n0",
         "branch_plan": BranchPlan(width=2, positions=()),
-        "rng": RNGRecord(
-            algorithm="python.random.MT19937-v1", run_seed=0, streams=()
-        ),
+        "rng": RNGRecord(algorithm="python.random.MT19937-v1", run_seed=0, streams=()),
         "nodes": (),
         "edges": (),
         "sibling_groups": (),
@@ -89,10 +88,11 @@ def test_state_keeps_existing_game_contract():
         old_value=0.0,
         black_result=None,
     )
-    assert node.state == state
+    assert node.state is state
+    original_observation = state.observation
     observation = node.state.observation
     observation[0] = 0
-    assert node.state == state
+    np.testing.assert_array_equal(node.state.observation, original_observation)
 
 
 @pytest.mark.parametrize("bad", [True, 0, -1, 2])
@@ -120,9 +120,13 @@ def test_generations_seeds_and_sample_indices_reject_negative_values(field):
     if field == "model_generation":
         with pytest.raises(ValidationError):
             NodeRecord(
-                node_id="n0", incoming_edge_id=None,
-                state=ReversiPyGame().initial_state(), placement_depth=0,
-                model_generation=-1, old_value=None, black_result=None,
+                node_id="n0",
+                incoming_edge_id=None,
+                state=ReversiPyGame().initial_state(),
+                placement_depth=0,
+                model_generation=-1,
+                old_value=None,
+                black_result=None,
             )
     elif field == "seed":
         with pytest.raises(ValidationError):
@@ -130,11 +134,17 @@ def test_generations_seeds_and_sample_indices_reject_negative_values(field):
     else:
         with pytest.raises(ValidationError):
             EdgeRecord(
-                edge_id="e0", parent_node_id="n0", child_node_id="n1",
-                action=0, old_log_probability=0.0, model_generation=0,
-                sampling=SamplingRecord(stream_id="s0", draw_index=0,
-                                        continuation_seed=None),
-                sibling_group_id=None, sample_index=-1,
+                edge_id="e0",
+                parent_node_id="n0",
+                child_node_id="n1",
+                action=0,
+                old_log_probability=0.0,
+                model_generation=0,
+                sampling=SamplingRecord(
+                    stream_id="s0", draw_index=0, continuation_seed=None
+                ),
+                sibling_group_id=None,
+                sample_index=-1,
             )
 
 
@@ -142,33 +152,77 @@ def test_generations_seeds_and_sample_indices_reject_negative_values(field):
 def test_old_value_must_be_in_unit_interval(bad):
     with pytest.raises(ValidationError):
         NodeRecord(
-            node_id="n0", incoming_edge_id=None,
-            state=ReversiPyGame().initial_state(), placement_depth=0,
-            model_generation=0, old_value=bad, black_result=None,
+            node_id="n0",
+            incoming_edge_id=None,
+            state=ReversiPyGame().initial_state(),
+            placement_depth=0,
+            model_generation=0,
+            old_value=bad,
+            black_result=None,
         )
 
 
 def test_log_probability_cannot_be_positive():
     with pytest.raises(ValidationError):
         EdgeRecord(
-            edge_id="e0", parent_node_id="n0", child_node_id="n1",
-            action=0, old_log_probability=0.01, model_generation=0,
-            sampling=SamplingRecord(stream_id="s0", draw_index=0,
-                                    continuation_seed=None),
-            sibling_group_id=None, sample_index=None,
+            edge_id="e0",
+            parent_node_id="n0",
+            child_node_id="n1",
+            action=0,
+            old_log_probability=0.01,
+            model_generation=0,
+            sampling=SamplingRecord(
+                stream_id="s0", draw_index=0, continuation_seed=None
+            ),
+            sibling_group_id=None,
+            sample_index=None,
         )
 
 
-@pytest.mark.parametrize("record_type,values", [
-    (BranchPlan, {"width": 4, "positions": ()}),
-    (RNGStreamRecord, {"stream_id": "s0", "purpose": "action_sampling", "seed": 0}),
-    (RNGRecord, {"algorithm": "python.random.MT19937-v1", "run_seed": 0, "streams": ()}),
-    (SamplingRecord, {"stream_id": "s0", "draw_index": 0, "continuation_seed": None}),
-    (SiblingGroupRecord, {"group_id": "g0", "parent_node_id": "n0", "edge_ids": (), "distinct_action_count": 0}),
-])
-def test_ids_reject_whitespace_only(record_type, values):
-    id_field = "group_id" if record_type is SiblingGroupRecord else "stream_id"
-    values = dict(values)
-    values[id_field] = "   "
-    with pytest.raises(ValidationError):
+@pytest.mark.parametrize(
+    "record_type,values,id_field",
+    [
+        (
+            RNGStreamRecord,
+            {"stream_id": "   ", "purpose": "action_sampling", "seed": 0},
+            "stream_id",
+        ),
+        (
+            SamplingRecord,
+            {"stream_id": "   ", "draw_index": 0, "continuation_seed": None},
+            "stream_id",
+        ),
+        (
+            SiblingGroupRecord,
+            {
+                "group_id": "   ",
+                "parent_node_id": "n0",
+                "edge_ids": (),
+                "distinct_action_count": 0,
+            },
+            "group_id",
+        ),
+        (
+            NodeRecord,
+            {
+                "node_id": "   ",
+                "incoming_edge_id": None,
+                "state": ReversiPyGame().initial_state(),
+                "placement_depth": 0,
+                "model_generation": 0,
+                "old_value": None,
+                "black_result": None,
+            },
+            "node_id",
+        ),
+        (CollectionRecord, collection(unit_id="   "), "unit_id"),
+    ],
+)
+def test_ids_reject_whitespace_only(record_type, values, id_field):
+    with pytest.raises(ValidationError) as exc_info:
         record_type(**values)
+
+    errors = exc_info.value.errors()
+    assert len(errors) == 1
+    assert errors[0]["loc"] == (id_field,)
+    assert errors[0]["type"] == "string_pattern_mismatch"
