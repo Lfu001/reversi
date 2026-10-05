@@ -799,3 +799,11 @@ Conventional Commit: `docs(ml): document collection record validation`。レビ�
 ## 実行方法の提案
 
 3 task が同じ record API と fixture に強く依存するため、このセッションでの Native 実行を推奨する。実装後に独立した reviewer が全体を確認する。計画のレビューと実行方法の選択を受けてから製品コード・依存の変更を始める。
+
+## 実行状況（2026-10-05）
+
+上の Native 実行は当初の提案です。ユーザーは subagent による実装・独立レビュー・修正ループと、その後の PR 作成を承認し、既存 GameState / config / model / RNG の構造を維持する方針で実行しています。Task 1 の型と Task 2 の検証器は個別レビューを通過し、Task 3 は利用契約と検証証拠を追加します。
+
+計画内のコード例は実装ガイド、承認済み仕様は合格条件の正本です。実行時には、共有観測を自己比較する例を独立した配列コピーと identity 確認へ修正し、意図した field の拒否を試すよう ID tests を修正しました。子孫数が異なる木の探索例はその終盤局面で目的の分岐を発見できなかったため、Random(955) の実遷移で到達する明示的盤面（action 12 は終局、10 は継続）へ置き換えています。根の規則に従った合法手 mask は仕様どおり game adapter の信頼境界とし、既存 Game API を拡張せず表現チェックと全保存遷移の replay を行います。
+
+Task 3 の全体 lint で既存 5 test files の I001 が見つかり、実装前 baseline と同じ内容であることを確認しました。追加の限定 Task 4 で import 順序だけを修正し、全体 pytest（208 passed）、Ruff lint / format を再確認しています。製品 API・テストの assertions・依存には変更を加えていません。

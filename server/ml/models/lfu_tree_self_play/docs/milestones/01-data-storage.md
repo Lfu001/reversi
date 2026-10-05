@@ -6,6 +6,8 @@
 
 ## T06 木・ノード・辺・兄弟群・コストのrecord schema
 
+実装と利用契約：[収集 record と共通検証器](../records.md)。API は [CollectionRecord 等の型](../../src/lfu_tree_self_play/records.py) と [validate_record](../../src/lfu_tree_self_play/record_validation.py)。[共通 acceptance / rejection tests](../../tests/test_records.py) は A の独立対局と B/C の木の受理、不正な親子関係とノード・辺の世代混在の拒否を同じ検証器で確認します。[型契約の tests](../../tests/test_record_types.py) と [T06 の検証結果](../records.md#t06-の検証結果) も参照してください。これは T06 の成果であり、G1 全体の完了ではありません。
+
 - 依存：T02、T03
 - 領域：収集データの意味モデル
 - 成果：親子関係、局面、手番、行動、旧log probability、旧value、モデル世代、分岐構成、乱数情報、終局結果、計算コストを表現できる。
