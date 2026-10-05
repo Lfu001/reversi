@@ -14,11 +14,13 @@ T07 の条件付き平均・経路重み計算、T08 のファイル形式・ato
 
 ## 採用する構成
 
-標準ライブラリの frozen dataclass と tuple を使用し、追加依存を導入しない。既存の `GameState` と `Game` 契約を使う。
+ユーザーが許可した Pydantic v2 (`>=2.12,<3`) を直接依存に追加し、`BaseModel` と tuple を使用する。Python の対象は既存パッケージと同じ `>=3.14,<3.15`。共通基底に `strict=True`、`frozen=True`、`extra="forbid"`、`allow_inf_nan=False`、`validate_default=True`、`revalidate_instances="always"` を設定する。整数・文字列・tuple の暗黙変換を拒否し、未知 field と属性の再代入も拒否する。時間や旧 value 等の実数 field では Python の int / float の数値を受け付けるが、bool・文字列・非有限値を拒否する。
+
+既存の `GameState` は `InstanceOf[GameState]` として保持し、Pydantic に NumPy の配列変換や既存 dataclass の再構築をさせない。既存 `Game` 契約も維持する。`frozen` の保証は属性の再代入に対するもので、内部の NumPy 配列まで深い不変性を保証するとは扱わない。局面の公開操作には既存 `GameState.observation` のコピーを使う。
 
 群別のスキーマは検証規則の重複を招くため採用しない。未型付けの辞書のみを公開する方式は、ID 参照と標本の意味を利用側へ押し付けるため採用しない。保存形式は T08 で、この意味モデルを維持して選定する。
 
-追加ファイルはパッケージの `records.py`、`record_validation.py`、`tests/test_records.py`、`docs/records.md`。README の詳細一覧と T06 正本へ説明・検証結果の参照を追加する。
+追加ファイルはパッケージの `records.py`、`record_validation.py`、`tests/test_record_types.py`、`tests/test_records.py`、`docs/records.md`。Pydantic の直接依存を `pyproject.toml` と `uv.lock` に反映し、README の詳細一覧と T06 正本へ説明・検証結果の参照を追加する。
 
 ## 型とデータの配置
 
@@ -32,6 +34,8 @@ ID は空でない文字列で、木内のノード・辺・兄弟群それぞ�
 | `SiblingGroupRecord` | group ID、親 node ID、順序付き edge ID tuple、実際に異なる action の数 |
 | `BranchPlan` | 分岐幅（2 以上）、予定着手位置の昇順 tuple。分岐なしでは位置 tuple は空 |
 | `RNGRecord` | アルゴリズム識別子、run seed、用途別 stream seed。各抽出について stream の参照と非負の抽出番号を保持し、兄弟標本には独立した continuation seed を保持 |
+| `RNGStreamRecord` | stream ID、用途 (`branch_position` / `action_sampling` / `sibling_rollout`)、非負 seed |
+| `SamplingRecord` | edge が使った stream ID、stream 内の抽出番号、分岐標本のみの continuation seed |
 | `CostRecord` | 実際の環境遷移数、モデルで評価した局面数、推論 batch 数、収集経過秒、推論秒、環境遷移秒、木管理秒、ピークメモリ bytes |
 
 実際の推論件数や遷移数は共有・キャッシュ・再計算の方式で変わるため、辺数との等値を強制しない。計数は非負整数、時間は有限の非負値とする。木管理時間などは collector が計測する値で、T06 は計測器を実装しない。保存時間・学習時間はまだ完了していない別段階なので、この収集コストには混ぜない。
@@ -39,6 +43,8 @@ ID は空でない文字列で、木内のノード・辺・兄弟群それぞ�
 旧 value は親局面の着手者視点で `[-1, 1]`、旧 log probability は合法手マスク・温度を適用した抽出時の有限値で `<= 0`。初期実験は温度 1 とし、この契約をドキュメントに明示する。検証器は元のモデルを実行しないため、保存確率と保存 value が当時のモデル出力だったこと自体を証明しない。
 
 乱数情報は抽出系列と標本の追跡用で、途中再開の完全な RNG state は T09 の責任とする。用途は既存 `rng.py` と一致させ、位置抽選、行動抽出、兄弟の継続試行を区別する。評価 RNG は収集 record に不要。
+
+`RNGRecord` は `algorithm="python.random.MT19937-v1"`、`run_seed`、stream record の tuple を保持する。主要 stream ID を `branch` / `action` / `sibling` とし、用途と seed をそれぞれ既存 `derive_seed(run_seed, purpose)` と照合する。追加 stream は `sibling_rollout` 用とし、分岐標本の continuation seed で開始する系列を記録する。辺の sampling は `action_sampling` または `sibling_rollout` 用 stream を参照し、位置抽選用 stream の行動抽出への流用を拒否する。兄弟 continuation seed は対応する追加 stream の seed と一致し、同一群では重複しない。これは seed と stream の追跡契約で、抽出値の確率的独立性の証明ではない。
 
 ## 局面と標本の意味
 
@@ -52,7 +58,7 @@ ID は空でない文字列で、木内のノード・辺・兄弟群それぞ�
 
 ## 共通検証器
 
-`validate_record(record, game)` は正常な場合 `None` を返し、不正な場合は `RecordValidationError(ValueError)` を発生させる。メッセージに不正な型または field、該当する ID を含める。入力は補正・並び替え・書換えせず、最初に見つけた違反を報告する。
+個々の record の構築時の型・範囲違反は Pydantic の `ValidationError` とする。`validate_record(record, game)` は正常な場合 `None` を返し、不正な場合は `RecordValidationError(ValueError)` を発生させる。入口で `CollectionRecord.model_validate(record)` を実行し、ネストされた既存インスタンスも再検証する。`model_copy(update=...)` 等の未検証更新で作られた型違反も、この入口で `ValidationError` を `RecordValidationError` に包んで拒否する。入口以降は型・範囲チェックを重複実装せず、木とゲームの整合性を検証する。メッセージに不正な型または field、該当する ID を含める。入力は補正・並び替え・書換えず、Pydantic の型エラー詳細、または最初に見つけた意味違反を報告する。
 
 検証を以下の順に行う。
 
@@ -77,7 +83,7 @@ ID は空でない文字列で、木内のノード・辺・兄弟群それぞ�
 | 未完成葉、終局結果の欠落・符号違い、終局に子を追加 | 完了単位の意味に反するため拒否する |
 | 予定分岐の欠落・移動、群の過不足、重複 index | 分岐構成不一致として拒否する |
 | 同一 action の標本を 1 本に統合 | 分岐幅・兄弟群の不一致として拒否する |
-| bool を整数 field に使用、NaN / Inf、負コスト | 型・数値契約違反として拒否する |
+| bool を整数 field に使用、数値文字列、NaN / Inf、負コスト、未知 field | 構築時に Pydantic が拒否し、未検証更新を使っても共通検証器が拒否する |
 | collection / node / edge の変更、検証前後の比較 | frozen / tuple の契約と非破壊検証を確認する |
 
 合法な fixture は `ReversiPyGame` の実遷移で構築し、終局まで完了させる。既知の強制パス局面も使い、深さからの交互手番という誤実装を検出する。不正例は正常 fixture の必要箇所だけを置換し、失敗理由を照合する。
@@ -86,4 +92,8 @@ ID は空でない文字列で、木内のノード・辺・兄弟群それぞ�
 
 ## レビュー状態
 
-2026-10-04: 共通型・共通検証器を採用する会話上の設計案をユーザーが承認。上記はその案を具体化した設計書で、書面レビュー待ち。
+2026-10-04: 共通型・共通検証器を採用する会話上の設計案をユーザーが承認。
+
+2026-10-05: 書面確認への応答でユーザーが Pydantic の導入を許可。型制約を Pydantic の strict / frozen model に置き換え、共通検証器と T06 の範囲は維持する。
+
+Pydantic の参照: [strict mode](https://docs.pydantic.dev/latest/concepts/strict_mode/)、[設定](https://docs.pydantic.dev/latest/api/config/)、[モデルと未検証コピー](https://docs.pydantic.dev/latest/concepts/models/)。これらは型とインスタンスの検証用であり、保存形式の決定は T08 に残す。
