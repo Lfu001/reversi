@@ -820,6 +820,21 @@ def test_primary_rng_seed_and_purpose_match_run_seed(index, field):
         validate_record(invalid, ReversiPyGame())
 
 
+def test_large_run_seed_derivation_error_is_wrapped_with_stream_context():
+    record = build_record()
+    run_seed = 10**5000
+    invalid = record.model_copy(
+        update={"rng": record.rng.model_copy(update={"run_seed": run_seed})}
+    )
+    assert CollectionRecord.model_validate(invalid).rng.run_seed == run_seed
+    with pytest.raises(RecordValidationError, match="run_seed.*branch") as caught:
+        validate_record(invalid, ReversiPyGame())
+    assert type(caught.value.__cause__) is ValueError
+    assert "integer string conversion" in str(caught.value.__cause__)
+    assert invalid.rng.run_seed == run_seed
+    assert record.rng.run_seed == 7
+
+
 def test_continuation_stream_requires_sibling_purpose():
     record = replace_stream(build_record(), 3, purpose="action_sampling")
     with pytest.raises(RecordValidationError, match="continuation purpose"):

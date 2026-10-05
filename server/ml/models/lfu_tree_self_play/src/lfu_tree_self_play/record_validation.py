@@ -242,10 +242,16 @@ def _validate_rng(
         _require(stream_id in streams, f"missing RNG stream: {stream_id}")
         stream = streams[stream_id]
         _require(
-            stream.purpose == purpose
-            and stream.seed == derive_seed(record.rng.run_seed, purpose),
+            stream.purpose == purpose,
             f"primary RNG stream: {stream_id}",
         )
+        try:
+            expected_seed = derive_seed(record.rng.run_seed, purpose)
+        except ValueError as error:
+            raise RecordValidationError(
+                f"run_seed derivation: {stream_id} ({purpose})"
+            ) from error
+        _require(stream.seed == expected_seed, f"primary RNG stream: {stream_id}")
     continuation_seeds = set()
     for stream in streams.values():
         if stream.stream_id not in primary:

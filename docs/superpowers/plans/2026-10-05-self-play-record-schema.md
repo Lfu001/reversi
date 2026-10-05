@@ -807,3 +807,5 @@ Conventional Commit: `docs(ml): document collection record validation`。レビ�
 計画内のコード例は実装ガイド、承認済み仕様は合格条件の正本です。実行時には、共有観測を自己比較する例を独立した配列コピーと identity 確認へ修正し、意図した field の拒否を試すよう ID tests を修正しました。子孫数が異なる木の探索例はその終盤局面で目的の分岐を発見できなかったため、Random(955) の実遷移で到達する明示的盤面（action 12 は終局、10 は継続）へ置き換えています。根の規則に従った合法手 mask は仕様どおり game adapter の信頼境界とし、既存 Game API を拡張せず表現チェックと全保存遷移の replay を行います。
 
 Task 3 の全体 lint で既存 5 test files の I001 が見つかり、実装前 baseline と同じ内容であることを確認しました。追加の限定 Task 4 で import 順序だけを修正し、全体 pytest（208 passed）、Ruff lint / format を再確認しています。製品 API・テストの assertions・依存には変更を加えていません。
+
+最終レビューで repository root からの CI lint と package lint の import 分類の差を確認し、package に `[tool.ruff] src = ["src"]` を追加して両方の lint / format を通しました。`run_seed=10**5000` の seed 導出失敗は、stream 文脈と原因を保持する `RecordValidationError` へ限定的に変換し、回帰試験の red / green を確認しました。最終 record suite は 125 passed、package 全体は 209 passed で、結果は package の `docs/records.md` に記録しています。

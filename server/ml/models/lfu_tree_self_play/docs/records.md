@@ -57,6 +57,8 @@ def accept_complete_unit(record: CollectionRecord) -> None:
 
 [validate_record](../src/lfu_tree_self_play/record_validation.py) は成功時 `None` を返し、不正な完了単位は `RecordValidationError(ValueError)` で拒否します。呼出側はこの例外を捕捉して単位を受理しない判断ができます。個々のモデルの構築時に型・範囲に違反すると Pydantic の `ValidationError` になります。検証器の入口では `CollectionRecord.model_validate(record)` によりネストされた既存インスタンスも再検証し、Pydantic エラーを `RecordValidationError` に包みます。`model_copy(update=...)` は更新値を検証しないので、コピー後もこの入口を通します。
 
+主要 stream の seed 導出で `ValueError` が発生した場合も、`run_seed` と stream ID / 用途を示す `RecordValidationError` に包み、元の例外を `__cause__` に保持します。seed の桁数の上限をスキーマへ追加するものではありません。
+
 全型は `strict=True`、`frozen=True`、`extra="forbid"`、`allow_inf_nan=False`、`validate_default=True`、`revalidate_instances="always"` を共有します。整数 field に bool や数値文字列は使えません。実数 field は Python の int / float を受け付けますが、bool・文字列・NaN / Inf は拒否します。未知 field、list から tuple への暗黙変換も拒否し、nodes / edges / sibling groups / streams / positions / edge IDs は tuple です。
 
 `frozen` は属性の再代入を防ぐもので、既存 `GameState` の内部 NumPy 配列まで深い不変性を保証しません。`state` は `InstanceOf[GameState]` として保持し、配列変換や dataclass の再構築をしません。局面の公開操作にはコピーを返す既存 `GameState.observation` を使います。検証器は入力を補正・並び替え・書換えず、型のエラー詳細または最初の意味違反を報告します。
@@ -73,14 +75,19 @@ def accept_complete_unit(record: CollectionRecord) -> None:
 
 ## T06 の検証結果
 
-2026-10-05 に package で以下を実行しました。実装前 baseline は 84 tests でした。T06 の型 30 cases と共通検証器 94 cases を追加し、pytest の失敗はありません。変更していない重い G0 Monte Carlo 実験は再実行していません。
+2026-10-05 に以下を実行しました。実装前 baseline は 84 tests でした。T06 の型 30 cases と共通検証器 95 cases（`run_seed=10**5000` の例外境界 regression を含む）を追加し、最終 pytest の失敗はありません。変更していない重い G0 Monte Carlo 実験は再実行していません。
 
-| 検証 | 結果 |
-| --- | --- |
-| `uv sync --locked` | 成功（65 packages resolved、45 packages checked） |
-| `uv run --locked pytest -q` | 208 passed in 63.94s（import 順序修正後） |
-| Ruff 0.16.8 `check --target-version py312 src tests` | All checks passed! |
-| Ruff 0.16.8 `format --check --target-version py312 src tests` | 22 files already formatted |
-| repository `git diff --check` | 成功 |
+Ruff は 0.16.8 を使用し、`uvx --offline --from ruff==0.16.8 ruff` で実行しました。package の `[tool.ruff] src = ["src"]` により first-party import の分類を固定し、package と repository root の両方から lint / format を確認しています。repository root のコマンドは models 用 CI workflow と同じ対象・target version です。
+
+| 実行場所 | 検証 | 結果 |
+| --- | --- | --- |
+| package（初回環境確認） | `uv sync --locked` | 成功（65 packages resolved、45 packages checked） |
+| package（最終修正後） | `uv run --locked pytest tests/test_record_types.py tests/test_records.py -q` | 125 passed in 2.38s |
+| package（最終修正後） | `uv run --locked pytest -q` | 209 passed in 62.02s |
+| package | Ruff `check --target-version py312 src tests` | All checks passed! |
+| package | Ruff `format --check --target-version py312 src tests` | 22 files already formatted |
+| repository root | Ruff `check --target-version py312 server/ml/models` | All checks passed! |
+| repository root | Ruff `format --check --target-version py312 server/ml/models` | 46 files already formatted |
+| repository root | `git diff --check` | 成功 |
 
 [型の tests](../tests/test_record_types.py) は strict / frozen / tuple / 既存局面の保持を確認します。[共通検証器の tests](../tests/test_records.py) は独立対局と木、同一 action の兄弟、幅 2/3/4、終局根、H=1、強制パス、早期終局、子孫数の違い、非破壊検証と実測コストを受理します。同じ suite で親子関係・世代混在・局面改変・未完成葉・結果不一致・分岐と兄弟群の不整合・標本統合・RNG 参照や抽出イベントの重複・未検証コピーの型違反を拒否します。
