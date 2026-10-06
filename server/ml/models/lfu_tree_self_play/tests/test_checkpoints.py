@@ -541,3 +541,88 @@ def test_incremental_evaluation_retains_fixed_checkpoint_identity(tmp_path):
         evaluations=(pair_a, pair_b),
     )
     assert store.recover().manifest == complete
+
+
+@pytest.mark.parametrize("mode", ["train", "eval", "mixed"])
+def test_model_mode_roundtrip_preserves_subsequent_behavior(tmp_path, mode):
+    store, model, optimizer, scheduler, rng, identity = setup_store(tmp_path)
+    if mode == "eval":
+        model.eval()
+    elif mode == "mixed":
+        model.train()
+        model.stem[1].eval()
+    expected_modes = {name: module.training for name, module in model.named_modules()}
+    commit(store, model, optimizer, scheduler, rng, identity)
+    inputs = torch.arange(2 * 4 * 8 * 8, dtype=torch.float32).reshape(2, 4, 8, 8) / 100
+    with torch.no_grad():
+        expected = model(inputs)
+    restored = store.restore(
+        store.recover(),
+        optimizer_factory=lambda m: torch.optim.Adam(m.parameters()),
+        scheduler_factory=lambda o: torch.optim.lr_scheduler.StepLR(o, step_size=1),
+    )
+    with torch.no_grad():
+        actual = restored.model(inputs)
+    assert torch.equal(actual.policy_logits, expected.policy_logits)
+    assert torch.equal(actual.value, expected.value)
+    assert {
+        name: module.training for name, module in restored.model.named_modules()
+    } == expected_modes
+    assert all(
+        torch.equal(value, restored.model.state_dict()[name])
+        for name, value in model.state_dict().items()
+    )
+
+
+def test_model_mode_change_requires_generation_and_invalid_flags_recover_previous(
+    tmp_path,
+):
+    import hashlib
+    import json
+
+    from lfu_tree_self_play.dataset_codec import canonical_json
+
+    store, model, optimizer, scheduler, rng, identity = setup_store(tmp_path)
+    first = commit(store, model, optimizer, scheduler, rng, identity)
+    model.eval()
+    with pytest.raises(ValueError, match="generation advance"):
+        commit(
+            store,
+            model,
+            optimizer,
+            scheduler,
+            rng,
+            identity,
+            name="mode-only",
+            parent=first.commit_id,
+        )
+    commit(
+        store,
+        model,
+        optimizer,
+        scheduler,
+        rng,
+        identity,
+        name="update",
+        parent=first.commit_id,
+        generation=identity.model_generation + 1,
+        consumed=(identity.unit_id,),
+    )
+    candidate = store.recover().path
+    original_runtime = torch.load(candidate / "runtime.pt", weights_only=False)
+    original_manifest = json.loads((candidate / "manifest.json").read_bytes())
+    for flags in ({**original_runtime["model_modes"], "": 1}, {"": False}):
+        runtime = {**original_runtime, "model_modes": flags}
+        torch.save(runtime, candidate / "runtime.pt")
+        envelope = json.loads(json.dumps(original_manifest))
+        artifacts = envelope["payload"]["artifacts"]
+        for artifact in artifacts:
+            if artifact[0] == "runtime.pt":
+                artifact[1] = hashlib.sha256(
+                    (candidate / "runtime.pt").read_bytes()
+                ).hexdigest()
+        envelope["checksum"] = hashlib.sha256(
+            canonical_json(envelope["payload"])
+        ).hexdigest()
+        (candidate / "manifest.json").write_bytes(canonical_json(envelope))
+        assert store.recover().manifest == first
