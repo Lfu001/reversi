@@ -1,13 +1,20 @@
 """Atomic append-only units on a cooperating POSIX local filesystem."""
 
 import fcntl
+import json
 import os
 import re
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-from .dataset_codec import DatasetUnit, UnitIdentity, decode_unit, encode_unit
+from .dataset_codec import (
+    DatasetUnit,
+    UnitIdentity,
+    canonical_json,
+    decode_unit,
+    encode_unit,
+)
 from .game import Game
 from .records import CollectionRecord
 from .returns import ReturnTargets
@@ -26,7 +33,14 @@ class DatasetStore:
         self.root = Path(root)
         self.experiment_id = experiment_id
         self.game = game
+        missing = []
+        ancestor = self.root
+        while not ancestor.exists():
+            missing.append(ancestor)
+            ancestor = ancestor.parent
         self.root.mkdir(parents=True, exist_ok=True)
+        for created in reversed(missing):
+            _sync_directory(created.parent)
         for name in ("published", "staging", "quarantine"):
             (self.root / name).mkdir(exist_ok=True)
         _sync_directory(self.root)
@@ -36,6 +50,38 @@ class DatasetStore:
         with (self.root / "writer.lock").open("a+b") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             yield
+
+    def _check_root(self) -> bool:
+        binding = self.root / "experiment.json"
+        if not binding.exists():
+            return False
+        metadata = json.loads(binding.read_bytes())
+        if (
+            not isinstance(metadata, dict)
+            or type(metadata.get("version")) is not int
+            or metadata != {"version": 1, "experiment_id": self.experiment_id}
+        ):
+            raise ValueError("root experiment/configuration mismatch")
+        return True
+
+    def _bind_root(self) -> None:
+        # Called under the publication lock: concurrent first publishers must
+        # observe the binding before appending units from another experiment.
+        if self._check_root():
+            _sync_directory(self.root)
+            return
+        self.enumerate_units()
+        staging = self.root / "staging" / uuid.uuid4().hex
+        with staging.open("xb") as stream:
+            stream.write(
+                canonical_json({"version": 1, "experiment_id": self.experiment_id})
+            )
+            stream.flush()
+            os.fsync(stream.fileno())
+        _sync_directory(staging.parent)
+        os.rename(staging, self.root / "experiment.json")
+        _sync_directory(self.root)
+        _sync_directory(staging.parent)
 
     def _path(self, unit_id: str) -> Path:
         if not isinstance(unit_id, str) or not re.fullmatch(
@@ -61,10 +107,13 @@ class DatasetStore:
         data = encode_unit(record, targets, self.game)
         unit = self._check(decode_unit(data, self.game))
         with self._writer():
+            self._bind_root()
             if destination.exists():
                 existing = self.load(record.unit_id)
                 if existing.identity != unit.identity:
                     raise ValueError("unit ID replay conflict")
+                _sync_directory(destination.parent)
+                _sync_directory(self.root / "staging")
                 return existing.identity
             staging = self.root / "staging" / uuid.uuid4().hex
             with staging.open("xb") as stream:
@@ -78,6 +127,7 @@ class DatasetStore:
         return unit.identity
 
     def load(self, unit_id: str, *, model_generation: int | None = None) -> DatasetUnit:
+        self._check_root()
         unit = self._check(
             decode_unit(self._path(unit_id).read_bytes(), self.game), model_generation
         )
@@ -88,6 +138,7 @@ class DatasetStore:
     def enumerate_units(
         self, *, model_generation: int | None = None
     ) -> tuple[UnitIdentity, ...]:
+        self._check_root()
         identities = []
         for path in sorted((self.root / "published").iterdir()):
             if not path.is_file() or path.suffix != ".json":
@@ -103,6 +154,7 @@ class DatasetStore:
     def quarantine_incomplete(self) -> tuple[Path, ...]:
         moved = []
         with self._writer():
+            self._check_root()
             for path in sorted((self.root / "staging").iterdir()):
                 destination = self.root / "quarantine" / uuid.uuid4().hex
                 os.rename(path, destination)
