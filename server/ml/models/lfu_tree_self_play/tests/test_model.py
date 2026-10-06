@@ -3,8 +3,9 @@
 import numpy as np
 import pytest
 import torch
-from lfu_tree_self_play.game import ReversiPyGame
 from transformers import PreTrainedModel
+
+from lfu_tree_self_play.game import ReversiPyGame
 
 
 @pytest.mark.parametrize("batch_size", [1, 3])
