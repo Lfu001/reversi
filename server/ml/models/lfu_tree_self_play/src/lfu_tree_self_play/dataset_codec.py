@@ -88,6 +88,21 @@ def _decode_unit(data: bytes, game: Game) -> DatasetUnit:
     wire = payload["record"]
     if not isinstance(wire, dict):
         raise TypeError("invalid record")
+    for key in ("nodes", "edges", "sibling_groups"):
+        if not isinstance(wire[key], list):
+            raise TypeError(f"{key} must be a JSON array")
+    for owner, key in ((wire["branch_plan"], "positions"), (wire["rng"], "streams")):
+        if not isinstance(owner[key], list):
+            raise TypeError(f"{key} must be a JSON array")
+    for group in wire["sibling_groups"]:
+        if not isinstance(group["edge_ids"], list):
+            raise TypeError("edge_ids must be a JSON array")
+    target_wire = payload["targets"]
+    names = {field.name for field in fields(ReturnTargets)}
+    if not isinstance(target_wire, dict) or set(target_wire) != names:
+        raise ValueError("invalid targets object fields")
+    if any(not isinstance(mapping, dict) for mapping in target_wire.values()):
+        raise ValueError("target mappings must be JSON objects")
     for node in wire["nodes"]:
         raw = node["state"]
         if any(
