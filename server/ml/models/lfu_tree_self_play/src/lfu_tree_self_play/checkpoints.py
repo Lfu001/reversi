@@ -20,7 +20,7 @@ from omegaconf import OmegaConf
 from .config import experiment_id
 from .dataset_codec import UnitIdentity, canonical_json
 from .dataset_store import _sync_directory
-from .model import PolicyValueModel
+from .model import PolicyValueConfig, PolicyValueModel
 from .rng import RNGStreams, create_rng_streams
 
 
@@ -140,6 +140,20 @@ def _validate_rng(state):
             raise ValueError("invalid MPS RNG state")
     if (state["mps"] is not None) != torch.backends.mps.is_available():
         raise ValueError("MPS RNG device mismatch")
+
+
+def _validate_model_modes(modes, model=None):
+    if (
+        not isinstance(modes, dict)
+        or "" not in modes
+        or any(
+            type(name) is not str or type(flag) is not bool
+            for name, flag in modes.items()
+        )
+    ):
+        raise ValueError("invalid model training modes")
+    if model is not None and set(modes) != dict(model.named_modules()).keys():
+        raise ValueError("model training mode module mismatch")
 
 
 def _state_equal(left, right):
@@ -407,11 +421,19 @@ class CheckpointStore:
         runtime = torch.load(
             path / "runtime.pt", map_location="cpu", weights_only=False
         )
-        if set(runtime) != {"optimizer", "scheduler", "rng"} or not isinstance(
-            runtime["optimizer"], dict
-        ):
+        if set(runtime) != {
+            "optimizer",
+            "scheduler",
+            "rng",
+            "model_modes",
+        } or not isinstance(runtime["optimizer"], dict):
             raise ValueError("invalid runtime artifact")
         _validate_rng(runtime["rng"])
+        with torch.device("meta"):
+            architecture = PolicyValueModel(
+                PolicyValueConfig.from_pretrained(path / "model", local_files_only=True)
+            )
+        _validate_model_modes(runtime["model_modes"], architecture)
         if (
             parent
             and manifest.progress.model_generation == parent.progress.model_generation
@@ -429,6 +451,7 @@ class CheckpointStore:
                 != tuple(a for a in parent.artifacts if a[0].startswith("model/"))
                 or not _state_equal(runtime["optimizer"], previous["optimizer"])
                 or not _state_equal(runtime["scheduler"], previous["scheduler"])
+                or runtime["model_modes"] != previous["model_modes"]
             ):
                 raise ValueError("state update without generation advance")
         return RecoveredCheckpoint(manifest, path)
@@ -494,6 +517,10 @@ class CheckpointStore:
                     parent = _decode((parent_paths[0] / "manifest.json").read_bytes())
             elif expected_parent != (parent.commit_id if parent else None):
                 raise ValueError("stale parent conflict")
+            model_modes = {
+                name: module.training for name, module in model.named_modules()
+            }
+            _validate_model_modes(model_modes, model)
             sequence = parent.sequence + 1 if parent else 0
             staging = self.root / "staging" / uuid.uuid4().hex
             staging.mkdir()
@@ -504,6 +531,7 @@ class CheckpointStore:
                     "optimizer": optimizer.state_dict(),
                     "scheduler": scheduler.state_dict() if scheduler else None,
                     "rng": _rng_state(rng),
+                    "model_modes": model_modes,
                 },
                 staging / "runtime.pt",
             )
@@ -546,6 +574,7 @@ class CheckpointStore:
                 )
                 if (
                     model_artifacts != parent_model
+                    or saved["model_modes"] != model_modes
                     or not _state_equal(saved["optimizer"], optimizer.state_dict())
                     or not _state_equal(
                         saved["scheduler"],
@@ -600,6 +629,9 @@ class CheckpointStore:
             runtime = torch.load(
                 recovered.path / "runtime.pt", map_location="cpu", weights_only=False
             )
+            _validate_model_modes(runtime["model_modes"], model)
+            for name, module in model.named_modules():
+                module.training = runtime["model_modes"][name]
             optimizer.load_state_dict(runtime["optimizer"])
             if scheduler is not None:
                 scheduler.load_state_dict(runtime["scheduler"])

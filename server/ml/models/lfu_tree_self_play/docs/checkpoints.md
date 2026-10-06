@@ -27,7 +27,8 @@ experiment ID、generation、checksum を読込時に再検証します。
 `learning`、`evaluation`。初回 checkpoint は消費・評価なし、入力と同じ generation。
 学習 commit は直前 generation から 1 だけ進み、直前の消費 tuple に選択入力をその順序で
 追加します。入力 generation は直前モデルの generation、再消費は拒否します。
-同じ generation の commit は消費と model/optimizer/scheduler を変更できません。コストは非負有限値で単調増加。
+同じ generation の commit は消費と model/optimizer/scheduler および module ごとの
+training mode を変更できません。コストは非負有限値で単調増加。
 
 `EvaluationResult(checkpoint_id, opponent, start_pair, seed, result_json)` の最初の四項が
 再実行 identity。`result_json` は有限値の JSON 原結果です。新しい評価結果は同じ generation の確定した祖先 checkpoint を参照します。
@@ -37,6 +38,7 @@ experiment ID、generation、checksum を読込時に再検証します。
 `CheckpointManifest` は commit ID、parent ID、sequence、T02 の `experiment_id(config)`、
 正規化設定 JSON、入力 manifest、Progress、全 artifact checksum を結合します。
 モデルは Transformers の `save_pretrained`、追加状態は `runtime.pt` に保存します。
+model の全 named module の training mode（root と mixed train/eval mode を含む）、
 optimizer、任意 scheduler、四つの `RNGStreams`、global Python/NumPy/Torch CPU RNG、
 利用可能 CUDA 全 device と MPS RNG を含みます。device RNG の利用環境が変わった場合は
 再開を拒否します。seed からの再生成ではなく状態を復元します。
@@ -56,6 +58,8 @@ binding と expected_parent を検証し、初回 binding も同じ lock 内で�
 最新の検証済み snapshot を返します。不完全・破損候補は直前 snapshot に戻ります。
 設定不一致は fallback で隠さず実行を拒否します。有効な確定状態が一つもない場合も拒否します。確定履歴は削除しません。
 `restore()` は最新の検証済み snapshot に対し新しい model/optimizer/scheduler/RNG を作り、
+全 named module の mode map を厳密な bool と module 名の集合で検証し、
+再帰的な train() で混在 mode を上書きせず各 module.training を復元します。
 全状態の読込に成功した後に global RNG を復元します。factory 失敗時は global RNG を
 元に戻し、呼出側の既存 model/optimizer を変更しません。
 
