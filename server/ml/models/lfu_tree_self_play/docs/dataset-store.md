@@ -19,7 +19,12 @@ checksum)`. T09 should pin these identities in its own input manifest; this stor
 has no separate consumption position or mutable identity index.
 
 Pass the existing T02 `experiment_id(config)` without inventing another settings
-hash. Publish, load, and enumeration refuse another experiment ID. Generation
+hash. The first publication atomically pins `experiment.json` under the writer
+lock; every later append rechecks this immutable root binding before writing.
+Two first writers with different configurations cannot both append. Existing
+units in a root without a binding are validated before the binding is created.
+The binding is configuration metadata, not another identity or consumption index.
+Publish, load, enumeration, and quarantine refuse another bound experiment ID. Generation
 is immutable record metadata: `load(..., model_generation=N)` rejects a mismatch;
 enumeration with this argument filters verified historical units to generation N.
 Every published entry is validated before filtering so corruption fails closed.
@@ -40,7 +45,9 @@ Game states use explicit four-plane `(4, 8, 8)` numeric arrays, losslessly resto
 as float32 `GameState` instances. Tuple record fields are explicitly rebuilt.
 Unknown fields and versions, duplicate JSON keys, booleans in numeric fields,
 nonfinite values, invalid game transitions, incomplete leaves, mixed generations,
-and targets unequal to `aggregate_returns` are rejected. Checksums detect damage;
+and targets unequal to `aggregate_returns` are rejected. Every target mapping
+must be a JSON object, and every tuple field must be a JSON array before explicit
+reconstruction; arrays of key/value pairs and arbitrary iterable coercions reject. Checksums detect damage;
 semantic validation still applies when a damaged payload has a recalculated checksum.
 This is corruption detection, not authentication against an attacker rewriting files.
 
@@ -53,7 +60,9 @@ Corrupt existing data causes a failure instead of replacement.
 
 Cooperating writers use `fcntl.flock` on `writer.lock`. Validation precedes staging;
 the writer creates a unique staging file, writes/flushed/fsyncs it, fsyncs staging,
-then atomically renames to published and fsyncs both directories. Readers use only
+then atomically renames to published and fsyncs both directories. Identical replay fsyncs published and staging directories before success,
+finishing durability work interrupted after rename. Creating a new root also
+syncs each newly created directory entry through its parent. Readers use only
 published files and never acquire the writer lock. There is no multi-file unit
 whose metadata could become visible before its data.
 
