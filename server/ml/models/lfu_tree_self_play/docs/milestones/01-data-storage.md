@@ -42,6 +42,8 @@
 
 ## T10 強制停止・再開・重複防止試験
 
+実装と証拠：[G1 保存基盤の検証](../persistence-verification.md)。[test_recovery.py](../../tests/test_recovery.py) は実ストアに対し別 subprocess を強制終了し、再開後の dataset、確定消費、モデル・RNG、評価 identity と原結果を無停止 run と比較します。production collector/trainer/evaluator は対象外です。
+
 - 依存：T08、T09
 - 領域：障害注入、idempotency
 - 成果：収集、公開、学習、checkpoint確定、評価の各境界へ停止を注入できる。
