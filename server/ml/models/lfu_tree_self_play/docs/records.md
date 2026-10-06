@@ -1,6 +1,6 @@
 # 収集 record と共通検証器
 
-T06 は、A の完了した独立対局と B/C の全枝が完了した木を同じ意味モデルで表します。収集方式は `independent` / `tree` で、B/C の学習方式は record に持ち込みません。[T06 正本](milestones/01-data-storage.md#t06-木ノード辺兄弟群コストのrecord-schema) と [承認済み設計](../../../../../docs/superpowers/specs/2026-10-04-self-play-record-schema-design.md) が契約の根拠です。
+T06 は、A の完了した独立対局と B/C の全枝が完了した木を同じ意味モデルで表します。収集方式は `independent` / `tree` で、B/C の学習方式は record に持ち込みません。[T06 正本](milestones/01-data-storage.md#t06-木ノード辺兄弟群コストのrecord-schema) が契約の根拠です。
 
 ## 型と単位
 
