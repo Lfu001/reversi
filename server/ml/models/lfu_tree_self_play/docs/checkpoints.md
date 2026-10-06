@@ -6,8 +6,14 @@ T09 の API は `lfu_tree_self_play.checkpoints`。実データを trainer へ�
 store = CheckpointStore(root, config=config, dataset_store=dataset)
 inputs = store.pin_inputs(model_generation, start=0, stop=None)
 manifest = store.commit(
-    "update-1", model=model, optimizer=optimizer, scheduler=scheduler,
-    rng=streams, progress=progress, inputs=inputs, expected_parent="genesis",
+    "update-1",
+    model=model,
+    optimizer=optimizer,
+    scheduler=scheduler,
+    rng=streams,
+    progress=progress,
+    inputs=inputs,
+    expected_parent="genesis",
 )
 verified = store.recover()
 restored = store.restore(
