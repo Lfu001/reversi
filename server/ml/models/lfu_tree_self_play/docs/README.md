@@ -18,6 +18,7 @@
 
 完了単位の保存 API は [atomic dataset store](dataset-store.md) を参照してください。
 checkpoint と確定消費位置の API は [checkpoint・manifest](checkpoints.md) を参照してください。
+停止・再開と G1 の fixture 検証は [保存基盤の検証](persistence-verification.md) を参照してください。
 
 研究設計の原典と数値を確認する場合は、[実験計画（日本語）](experiment-plan.md)または[Experimental plan (English)](experiment-plan.en.md)を参照してください。
 
