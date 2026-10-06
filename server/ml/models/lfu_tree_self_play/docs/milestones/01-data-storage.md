@@ -24,6 +24,8 @@
 
 ## T08 完了単位のatomic dataset store
 
+実装・利用契約：[atomic dataset store](../dataset-store.md)。[検証 tests](../../tests/test_dataset_store.py) は完全単位の round-trip、checksum、隔離、並行読込と公開前後のプロセス停止を確認します。G1 全体の完了ではありません。
+
 - 依存：T06、T07
 - 領域：datasetの追記、公開、検証
 - 成果：完了した対局または木を一時領域からatomicに公開し、部分書込みを不可視にできる。
