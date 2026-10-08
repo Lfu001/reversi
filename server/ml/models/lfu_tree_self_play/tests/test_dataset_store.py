@@ -5,10 +5,13 @@ import json
 from dataclasses import fields, replace
 
 import pytest
+from pydantic import model_serializer
 from tests.test_returns import uneven_record
 
 from lfu_tree_self_play.dataset_codec import canonical_json, decode_unit, encode_unit
 from lfu_tree_self_play.dataset_store import DatasetStore
+from lfu_tree_self_play.game import GameState
+from lfu_tree_self_play.records import CollectionRecord, EdgeRecord
 from lfu_tree_self_play.returns import ReturnTargets, aggregate_returns
 
 
@@ -147,6 +150,131 @@ def test_publish_rejects_unknown_record_fields_before_binding(tmp_path, nested):
     else:
         record = record.model_copy(update={"unexpected": 1})
     store = DatasetStore(tmp_path, experiment_id=record.experiment_id, game=game)
+    with pytest.raises(ValueError):
+        store.publish(record, targets)
+    assert not (tmp_path / "experiment.json").exists()
+    assert not tuple((tmp_path / "published").iterdir())
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_publish_uses_canonical_record_instead_of_custom_serializers(tmp_path, nested):
+    class BadWireRecord(CollectionRecord):
+        @model_serializer(mode="wrap")
+        def serialize(self, handler):
+            wire = handler(self)
+            wire["edges"][0]["action"] = 63
+            return wire
+
+    class BadWireEdge(EdgeRecord):
+        @model_serializer(mode="wrap")
+        def serialize(self, handler):
+            wire = handler(self)
+            wire["action"] = 63
+            return wire
+
+    record, game = uneven_record()
+    targets = aggregate_returns(record, game)
+    if nested:
+        edge = record.edges[0]
+        bad_edge = BadWireEdge(
+            **{name: getattr(edge, name) for name in EdgeRecord.model_fields}
+        )
+        supplied = record.model_copy(update={"edges": (bad_edge,) + record.edges[1:]})
+    else:
+        supplied = BadWireRecord(
+            **{name: getattr(record, name) for name in CollectionRecord.model_fields}
+        )
+    store = DatasetStore(tmp_path, experiment_id=record.experiment_id, game=game)
+    identity = store.publish(supplied, targets)
+    unit = store.load(record.unit_id)
+    assert unit.record == record
+    assert unit.identity == identity
+    assert unit.record.edges[0].action == 0
+    assert identity.experiment_id == record.experiment_id
+    assert type(unit.record) is CollectionRecord
+    assert type(unit.record.edges[0]) is EdgeRecord
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_canonical_snapshot_rejects_subclass_unknown_fields(tmp_path, nested):
+    class ExtraRecord(CollectionRecord):
+        unexpected: int = 1
+
+    class ExtraEdge(EdgeRecord):
+        unexpected: int = 1
+
+    record, game = uneven_record()
+    targets = aggregate_returns(record, game)
+    if nested:
+        edge = record.edges[0]
+        bad_edge = ExtraEdge(
+            **{name: getattr(edge, name) for name in EdgeRecord.model_fields}
+        )
+        record = record.model_copy(update={"edges": (bad_edge,) + record.edges[1:]})
+    else:
+        record = ExtraRecord(
+            **{name: getattr(record, name) for name in CollectionRecord.model_fields}
+        )
+    store = DatasetStore(tmp_path, experiment_id=record.experiment_id, game=game)
+    with pytest.raises(ValueError):
+        store.publish(record, targets)
+    assert not (tmp_path / "experiment.json").exists()
+    assert not tuple((tmp_path / "published").iterdir())
+
+
+def test_state_subclass_cannot_spoof_terminal_result_before_binding(tmp_path):
+    from tests.test_records import build_record, position
+
+    from lfu_tree_self_play.game import ReversiPyGame
+
+    class FalseResultState(GameState):
+        @property
+        def black_result(self):
+            return 0
+
+    root = position(("BBBBBBBB",) * 8, 1, ())
+    record = build_record(
+        root=FalseResultState(root.observation), mode="independent", positions=()
+    )
+    game = ReversiPyGame()
+    targets = aggregate_returns(record, game)
+    store = DatasetStore(tmp_path, experiment_id=record.experiment_id, game=game)
+    with pytest.raises(ValueError, match="black result"):
+        store.publish(record, targets)
+    assert not (tmp_path / "experiment.json").exists()
+    assert not (tmp_path / "writer.lock").exists()
+    assert not tuple((tmp_path / "published").iterdir())
+
+
+@pytest.mark.parametrize("malformation", ["boolean", "rounding", "shape"])
+def test_state_snapshot_does_not_repair_invalid_observation(tmp_path, malformation):
+    import numpy as np
+    from tests.test_records import build_record, position
+
+    from lfu_tree_self_play.game import ReversiPyGame
+
+    class InvalidObservationState(GameState):
+        @property
+        def observation(self):
+            planes = super().observation
+            if malformation == "boolean":
+                return planes.astype(np.bool_)
+            if malformation == "rounding":
+                planes = planes.astype(np.float64)
+                planes[1, 0, 0] = 1e-50
+                return planes
+            return planes[:, :7]
+
+    root = position(("BBBBBBBB",) * 8, 1, ())
+    record = build_record(root=root, mode="independent", positions=())
+    targets = aggregate_returns(record, ReversiPyGame())
+    node = record.nodes[0].model_copy(
+        update={"state": InvalidObservationState(root.observation)}
+    )
+    record = record.model_copy(update={"nodes": (node,)})
+    store = DatasetStore(
+        tmp_path, experiment_id=record.experiment_id, game=ReversiPyGame()
+    )
     with pytest.raises(ValueError):
         store.publish(record, targets)
     assert not (tmp_path / "experiment.json").exists()

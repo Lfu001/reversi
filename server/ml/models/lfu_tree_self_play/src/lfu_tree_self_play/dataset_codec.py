@@ -35,6 +35,29 @@ def canonical_json(value: object) -> bytes:
     ).encode()
 
 
+def _canonical_record(record: CollectionRecord) -> CollectionRecord:
+    """Snapshot base-schema records and lossless exact game states for encoding."""
+    checked = CollectionRecord.model_validate(record)
+    nodes = []
+    for node in checked.nodes:
+        observation = node.state.observation
+        if not isinstance(observation, np.ndarray):
+            raise TypeError("state observation must be a numeric array")
+        planes = np.array(observation, copy=True)
+        if (
+            planes.shape != (4, 8, 8)
+            or planes.dtype.kind not in "iuf"
+            or not bool(np.isfinite(planes).all())
+        ):
+            raise ValueError("invalid state planes")
+        with np.errstate(over="ignore", invalid="ignore"):
+            converted = planes.astype(np.float32)
+        if not np.array_equal(planes, converted):
+            raise ValueError("state cannot be represented losslessly as float32")
+        nodes.append(node.model_copy(update={"state": GameState(converted)}))
+    return checked.model_copy(update={"nodes": tuple(nodes)})
+
+
 def _payload(record: CollectionRecord, targets: ReturnTargets, game: Game) -> dict:
     expected = aggregate_returns(record, game)
     target_wire = {}
@@ -68,6 +91,7 @@ def _encode_validated_unit(
     record: CollectionRecord, targets: ReturnTargets, game: Game
 ) -> tuple[bytes, UnitIdentity]:
     """Derive bytes and identity from one semantically validated wire payload."""
+    record = _canonical_record(record)
     payload = _payload(record, targets, game)
     checksum = hashlib.sha256(canonical_json(payload)).hexdigest()
     wire = payload["record"]
