@@ -54,6 +54,10 @@ This is corruption detection, not authentication against an attacker rewriting f
 Encoding copies all six supplied target mappings into ordinary dictionaries,
 requires exact Python string keys and finite Python int/float values excluding
 booleans, and compares each dictionary with freshly aggregated validated returns.
+It first snapshots the base record schema and rebuilds exact `GameState` instances
+from copied numeric observations, rejecting invalid planes or lossy float32
+conversion. Aggregation and serialization use that same snapshot, so custom
+record serializers or state properties cannot change persisted game semantics.
 Publication obtains bytes and identity from that same validated payload, without
 decoding its own new bytes. Loading, enumeration, and replay of an existing file
 still perform full checksum, record, game, and target validation.
