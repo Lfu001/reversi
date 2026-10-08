@@ -1,14 +1,188 @@
 """Complete-unit persistence contracts."""
 
+import hashlib
 import json
-from dataclasses import replace
+from dataclasses import fields, replace
 
 import pytest
 from tests.test_returns import uneven_record
 
-from lfu_tree_self_play.dataset_codec import decode_unit, encode_unit
+from lfu_tree_self_play.dataset_codec import canonical_json, decode_unit, encode_unit
 from lfu_tree_self_play.dataset_store import DatasetStore
-from lfu_tree_self_play.returns import aggregate_returns
+from lfu_tree_self_play.returns import ReturnTargets, aggregate_returns
+
+
+class EqualitySpoofTargets:
+    def __init__(self, **values):
+        self.__dict__.update(values)
+
+    def __eq__(self, other):
+        return True
+
+
+def _spoof_targets(targets, field_name, mapping):
+    values = {field.name: getattr(targets, field.name) for field in fields(targets)}
+    values[field_name] = mapping
+    return EqualitySpoofTargets(**values)
+
+
+def test_publish_replays_each_edge_once_with_supplied_targets(tmp_path, monkeypatch):
+    import lfu_tree_self_play.returns as module
+
+    record, game = uneven_record()
+    targets = aggregate_returns(record, game)
+    validate = module.validate_record
+    step = game.step
+    validations, transitions = [], []
+
+    def tracked_validation(record, game):
+        validations.append(record.unit_id)
+        return validate(record, game)
+
+    def tracked_step(state, action):
+        transitions.append(action)
+        return step(state, action)
+
+    monkeypatch.setattr(module, "validate_record", tracked_validation)
+    monkeypatch.setattr(game, "step", tracked_step)
+    store = DatasetStore(tmp_path, experiment_id=record.experiment_id, game=game)
+    identity = store.publish(record, targets)
+    assert validations == [record.unit_id]
+    assert len(transitions) == len(record.edges)
+    assert (tmp_path / "published" / f"{record.unit_id}.json").is_file()
+    assert identity.unit_id == record.unit_id
+
+
+def test_published_bytes_and_identity_match_version_one_codec(tmp_path):
+    record, game = uneven_record()
+    targets = aggregate_returns(record, game)
+    data = encode_unit(record, targets, game)
+    # Captured from the existing version-1 codec before the publication repair.
+    assert len(data) == 12284
+    assert hashlib.sha256(data).hexdigest() == (
+        "d4dc20f6d98ce630d15c0170a5e50bafa3c237a890296df4c5cf319e43ed53b4"
+    )
+    expected = decode_unit(data, game).identity
+    assert expected.checksum == (
+        "a077c7ca91df7e7576ebf3aee8f9c8a157d449b92957857d911fe7a76103d4da"
+    )
+    store = DatasetStore(tmp_path, experiment_id=record.experiment_id, game=game)
+    assert store.publish(record, targets) == expected
+    assert (tmp_path / "published" / f"{record.unit_id}.json").read_bytes() == data
+
+
+@pytest.mark.parametrize("field_name", [field.name for field in fields(ReturnTargets)])
+def test_equality_spoof_cannot_encode_mismatched_targets(field_name):
+    record, game = uneven_record()
+    targets = aggregate_returns(record, game)
+    mapping = dict(getattr(targets, field_name))
+    mapping[next(iter(mapping))] = 0.125
+    supplied = _spoof_targets(targets, field_name, mapping)
+    with pytest.raises(ValueError, match="targets"):
+        encode_unit(record, supplied, game)
+
+
+def test_equality_spoof_rejection_precedes_root_binding(tmp_path):
+    record, game = uneven_record()
+    targets = aggregate_returns(record, game)
+    supplied = _spoof_targets(targets, "node_weights", {"root": 0.125})
+    store = DatasetStore(tmp_path, experiment_id=record.experiment_id, game=game)
+    with pytest.raises(ValueError, match="targets"):
+        store.publish(record, supplied)
+    assert not (tmp_path / "experiment.json").exists()
+    assert not (tmp_path / "writer.lock").exists()
+    assert not tuple((tmp_path / "published").iterdir())
+    assert not tuple((tmp_path / "staging").iterdir())
+
+
+class IterablePairs:
+    def __iter__(self):
+        return iter((("root", 1.0),))
+
+    def values(self):
+        return (1.0,)
+
+
+class StringSubclass(str):
+    pass
+
+
+class FloatSubclass(float):
+    pass
+
+
+@pytest.mark.parametrize(
+    "mapping",
+    [
+        IterablePairs(),
+        [("root", 1.0)],
+        None,
+        {1: 1.0},
+        {StringSubclass("root"): 1.0},
+        {"root": float("nan")},
+        {"root": float("inf")},
+        {"root": float("-inf")},
+        {"root": True},
+        {"root": "1.0"},
+        {"root": FloatSubclass(1.0)},
+    ],
+)
+def test_encoder_rejects_noncanonical_target_maps(mapping):
+    record, game = uneven_record()
+    targets = aggregate_returns(record, game)
+    supplied = _spoof_targets(targets, "node_weights", mapping)
+    with pytest.raises((TypeError, ValueError), match="target"):
+        encode_unit(record, supplied, game)
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_publish_rejects_unknown_record_fields_before_binding(tmp_path, nested):
+    record, game = uneven_record()
+    targets = aggregate_returns(record, game)
+    if nested:
+        nodes = (record.nodes[0].model_copy(update={"unexpected": 1}),) + record.nodes[
+            1:
+        ]
+        record = record.model_copy(update={"nodes": nodes})
+    else:
+        record = record.model_copy(update={"unexpected": 1})
+    store = DatasetStore(tmp_path, experiment_id=record.experiment_id, game=game)
+    with pytest.raises(ValueError):
+        store.publish(record, targets)
+    assert not (tmp_path / "experiment.json").exists()
+    assert not tuple((tmp_path / "published").iterdir())
+
+
+@pytest.mark.parametrize("operation", ["replay", "load", "enumerate"])
+@pytest.mark.parametrize("mutation", ["checksum", "targets", "transition", "extra"])
+def test_existing_corrupt_units_reject_all_read_paths(tmp_path, operation, mutation):
+    record, game = uneven_record()
+    targets = aggregate_returns(record, game)
+    store = DatasetStore(tmp_path, experiment_id=record.experiment_id, game=game)
+    store.publish(record, targets)
+    path = tmp_path / "published" / f"{record.unit_id}.json"
+    envelope = json.loads(path.read_bytes())
+    payload = envelope["payload"]
+    if mutation == "checksum":
+        payload["record"]["round_id"] = "tampered"
+    else:
+        if mutation == "targets":
+            payload["targets"]["node_weights"]["root"] = 0.125
+        elif mutation == "transition":
+            payload["record"]["edges"][0]["action"] = 63
+        else:
+            payload["record"]["nodes"][0]["unexpected"] = 1
+        envelope["checksum"] = hashlib.sha256(canonical_json(payload)).hexdigest()
+    tampered = canonical_json(envelope)
+    path.write_bytes(tampered)
+    with pytest.raises(ValueError):
+        if operation == "replay":
+            store.publish(record, targets)
+        elif operation == "load":
+            store.load(record.unit_id)
+        else:
+            store.enumerate_units()
+    assert path.read_bytes() == tampered
 
 
 def test_round_trip_and_replay(tmp_path):
