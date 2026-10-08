@@ -51,6 +51,13 @@ reconstruction; arrays of key/value pairs and arbitrary iterable coercions rejec
 semantic validation still applies when a damaged payload has a recalculated checksum.
 This is corruption detection, not authentication against an attacker rewriting files.
 
+Encoding copies all six supplied target mappings into ordinary dictionaries,
+requires exact Python string keys and finite Python int/float values excluding
+booleans, and compares each dictionary with freshly aggregated validated returns.
+Publication obtains bytes and identity from that same validated payload, without
+decoding its own new bytes. Loading, enumeration, and replay of an existing file
+still perform full checksum, record, game, and target validation.
+
 Unit IDs must match `[A-Za-z0-9][A-Za-z0-9_.-]{0,127}`. Repeating an ID with the same
 canonical payload returns the original identity. A different payload is a replay
 conflict and never overwrites the original, including changes to round metadata.

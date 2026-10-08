@@ -11,9 +11,9 @@ from pathlib import Path
 from .dataset_codec import (
     DatasetUnit,
     UnitIdentity,
+    _encode_validated_unit,
     canonical_json,
     decode_unit,
-    encode_unit,
 )
 from .game import Game
 from .records import CollectionRecord
@@ -104,13 +104,14 @@ class DatasetStore:
 
     def publish(self, record: CollectionRecord, targets: ReturnTargets) -> UnitIdentity:
         destination = self._path(record.unit_id)
-        data = encode_unit(record, targets, self.game)
-        unit = self._check(decode_unit(data, self.game))
+        data, identity = _encode_validated_unit(record, targets, self.game)
+        if identity.experiment_id != self.experiment_id:
+            raise ValueError("experiment/configuration mismatch")
         with self._writer():
             self._bind_root()
             if destination.exists():
                 existing = self.load(record.unit_id)
-                if existing.identity != unit.identity:
+                if existing.identity != identity:
                     raise ValueError("unit ID replay conflict")
                 _sync_directory(destination.parent)
                 _sync_directory(self.root / "staging")
@@ -124,7 +125,7 @@ class DatasetStore:
             os.rename(staging, destination)
             _sync_directory(destination.parent)
             _sync_directory(staging.parent)
-        return unit.identity
+        return identity
 
     def load(self, unit_id: str, *, model_generation: int | None = None) -> DatasetUnit:
         self._check_root()

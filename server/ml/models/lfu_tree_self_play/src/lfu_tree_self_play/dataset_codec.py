@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, fields
+from math import isfinite
 
 import numpy as np
 
@@ -35,29 +37,49 @@ def canonical_json(value: object) -> bytes:
 
 def _payload(record: CollectionRecord, targets: ReturnTargets, game: Game) -> dict:
     expected = aggregate_returns(record, game)
+    target_wire = {}
     for field in fields(ReturnTargets):
-        mapping = getattr(targets, field.name)
-        if any(type(v) not in (int, float) for v in mapping.values()):
+        supplied = getattr(targets, field.name)
+        if not isinstance(supplied, Mapping):
+            raise TypeError("target mappings must be mappings")
+        mapping = dict(supplied)
+        if any(type(key) is not str for key in mapping):
+            raise ValueError("target mapping keys must be strings")
+        if any(
+            type(value) not in (int, float)
+            or (type(value) is float and not isfinite(value))
+            for value in mapping.values()
+        ):
             raise ValueError("targets require finite real numbers excluding bool")
-    if expected != targets:
-        raise ValueError("targets do not match validated record")
+        if dict(getattr(expected, field.name)) != mapping:
+            raise ValueError("targets do not match validated record")
+        target_wire[field.name] = mapping
     wire = record.model_dump(mode="python")
     for node, original in zip(wire["nodes"], record.nodes, strict=True):
         node["state"] = original.state.observation.tolist()
     return {
         "version": 1,
         "record": wire,
-        "targets": {
-            field.name: dict(getattr(targets, field.name))
-            for field in fields(ReturnTargets)
-        },
+        "targets": target_wire,
     }
 
 
-def encode_unit(record: CollectionRecord, targets: ReturnTargets, game: Game) -> bytes:
+def _encode_validated_unit(
+    record: CollectionRecord, targets: ReturnTargets, game: Game
+) -> tuple[bytes, UnitIdentity]:
+    """Derive bytes and identity from one semantically validated wire payload."""
     payload = _payload(record, targets, game)
     checksum = hashlib.sha256(canonical_json(payload)).hexdigest()
-    return canonical_json({"payload": payload, "checksum": checksum})
+    wire = payload["record"]
+    identity = UnitIdentity(
+        wire["unit_id"], wire["experiment_id"], wire["model_generation"], checksum
+    )
+    return canonical_json({"payload": payload, "checksum": checksum}), identity
+
+
+def encode_unit(record: CollectionRecord, targets: ReturnTargets, game: Game) -> bytes:
+    data, _ = _encode_validated_unit(record, targets, game)
+    return data
 
 
 def _pairs(pairs):
