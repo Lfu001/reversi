@@ -33,6 +33,8 @@
 
 ## T09 checkpoint・manifest・消費位置の整合保存
 
+実装と利用契約：[checkpoint と消費位置](../checkpoints.md)。API は [checkpoints.py](../../src/lfu_tree_self_play/checkpoints.py)、境界・round-trip 検証は [test_checkpoints.py](../../tests/test_checkpoints.py)。T09 の実装であり、G1 全体の完了ではありません。
+
 - 依存：T02、T08
 - 領域：モデル世代、optimizer、RNG、処理段階
 - 成果：モデルとデータ消費位置を同じmanifestで確定し、未確定更新を消費済みにしない。
