@@ -18,7 +18,7 @@ default-members = [
 actix-cors = "0.7.1"
 actix-web = "4.11.0"
 actix-ws = "0.3.0"
-async-trait = "0.1.89"
+async-trait = "0.1.92"
 base64 = "0.22.1"
 common = { version = "0.1.0", path = "common" }
 env_logger = "0.11.8"
