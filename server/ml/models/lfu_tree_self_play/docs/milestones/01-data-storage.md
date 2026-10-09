@@ -15,6 +15,8 @@
 
 ## T07 終局リターン集約と経路重み
 
+実装と利用契約：[終局リターン集約と経路重み](../returns.md)。API は [aggregate_returns / ReturnTargets](../../src/lfu_tree_self_play/returns.py)、手計算と境界条件の検証は [test_returns.py](../../tests/test_returns.py)。T07 の実装であり、G1 全体の完了ではありません。
+
 - 依存：T05、T06
 - 領域：教師生成、木の集約
 - 成果：黒視点を保った再帰的な条件付き平均と、分岐幅に応じた経路重みを計算できる。
