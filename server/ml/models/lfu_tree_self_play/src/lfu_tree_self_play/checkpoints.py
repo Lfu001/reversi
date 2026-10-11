@@ -1,4 +1,4 @@
-"""Immutable local checkpoint transactions; no production training integration."""
+"""Commit model state, input consumption, and evaluation results atomically."""
 
 import fcntl
 import hashlib

@@ -1,56 +1,31 @@
-# 木状自己対戦学習・実験ドキュメント
+# 利用ガイド
 
-このディレクトリは、[改訂済み実験計画](experiment-plan.md)を実行可能な研究開発タスクへ分割した入口です。詳細は必要な段階の文書だけを参照してください。
+セットアップは [パッケージの README](../README.md) を参照してください。Python API は `lfu_tree_self_play` から import します。
 
-確認実験の結果はまだありません。実装済みタスクの利用方法は各実装ガイドを参照してください。
+## 目的から探す
 
-## 最初に読む文書
+| 目的 | ガイド |
+| --- | --- |
+| 実験設定を検証し、用途別の乱数を用意する | [設定と乱数の管理](configuration.md) |
+| 局面から合法手確率と value を得る | [Policy/value モデル](model.md) |
+| 独立対局や分岐した木を表し、整合性を確認する | [収集 record と共通検証器](records.md) |
+| 終局結果から教師と経路重みを計算する | [終局リターンと経路重み](returns.md) |
+| 完了した対局・木を保存し、モデル世代別に読む | [自己対戦データの保存と読込](dataset-store.md) |
+| モデル更新と入力の消費を一緒に確定する | [チェックポイントと消費位置の保存](checkpoints.md) |
+| 停止した処理を復旧し、未確定の処理を再試行する | [停止後の復旧と再試行](recovery.md) |
+| 方策勾配の数値検証やパッケージのテストを実行する | [検証コマンド](verification.md) |
 
-1. [研究設計](research-design.md)：研究の問い、比較群、主張の範囲
-2. [実行モデル](execution-model.md)：収集、学習、評価、再開の流れ
-3. [検証ゲート](verification-gates.md)：次工程へ進む条件
+## データを扱う順序
 
-モデル API の詳細は [Policy/value モデル](model.md) を参照してください。
+1. `load_config` で設定を読み、`experiment_id` で実験を識別します。
+2. ゲームの遷移と抽出時のモデル出力を `CollectionRecord` に記録します。保存する単位は独立対局一つ、または全葉が終局した木一つです。
+3. `validate_record` で整合性を確認し、`aggregate_returns` で教師と重みを計算します。
+4. `DatasetStore.publish` で公開します。未完了の収集データは公開しません。
+5. `CheckpointStore.pin_inputs` で入力を固定し、モデル更新後に `commit` でモデル状態と消費位置を確定します。
+6. 再開時は `recover` と `restore` を使い、確定済みの消費・評価を引き継ぎます。
 
-実装の利用方法は [設定と乱数の管理](configuration.md)、[期待リターンと方策勾配の検証](verification.md) を参照してください。
+収集・学習・評価の処理ループは呼出側が用意します。保存 API は実行順序を制御する orchestrator ではありません。
 
-収集 record の契約は [record と共通検証器](records.md)、教師生成は [終局リターン集約と経路重み](returns.md) を参照してください。
+## 研究計画
 
-完了単位の保存 API は [atomic dataset store](dataset-store.md) を参照してください。
-checkpoint と確定消費位置の API は [checkpoint・manifest](checkpoints.md) を参照してください。
-停止・再開と G1 の fixture 検証は [保存基盤の検証](persistence-verification.md) を参照してください。
-
-研究設計の原典と数値を確認する場合は、[実験計画（日本語）](experiment-plan.md)または[Experimental plan (English)](experiment-plan.en.md)を参照してください。
-
-## マイルストーン
-
-| 段階 | 内容 | タスク | 開始条件 |
-|---|---|---:|---|
-| [M0](milestones/00-foundation.md) | 新規基盤と意味仕様 | T01〜T05 | なし |
-| [M1](milestones/01-data-storage.md) | データモデルと永続化 | T06〜T10 | M0の関連成果 |
-| [M2](milestones/02-collection.md) | A/B/Cデータ収集 | T11〜T17 | G0、M1の関連成果 |
-| [M3](milestones/03-learning.md) | A/B/C学習 | T18〜T22 | G0、G1 |
-| [M4](milestones/04-evaluation.md) | 評価と統計 | T23〜T28 | M0のモデル・ゲーム契約 |
-| [M5](milestones/05-pilot.md) | 実行制御とPilot | T29〜T35 | G1、M2〜M4 |
-| [M6](milestones/06-abc-study.md) | A/B/C本実験 | T36〜T39 | G4 |
-| [M7](milestones/07-alphazero.md) | AlphaZero型D | T40〜T45 | G0、D本比較はM6完了後 |
-| [M8](milestones/08-extensions.md) | 結果依存の拡張 | T46〜T51 | 基礎実験の結果 |
-| [M9](milestones/09-reproducibility.md) | 再現と報告 | T52〜T54 | 実施対象の実験完了 |
-
-基本順序は `M0 → M1 → M2/M3 → M4 → M5 → M6 → M7 → M8 → M9` です。M2とM3の一部は保存済みfixtureを使って並行できますが、実データとの接続はG1通過後に限ります。M7の参照MCTSはG0通過後に着手できますが、Dの本比較はM6とG6の完了後に行います。
-
-## 文書の使い方
-
-- 全体判断をする場合は、このREADMEと検証ゲートだけを確認します。
-- 実装やレビューを始める場合は、対象マイルストーンだけを開きます。
-- 個別タスクの設計時に型、関数、ファイル、デザインパターンを決めます。この文書群では固定しません。
-- M8の全項目を一覧へ含めますが、複数の拡張を一つのrunへ同時投入しません。
-
-## 全体完了の定義
-
-- G0〜G8の結果が保存されている。
-- A/B/C/Dの本実験が、成功、未到達、不成立のいずれかとして完結している。
-- 実施対象となった拡張が、一要因ずつ基礎条件と比較されている。
-- 任意の結果を設定、dataset、checkpoint、評価対局、集計入力まで追跡できる。
-- 代表runと図表を保存済みmanifestから再生成できる。
-- 仮説ごとの結論と主張できない範囲が最終報告に明記されている。
+木状自己対戦の仮説、比較群、実験条件、開発タスクは [研究計画の一覧](research/README.md) にまとめています。計画には今後の開発項目も含まれます。利用できる API とその契約は、この利用ガイドを参照してください。

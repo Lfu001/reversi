@@ -1,4 +1,4 @@
-"""Minimal command-line checks for experiment configuration files."""
+"""Command-line validation of experiment settings and policy gradients."""
 
 import argparse
 import json

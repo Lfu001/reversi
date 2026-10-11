@@ -1,4 +1,4 @@
-"""Algebra and path-weight invariants for the G0 gate."""
+"""Check reward algebra, path weights, and shared-prefix loss equivalence."""
 
 import random
 

@@ -1,100 +1,88 @@
-# 完了単位を原子的に保存する dataset store（T08）
+# 自己対戦データの保存と読込
 
-`DatasetStore` は、完了した独立対局と全葉が終局した木を永続化します。
-保存データを trainer へ接続する機能は含みません。G1 は別のゲートとして残します。
+`DatasetStore` は、完了した独立対局と全葉が終局した木を保存します。一つの対局・木を「単位」と呼び、record と教師を一緒に公開します。reader に見える状態は、単位が存在しないか、完全な単位が存在するかのいずれかです。
+
+## 保存する
+
+以下の関数は、呼出側が作成した [CollectionRecord](records.md) と設定ファイルを受け取ります。record の `experiment_id` は設定から得た ID と一致する必要があります。
 
 ```python
-store = DatasetStore(root, experiment_id=experiment_id(config), game=game)
-identity = store.publish(record, aggregate_returns(record, game))
-unit = store.load(record.unit_id, model_generation=record.model_generation)
-identities = store.enumerate_units(model_generation=record.model_generation)
-quarantined_paths = store.quarantine_incomplete()
+from pathlib import Path
+
+from lfu_tree_self_play.config import experiment_id, load_config
+from lfu_tree_self_play.dataset_store import DatasetStore
+from lfu_tree_self_play.game import ReversiPyGame
+from lfu_tree_self_play.records import CollectionRecord
+from lfu_tree_self_play.returns import aggregate_returns
+
+
+def save_record(record: CollectionRecord, config_path: Path, root: Path):
+    config = load_config(config_path)
+    game = ReversiPyGame()
+    store = DatasetStore(root, experiment_id=experiment_id(config), game=game)
+    targets = aggregate_returns(record, game)
+    identity = store.publish(record, targets)
+    return store, identity
 ```
 
-store は `lfu_tree_self_play.dataset_store` から、明示的な codec API
-`encode_unit(record, targets, game) -> bytes` / `decode_unit(data, game) -> DatasetUnit`
-は `lfu_tree_self_play.dataset_codec` から import します。`DatasetUnit` は `record`、
-`targets`、不変の `UnitIdentity(unit_id, experiment_id, model_generation,
-checksum)` を保持します。T09 は自身の入力 manifest でこれらの identity を固定します。
-この store には独立した消費位置や、変更可能な identity index はありません。
+`publish` は record の整合性と、六つの target mapping が再計算した値に一致することを検証します。未完了の葉、不正なゲーム遷移、世代混在、非有限値を含む単位は保存できません。
 
-設定用の別の hash は作らず、既存の T02 `experiment_id(config)` を渡します。
-初回公開時に writer lock 内で `experiment.json` を原子的に固定し、以後の追加でも
-書き込み前に root の不変な設定 binding を再確認します。異なる設定の二つの初回 writer が
-両方とも追加することはできません。binding のない root に既存 unit がある場合は、
-binding の作成前にそれらを検証します。binding は設定 metadata であり、追加の identity や
-消費 index ではありません。公開・読込・列挙・隔離は、binding と異なる experiment ID を拒否します。
-generation は record の不変な metadata です。`load(..., model_generation=N)` は
-不一致を拒否し、この引数付きの列挙は検証済みの過去 unit を generation N に絞ります。
-絞り込み前に公開済みの全エントリーを検証し、破損があれば処理を拒否します。
-列挙は ID の辞書順に並んだ snapshot を返します。同時に公開された unit は次回の呼出しで
-現れることがあります。呼出側の manifest は返された identity を固定する必要があり、
-directory の列挙自体を入力 transaction とみなすことはできません。
+保存先は最初の公開時に一つの experiment ID に固定されます。設定を変えた実験には別の保存先を使ってください。単位の ID は `[A-Za-z0-9][A-Za-z0-9_.-]{0,127}` に一致する必要があります。
 
-## 保存形式と完全性の契約
+## 読み込む・列挙する
 
-各 `published/<unit_id>.json` ファイルは version 1 の envelope 一つで、field は
-`payload` と `checksum` のみです。payload の field は `version`、`record`、`targets` のみです。
-checksum は `json.dumps(payload, sort_keys=True,
-separators=(",", ":"), allow_nan=False).encode()` が生成する bytes に対する小文字の SHA256 です
-（UTF-8、`ensure_ascii=True` は既定値）。envelope の checksum 自体はこの bytes に含めません。
-配列は record の順序を維持し、target 辞書のキーは JSON の正規化でソートします。
+`store` は上の関数で返されたストア、`identity` は公開済み単位の識別情報です。
 
-局面は明示的な 4 plane の `(4, 8, 8)` 数値配列で保存し、float32 の `GameState`
-インスタンスへ損失なく復元します。record の tuple field も明示的に再構築します。
-未知の field・version、JSON キーの重複、数値 field の bool、非有限値、不正なゲーム遷移、
-未完了の葉、世代混在、`aggregate_returns` と一致しない target は拒否します。
-明示的な再構築前に、各 target mapping は JSON object、各 tuple field は JSON array
-である必要があります。キーと値の組を並べた配列や、任意の iterable からの型変換は拒否します。
-checksum は破損を検出します。破損した payload の checksum が再計算されていても、
-意味検証を行います。これは破損検出であり、ファイルを書き換える攻撃者に対する認証ではありません。
+```python
+unit = store.load(identity.unit_id, model_generation=identity.model_generation)
+record = unit.record
+targets = unit.targets
+identities = store.enumerate_units(model_generation=identity.model_generation)
+```
 
-encode では、渡された六つの target mapping をすべて通常の辞書へコピーします。
-キーは Python の組込み文字列型そのもの、値は bool を除く有限な Python の int / float
-そのものであることを要求し、各辞書を新たに検証・集約したリターンと比較します。
-最初に基本の record schema に従う snapshot を作り、コピーした数値観測から
-`GameState` 型そのもののインスタンスを再構築します。不正な plane や、損失を伴う
-float32 変換は拒否します。集約とシリアライズは同じ snapshot を使うため、独自の record
-serializer や state property が永続化されるゲームの意味を変えることはできません。
-公開時の bytes と identity は、この同じ検証済み payload から取得します。
-新たに生成した bytes を公開処理内で decode し直しません。既存ファイルの読込・列挙・replay では、
-引き続き checksum、record、ゲーム、target の全検証を行います。
+`DatasetUnit` は `record`、`targets`、不変の `UnitIdentity(unit_id, experiment_id, model_generation, checksum)` を持ちます。`load` の generation 指定は、不一致を拒否するために使います。`enumerate_units` は指定した generation の identity を ID の辞書順で返します。指定を省略すると全世代が対象です。
 
-unit ID は `[A-Za-z0-9][A-Za-z0-9_.-]{0,127}` に一致する必要があります。
-同じ ID を同じ正規化 payload で繰り返すと、元の identity を返します。
-payload が異なる場合は replay conflict となり、元のデータを上書きしません。
-round metadata の変更も conflict に含みます。既存データが破損している場合は、
-置き換えずに失敗として拒否します。
+読込・列挙では checksum と record・ゲーム・target の意味を再検証します。列挙は世代で絞る前に全公開単位を検証するため、対象外の世代に破損があっても失敗します。同時に公開された単位は次回の列挙で現れる場合があります。学習入力の固定には [CheckpointStore.pin_inputs](checkpoints.md) を使ってください。
 
-## 公開と復旧
+## エラーと再試行
 
-協調する writer は `writer.lock` に対して `fcntl.flock` を使います。
-検証は staging より先に行います。writer は一意な staging ファイルを作り、
-書き込み・flush・fsync を行い、staging directory を fsync した後、published へ原子的に
-rename し、両方の directory を fsync します。同一内容の replay でも、成功を返す前に
-published と staging directory を fsync し、rename 後に中断された永続性の処理を完了します。
-新しい root を作成する場合も、新たに作成した各 directory entry を親 directory の sync で
-確定します。reader は公開済みファイルだけを使い、writer lock を取得しません。
-データより先に metadata が可視になるような、複数ファイルにまたがる unit はありません。
+| 状況 | 扱い |
+| --- | --- |
+| 同じ ID・同じ正規化内容を再公開 | 元の identity を返す |
+| 同じ ID・異なる内容を公開 | `ValueError`。既存データは上書きしない |
+| experiment ID・指定 generation の不一致 | `ValueError`。保存先・入力設定を確認する |
+| 不正な record・target・保存形式、checksum 不一致 | `ValueError` の派生を含む検証エラー。受理しない |
+| 存在しない ID の読込 | `FileNotFoundError` |
+| ファイルへのアクセス・同期の失敗 | `OSError`。原因を解消し、同じ ID・内容で再試行する |
 
-rename 前にプロセスが停止すると、不可視の staging ファイルが残ります。
-明示的な `quarantine_incomplete()` は writer lock を保持し、放置された staging entry を
-一意な quarantine path へ移動して directory を sync します。これらを公開済みデータへ
-昇格することはありません。収集を再実行すると、同じ ID を公開できます。
-rename 後にプロセスが停止した場合は、完全な unit が可視のまま残り、replay は成功します。
-隔離処理は、公開済みデータの破損や互換性のない設定を、暗黙に dataset の外へ移動しません。
+round metadata の変更も異なる内容とみなします。公開中に停止した場合、同じ ID と同じ内容で再試行できます。未公開ファイルの隔離と再収集は [復旧ガイド](recovery.md) を参照してください。
 
-この保証は、flock・atomic rename・fsync が機能する一つのローカル filesystem 上で
-協調する POSIX writer に適用します。network filesystem、悪意ある外部のファイル変更、
-物理的に故障した storage は契約の対象外です。公開が成功した時点で fsync は完了していますが、
-プロセス停止の tests はハードウェアの電源断時の動作を保証するものではありません。
-過去の世代が特定の学習更新に適しているかどうかを判断する方針も含みません。
+## 保存形式
 
-## 検証
+保存先は次の構成です。公開済みファイルは直接編集しないでください。
 
-`PYTHONPATH=src python -m pytest tests/test_dataset_store.py -q` は、厳密な round-trip
-（不均等な木、重複標本、H=0/H=1、独立対局の強制パス）、checksum と checksum を再計算した
-意味上の破損、replay/conflict、設定・世代の不一致拒否、安全でない ID、放置された staging の
-隔離、rename の直前・直後での子プロセス停止を検証します。子 writer が一時停止している間も
-writer は flock を保持し、親は繰り返し読込を行います。親から見えるのは、unit が存在しない状態か、
-全検証を通過した完全な unit です。
+```text
+experiment.json          実験 ID の固定
+writer.lock              writer 間の排他
+published/<unit_id>.json 公開済み単位
+staging/                 公開前の一時ファイル
+quarantine/              隔離した未公開ファイル
+```
+
+各 JSON は version 1 の envelope で、field は `payload` と `checksum` です。payload の field は `version`、`record`、`targets` です。checksum は次の正規化 bytes に対する小文字の SHA256 です。
+
+```python
+json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+```
+
+UTF-8、既定の `ensure_ascii=True` を使います。record の配列順は保持します。局面は `(4, 8, 8)` の四つの plane として保存し、float32 の `GameState` へ損失なく復元します。tuple field も復元します。
+
+ファイルでは未知 field・version、JSON キー重複、bool を数値として使うこと、不正な array/object を拒否します。checksum を再計算したファイルにも意味検証を行います。checksum は破損検出用で、改ざんに対する認証ではありません。
+
+ファイル以外との受渡しには `lfu_tree_self_play.dataset_codec` の `encode_unit(record, targets, game) -> bytes` と `decode_unit(data, game) -> DatasetUnit` を使えます。encode は record・局面・target の独立した snapshot を作り、検証した内容を保存します。
+
+## 保存保証の範囲
+
+協調する POSIX writer が、一つのローカルファイルシステムで `flock`、atomic rename、`fsync` を利用することが前提です。writer は排他中に一時ファイルを書き、同期後に rename で公開します。成功を返すまでにファイルと関連 directory の同期を完了します。reader は writer lock を取りません。
+
+network filesystem、外部からのファイル変更、storage の物理故障は対象外です。プロセス停止からの復旧保証を、ハードウェアの電源断耐性として解釈しないでください。古いモデル世代のデータを学習に使う判断は呼出側が行います。

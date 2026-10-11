@@ -1,4 +1,4 @@
-"""Saved G0 evidence includes each required numerical comparison."""
+"""Numerical verification reports retain estimates, tolerances, and pass status."""
 
 from lfu_tree_self_play.verification import verify_policy_gradient
 
