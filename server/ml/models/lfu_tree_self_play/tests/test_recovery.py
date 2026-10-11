@@ -5,6 +5,7 @@ import os
 import random
 import subprocess
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -14,6 +15,8 @@ from omegaconf import OmegaConf
 from tests.test_records import build_record, position
 from tests.test_returns import uneven_record
 
+from lfu_tree_self_play import checkpoints as checkpoint_module
+from lfu_tree_self_play import runtime_codec
 from lfu_tree_self_play.checkpoints import CheckpointStore, EvaluationResult, Progress
 from lfu_tree_self_play.config import experiment_id
 from lfu_tree_self_play.dataset_codec import encode_unit
@@ -22,6 +25,7 @@ from lfu_tree_self_play.game import ReversiPyGame
 from lfu_tree_self_play.model import PolicyValueConfig, PolicyValueModel
 from lfu_tree_self_play.returns import aggregate_returns
 from lfu_tree_self_play.rng import create_rng_streams
+from lfu_tree_self_play.runtime_codec import load_runtime, save_runtime
 
 BOUNDARIES = (
     "collection-partial",
@@ -29,6 +33,7 @@ BOUNDARIES = (
     "publication-before",
     "publication-after",
     "learning",
+    "checkpoint-between-artifacts",
     "checkpoint-staging",
     "checkpoint-before",
     "checkpoint-after",
@@ -137,14 +142,19 @@ def run_fixture(root, boundary):
         optimizer.step()
         scheduler.step()
         stop("learning")
-        save = torch.save
+        write_runtime = checkpoint_module.save_runtime
+        write_tensors = runtime_codec.save_file
 
-        def save_runtime(value, path, *args, **kwargs):
-            save(value, path, *args, **kwargs)
-            if Path(path).name == "runtime.pt":
-                stop("checkpoint-staging")
+        def write_runtime_tensors(value, path, *args, **kwargs):
+            write_tensors(value, path, *args, **kwargs)
+            stop("checkpoint-between-artifacts")
 
-        torch.save = save_runtime
+        def write_staged_runtime(value, directory):
+            write_runtime(value, directory)
+            stop("checkpoint-staging")
+
+        runtime_codec.save_file = write_runtime_tensors
+        checkpoint_module.save_runtime = write_staged_runtime
         checkpoints.commit(
             "learned",
             model=model,
@@ -157,7 +167,8 @@ def run_fixture(root, boundary):
             inputs=inputs,
             expected_parent="genesis",
         )
-        torch.save = save
+        checkpoint_module.save_runtime = write_runtime
+        runtime_codec.save_file = write_tensors
         runtime = restore(checkpoints)
         model, optimizer, scheduler, rng = (
             runtime.model,
@@ -204,21 +215,23 @@ def run_fixture(root, boundary):
     latest = checkpoints.recover()
     runtime = restore(checkpoints)
     snapshot = {
-        "progress": latest.manifest.progress,
-        "inputs": latest.manifest.inputs,
+        "progress": asdict(latest.manifest.progress),
+        "inputs": asdict(latest.manifest.inputs),
         "units": tuple(
             json.loads((dataset.root / "published" / f"{i.unit_id}.json").read_bytes())
             for i in dataset.enumerate_units()
         ),
-        "model": runtime.model.state_dict(),
+        "model": dict(runtime.model.state_dict()),
         "modes": {n: m.training for n, m in runtime.model.named_modules()},
         "optimizer": runtime.optimizer.state_dict(),
         "scheduler": runtime.scheduler.state_dict(),
-        "runtime": torch.load(latest.path / "runtime.pt", weights_only=False),
+        "runtime": load_runtime(latest.path),
     }
     with torch.no_grad():
         snapshot["behavior"] = runtime.model(torch.ones(2, 4, 8, 8)).value
-    torch.save(snapshot, root / "snapshot.pt")
+    evidence = root / "snapshot"
+    evidence.mkdir(exist_ok=True)
+    save_runtime(snapshot, evidence)
 
 
 def execute(root, boundary=""):
@@ -239,9 +252,12 @@ def execute(root, boundary=""):
 
 
 def equal(left, right):
+    assert type(left) is type(right)
     if isinstance(left, torch.Tensor):
+        assert left.dtype == right.dtype and left.shape == right.shape
         assert torch.equal(left, right)
     elif isinstance(left, np.ndarray):
+        assert left.dtype == right.dtype and left.shape == right.shape
         assert np.array_equal(left, right)
     elif isinstance(left, dict):
         assert left.keys() == right.keys()
@@ -260,7 +276,7 @@ def baseline(tmp_path_factory):
     root = tmp_path_factory.mktemp("uninterrupted")
     result = execute(root)
     assert result.returncode == 0, result.stderr
-    return torch.load(root / "snapshot.pt", weights_only=False)
+    return load_runtime(root / "snapshot")
 
 
 @pytest.mark.parametrize("boundary", BOUNDARIES)
@@ -276,11 +292,31 @@ def test_abrupt_boundary_resume_matches_uninterrupted(tmp_path, baseline, bounda
         assert not visible and tuple((dataset.root / "staging").iterdir())
     if boundary == "publication-after":
         assert len(visible) == 1
-    if boundary in ("learning", "checkpoint-staging", "checkpoint-before"):
+    if boundary in (
+        "learning",
+        "checkpoint-between-artifacts",
+        "checkpoint-staging",
+        "checkpoint-before",
+    ):
+        assert stopped.commit_id == "genesis"
         assert stopped.progress.model_generation == 0
         assert stopped.progress.consumed_unit_ids == ()
-    if boundary in ("checkpoint-staging", "checkpoint-before", "evaluation-before"):
+    if boundary in (
+        "checkpoint-between-artifacts",
+        "checkpoint-staging",
+        "checkpoint-before",
+        "evaluation-before",
+    ):
         assert tuple((checkpoints.root / "staging").iterdir())
+    if boundary in ("checkpoint-between-artifacts", "checkpoint-staging"):
+        staging = tuple((checkpoints.root / "staging").iterdir())
+        assert len(staging) == 1
+        assert (staging[0] / "runtime.safetensors").is_file()
+        assert (staging[0] / "runtime.json").exists() == (
+            boundary == "checkpoint-staging"
+        )
+        assert not (staging[0] / "manifest.json").exists()
+        assert len(tuple((checkpoints.root / "committed").iterdir())) == 1
     if boundary == "checkpoint-after":
         assert stopped.commit_id == "learned"
     if boundary in ("evaluation-computed", "evaluation-before"):
@@ -291,7 +327,7 @@ def test_abrupt_boundary_resume_matches_uninterrupted(tmp_path, baseline, bounda
     for _ in range(2):
         result = execute(tmp_path)
         assert result.returncode == 0, result.stderr
-        equal(baseline, torch.load(tmp_path / "snapshot.pt", weights_only=False))
+        equal(baseline, load_runtime(tmp_path / "snapshot"))
     manifests = [
         json.loads(p.read_bytes())["payload"]
         for p in sorted((checkpoints.root / "committed").glob("*/manifest.json"))
@@ -386,7 +422,7 @@ def test_repeated_interruptions_preserve_completed_evaluation_pair(tmp_path, bas
     assert partial.consumed_unit_ids == ("unit-0", "unit-1")
     result = execute(tmp_path)
     assert result.returncode == 0, result.stderr
-    equal(baseline, torch.load(tmp_path / "snapshot.pt", weights_only=False))
+    equal(baseline, load_runtime(tmp_path / "snapshot"))
     assert len(tuple((checkpoints.root / "committed").iterdir())) == 4
 
 

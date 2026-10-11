@@ -15,12 +15,15 @@ cleanup に依存せず停止します。子プロセスの期限は 90 秒。su
 | 収集途中 / 完成後公開前 | scratch は残り、dataset に未公開単位は見えない |
 | dataset rename 前 / 後 | staging のみ / 完成した単位だけが見える |
 | synthetic optimizer step 後 | genesis が確定状態で、入力は未消費 |
-| checkpoint runtime 書込後 / rename 前 | staging は残り、genesis と未消費位置を保持 |
+| checkpoint tensor 書込後、runtime JSON 書込前 | runtime 二 artifact のうち `runtime.safetensors` だけが staging に残り、genesis と未消費位置を保持 |
+| checkpoint runtime 二 artifact 書込後 / rename 前 | staging は残り、genesis と未消費位置を保持 |
 | checkpoint rename 後 | モデル generation と入力消費が一体で確定 |
 | 評価計算後 / result commit rename 前 | 未完了評価は manifest にない |
 | result commit rename 後 | 原結果と identity が確定し、再開時に再確定しない |
 
-11 境界ごとに空の保存先から停止させ、実ストアから二回再開します。別の試験では同じ run を
+12 境界ごとに空の保存先から停止させ、実ストアから二回再開します。runtime の片方だけが
+書き込まれた停止と、両方が書き込まれた停止では、manifest が未生成で、確定履歴には
+genesis 一つだけがあることも検証します。別の試験では同じ run を
 収集途中、公開後、学習途中、checkpoint 確定後、最初の評価確定後、次の評価計算後で
 順に停止します。完了済み開始局面ペアを保持し、未確定ペアだけを再試行します。
 
@@ -32,6 +35,13 @@ global Python/NumPy/Torch RNG と四つの stream RNG、generation、stage、cos
 dataset は generation 0、入力は generation 0、更新モデルは generation 1 を保持します。
 未確定計算の再実行は許容し、二重学習・二重評価の判定は実 manifest の確定効果に対して行います。
 
+checkpoint の追加状態は `runtime.safetensors` と型情報付き `runtime.json` を共通 codec で
+読み込みます。subprocess の比較証拠も `snapshot/` 内の同じ二 artifact に保存し、
+Progress と InputManifest は fixture 側で `dataclasses.asdict` に変換します。
+任意 dataclass の復元や pickle の保存・読込は行いません。
+checkpoint manifest version 2、runtime JSON version 1 が対象です。旧実験形式の
+manifest version 1 と `runtime.pt` は T09 と同じく非互換として拒否します。
+
 ## G1 条件との対応
 
 | 条件 | fixture と証拠 |
@@ -42,7 +52,7 @@ dataset は generation 0、入力は generation 0、更新モデルは generatio
 | 強制パス | 実 Reversi 局面で連続した白手番を保持し、depth parity に依存しない target を確認 |
 | 経路重み | 保存・読込した全兄弟群で子の重み合計が親の重みに一致 |
 | 完全 round-trip | 上記四 fixture の record と全 target が読込前後で一致 |
-| 処理境界の再開 | 11 境界と連続停止の subprocess 試験で無停止 run と一致 |
+| 処理境界の再開 | 12 境界と連続停止の subprocess 試験で無停止 run と一致 |
 
 この結果は **M1 保存基盤の G1 fixture 検証** に限定します。任意の production collector の
 分岐予定実行、実学習、対戦評価、停電耐性、network filesystem、異なる device への移行を
@@ -57,7 +67,11 @@ package directory で `PYTHONPATH=src python -m pytest tests/test_recovery.py -q
 `uvx --offline --from ruff==0.16.8 ruff format --check --target-version py312 server/ml/models`。
 実行結果は T10 report に記録します。
 
-2026-10-06 の実行結果：T10 の 16 cases を含む package 全体は **267 passed**
+初期形式での 2026-10-06 の実行結果：T10 の 16 cases を含む package 全体は **267 passed**
 （176.60 秒）。4 warnings は既存 dataset-store tests の multithreaded fork に対する
 DeprecationWarning。root の Ruff check は `All checks passed!`、format check は
 `58 files already formatted`。T10 の subprocess は fresh exec を使用します。
+
+2026-10-11 の safetensors 形式での再検証：`tests/test_recovery.py` は **17 passed**
+（134.65 秒、warnings なし）。root の Ruff check は `All checks passed!`、format check は
+`60 files already formatted`。package 全体の最新結果は T10 report を参照します。
