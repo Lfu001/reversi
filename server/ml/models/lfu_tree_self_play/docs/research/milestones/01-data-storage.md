@@ -6,7 +6,7 @@
 
 ## T06 木・ノード・辺・兄弟群・コストのrecord schema
 
-実装と利用契約：[収集 record と共通検証器](../records.md)。API は [CollectionRecord 等の型](../../src/lfu_tree_self_play/records.py) と [validate_record](../../src/lfu_tree_self_play/record_validation.py)。[共通 acceptance / rejection tests](../../tests/test_records.py) は A の独立対局と B/C の木の受理、不正な親子関係とノード・辺の世代混在の拒否を同じ検証器で確認します。[型契約の tests](../../tests/test_record_types.py) と [T06 の検証結果](../records.md#t06-の検証結果) も参照してください。これは T06 の成果であり、G1 全体の完了ではありません。
+利用契約：[収集 record と共通検証器](../../records.md)。
 
 - 依存：T02、T03
 - 領域：収集データの意味モデル
@@ -15,7 +15,7 @@
 
 ## T07 終局リターン集約と経路重み
 
-実装と利用契約：[終局リターン集約と経路重み](../returns.md)。API は [aggregate_returns / ReturnTargets](../../src/lfu_tree_self_play/returns.py)、手計算と境界条件の検証は [test_returns.py](../../tests/test_returns.py)。T07 の実装であり、G1 全体の完了ではありません。
+利用契約：[終局リターンと経路重み](../../returns.md)。
 
 - 依存：T05、T06
 - 領域：教師生成、木の集約
@@ -24,7 +24,7 @@
 
 ## T08 完了単位のatomic dataset store
 
-実装・利用契約：[atomic dataset store](../dataset-store.md)。[検証 tests](../../tests/test_dataset_store.py) は完全単位の round-trip、checksum、隔離、並行読込と公開前後のプロセス停止を確認します。G1 全体の完了ではありません。
+利用契約：[自己対戦データの保存と読込](../../dataset-store.md)。
 
 - 依存：T06、T07
 - 領域：datasetの追記、公開、検証
@@ -33,7 +33,7 @@
 
 ## T09 checkpoint・manifest・消費位置の整合保存
 
-実装と利用契約：[checkpoint と消費位置](../checkpoints.md)。API は [checkpoints.py](../../src/lfu_tree_self_play/checkpoints.py)、境界・round-trip 検証は [test_checkpoints.py](../../tests/test_checkpoints.py)。T09 の実装であり、G1 全体の完了ではありません。
+利用契約：[チェックポイントと消費位置の保存](../../checkpoints.md)。
 
 - 依存：T02、T08
 - 領域：モデル世代、optimizer、RNG、処理段階
@@ -42,7 +42,7 @@
 
 ## T10 強制停止・再開・重複防止試験
 
-実装と証拠：[G1 保存基盤の検証](../persistence-verification.md)。[test_recovery.py](../../tests/test_recovery.py) は実ストアに対し別 subprocess を強制終了し、再開後の dataset、確定消費、モデル・RNG、評価 identity と原結果を無停止 run と比較します。production collector/trainer/evaluator は対象外です。
+保存・復旧のテスト手順は [検証コマンド](../../verification.md#パッケージのテスト) を参照してください。利用時の復旧手順は [停止後の復旧と再試行](../../recovery.md) に記載しています。
 
 - 依存：T08、T09
 - 領域：障害注入、idempotency

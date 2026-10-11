@@ -1,10 +1,10 @@
 # 収集 record と共通検証器
 
-T06 は、A の完了した独立対局と B/C の全枝が完了した木を同じ意味モデルで表します。収集方式は `independent` / `tree` で、B/C の学習方式は record に持ち込みません。[T06 正本](milestones/01-data-storage.md#t06-木ノード辺兄弟群コストのrecord-schema) が契約の根拠です。
+`CollectionRecord` は完了した独立対局、または全葉が終局した木を表します。収集方式は `independent` / `tree` です。同じ木から異なる学習方式を比較できるよう、学習方式は record に保存しません。
 
 ## 型と単位
 
-型は [records.py](../src/lfu_tree_self_play/records.py) にあります。`schema_version` は現在 `1` のみです。ID は空白だけではない非空文字列で、node / edge / sibling group / RNG stream の各集合内で一意です。`unit_id` は experiment / round の文脈で呼出側が発行し、dataset 全体の重複防止や時刻順は T06 では定義しません。
+型は [records.py](../src/lfu_tree_self_play/records.py) にあります。`schema_version` は現在 `1` のみです。ID は空白だけではない非空文字列で、node / edge / sibling group / RNG stream の各集合内で一意です。`unit_id` は experiment / round の文脈で呼出側が発行し、同じ ID で異なる内容を保存することは [DatasetStore](dataset-store.md) が拒否します。ID の辞書順は時刻順を意味しません。
 
 | 型 | 情報と意味 |
 | --- | --- |
@@ -57,7 +57,7 @@ def accept_complete_unit(record: CollectionRecord) -> None:
 
 [validate_record](../src/lfu_tree_self_play/record_validation.py) は成功時 `None` を返し、不正な完了単位は `RecordValidationError(ValueError)` で拒否します。呼出側はこの例外を捕捉して単位を受理しない判断ができます。個々のモデルの構築時に型・範囲に違反すると Pydantic の `ValidationError` になります。検証器の入口では `CollectionRecord.model_validate(record)` によりネストされた既存インスタンスも再検証し、Pydantic エラーを `RecordValidationError` に包みます。`model_copy(update=...)` は更新値を検証しないので、コピー後もこの入口を通します。
 
-主要 stream の seed 導出で `ValueError` が発生した場合も、`run_seed` と stream ID / 用途を示す `RecordValidationError` に包み、元の例外を `__cause__` に保持します。seed の桁数の上限をスキーマへ追加するものではありません。
+seed 導出の失敗も `RecordValidationError` として報告します。元の例外は `__cause__` で参照できます。
 
 全型は `strict=True`、`frozen=True`、`extra="forbid"`、`allow_inf_nan=False`、`validate_default=True`、`revalidate_instances="always"` を共有します。整数 field に bool や数値文字列は使えません。実数 field は Python の int / float を受け付けますが、bool・文字列・NaN / Inf は拒否します。未知 field、list から tuple への暗黙変換も拒否し、nodes / edges / sibling groups / streams / positions / edge IDs は tuple です。
 
@@ -65,29 +65,10 @@ def accept_complete_unit(record: CollectionRecord) -> None:
 
 検証器は ID と親子関係、観測の shape / 有限性 / binary plane / 石の重複 / 占有マス上の合法手 / 均一な手番 plane、全辺の合法 action と `game.step` による子局面の完全一致、深さ、世代、終局結果、分岐構成、乱数参照を確認します。
 
-## 検証の限界と後続タスク
+## 呼出側が保証すること
 
 根の合法手 mask 自体の規則再計算は既存 `Game` インターフェースではできません。根は規則に従ってパスを解決した局面を生成する検証済み game adapter から取得する、という収集側の契約です。観測の表現チェックと全保存遷移の replay は行いますが、根 mask の規則上の正しさは adapter を信頼します。
 
-乱数参照と seed の検証は追跡契約で、PRNG の抽出値 replay や統計的独立性の証明ではありません。途中再開の完全な RNG state は T09 の責任です。検証器は当時のモデルを実行しないため、旧 value / log probability が当時のモデル出力だったことも証明しません。
+乱数参照と seed の検証は追跡契約で、PRNG の抽出値 replay や統計的独立性の証明ではありません。途中再開のための完全な RNG state は [チェックポイント](checkpoints.md) に保存します。検証器は当時のモデルを実行しないため、旧 value / log probability が当時のモデル出力だったことも証明しません。
 
-`InstanceOf[GameState]` を含む本 API は JSON 永続化を提供しません。保存形式・round-trip・atomic store は T08、終局リターン・経路重みは T07、checkpoint は T09、停止・再開は T10 に残します。collector / trainer は追加していません。T06 の検証は G1 の完了を意味せず、G1 通過前に保存データを trainer へ接続しません。
-
-## T06 の検証結果
-
-2026-10-05 に以下を実行しました。実装前 baseline は 84 tests でした。T06 の型 30 cases と共通検証器 95 cases（`run_seed=10**5000` の例外境界 regression を含む）を追加し、最終 pytest の失敗はありません。変更していない重い G0 Monte Carlo 実験は再実行していません。
-
-Ruff は 0.16.8 を使用し、`uvx --offline --from ruff==0.16.8 ruff` で実行しました。package の `[tool.ruff] src = ["src"]` により first-party import の分類を固定し、package と repository root の両方から lint / format を確認しています。repository root のコマンドは models 用 CI workflow と同じ対象・target version です。
-
-| 実行場所 | 検証 | 結果 |
-| --- | --- | --- |
-| package（初回環境確認） | `uv sync --locked` | 成功（65 packages resolved、45 packages checked） |
-| package（最終修正後） | `uv run --locked pytest tests/test_record_types.py tests/test_records.py -q` | 125 passed in 2.38s |
-| package（最終修正後） | `uv run --locked pytest -q` | 209 passed in 62.02s |
-| package | Ruff `check --target-version py312 src tests` | All checks passed! |
-| package | Ruff `format --check --target-version py312 src tests` | 22 files already formatted |
-| repository root | Ruff `check --target-version py312 server/ml/models` | All checks passed! |
-| repository root | Ruff `format --check --target-version py312 server/ml/models` | 46 files already formatted |
-| repository root | `git diff --check` | 成功 |
-
-[型の tests](../tests/test_record_types.py) は strict / frozen / tuple / 既存局面の保持を確認します。[共通検証器の tests](../tests/test_records.py) は独立対局と木、同一 action の兄弟、幅 2/3/4、終局根、H=1、強制パス、早期終局、子孫数の違い、非破壊検証と実測コストを受理します。同じ suite で親子関係・世代混在・局面改変・未完成葉・結果不一致・分岐と兄弟群の不整合・標本統合・RNG 参照や抽出イベントの重複・未検証コピーの型違反を拒否します。
+`CollectionRecord` はメモリ上の型です。保存には局面と tuple を復元できる [DatasetStore と codec](dataset-store.md) を使います。学習用の教師と重みは [aggregate_returns](returns.md) で計算します。

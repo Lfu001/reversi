@@ -1,4 +1,4 @@
-"""Real-store G1 fixtures and abrupt subprocess recovery (no production trainer)."""
+"""Compare committed state after abrupt subprocess exits with uninterrupted runs."""
 
 import json
 import os
