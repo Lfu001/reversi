@@ -5,7 +5,6 @@ import hashlib
 import json
 import math
 import os
-import pickle
 import random
 import re
 import uuid
@@ -22,6 +21,7 @@ from .dataset_codec import UnitIdentity, canonical_json
 from .dataset_store import _sync_directory
 from .model import PolicyValueConfig, PolicyValueModel
 from .rng import RNGStreams, create_rng_streams
+from .runtime_codec import load_runtime, save_runtime
 
 
 class ConfigurationMismatch(ValueError):
@@ -184,7 +184,7 @@ def _decode(data):
         raise ValueError("manifest checksum mismatch")
     payload = envelope["payload"]
     version = payload.pop("version")
-    if type(version) is not int or version != 1:
+    if type(version) is not int or version != 2:
         raise ValueError("manifest version mismatch")
     inputs = payload["inputs"]
     payload["inputs"] = InputManifest(
@@ -412,21 +412,29 @@ class CheckpointStore:
                 if p.is_file() and p.name != "manifest.json"
             )
         )
-        if actual != manifest.artifacts or not {
-            "runtime.pt",
+        if actual != manifest.artifacts or {
+            "runtime.json",
+            "runtime.safetensors",
             "model/config.json",
             "model/model.safetensors",
-        }.issubset({a[0] for a in actual}):
+        } != {a[0] for a in actual}:
             raise ValueError("checkpoint artifact checksum mismatch")
-        runtime = torch.load(
-            path / "runtime.pt", map_location="cpu", weights_only=False
-        )
-        if set(runtime) != {
-            "optimizer",
-            "scheduler",
-            "rng",
-            "model_modes",
-        } or not isinstance(runtime["optimizer"], dict):
+        runtime = load_runtime(path)
+        if (
+            not isinstance(runtime, dict)
+            or set(runtime)
+            != {
+                "optimizer",
+                "scheduler",
+                "rng",
+                "model_modes",
+            }
+            or not isinstance(runtime["optimizer"], dict)
+            or (
+                runtime["scheduler"] is not None
+                and not isinstance(runtime["scheduler"], dict)
+            )
+        ):
             raise ValueError("invalid runtime artifact")
         _validate_rng(runtime["rng"])
         with torch.device("meta"):
@@ -443,9 +451,7 @@ class CheckpointStore:
                 for p in (self.root / "committed").iterdir()
                 if p.name[21:] == parent.commit_id
             )
-            previous = torch.load(
-                parent_path / "runtime.pt", map_location="cpu", weights_only=False
-            )
+            previous = load_runtime(parent_path)
             if (
                 tuple(a for a in actual if a[0].startswith("model/"))
                 != tuple(a for a in parent.artifacts if a[0].startswith("model/"))
@@ -473,7 +479,6 @@ class CheckpointStore:
                 OSError,
                 RuntimeError,
                 EOFError,
-                pickle.UnpicklingError,
             ):
                 continue
             valid = candidate
@@ -526,14 +531,14 @@ class CheckpointStore:
             staging.mkdir()
             # Saving a snapshot must not advance the caller's random generators.
             model.save_pretrained(staging / "model", safe_serialization=True)
-            torch.save(
+            save_runtime(
                 {
                     "optimizer": optimizer.state_dict(),
                     "scheduler": scheduler.state_dict() if scheduler else None,
                     "rng": _rng_state(rng),
                     "model_modes": model_modes,
                 },
-                staging / "runtime.pt",
+                staging,
             )
             artifacts = tuple(
                 sorted(
@@ -563,9 +568,7 @@ class CheckpointStore:
                     for p in (self.root / "committed").iterdir()
                     if p.name[21:] == parent.commit_id
                 )
-                saved = torch.load(
-                    parent_path / "runtime.pt", map_location="cpu", weights_only=False
-                )
+                saved = load_runtime(parent_path)
                 parent_model = tuple(
                     a for a in parent.artifacts if a[0].startswith("model/")
                 )
@@ -591,7 +594,7 @@ class CheckpointStore:
                 _sync_directory(self.root / "committed")
                 _sync_directory(self.root / "staging")
                 return replay
-            payload = {"version": 1, **asdict(manifest)}
+            payload = {"version": 2, **asdict(manifest)}
             self._write(
                 staging / "manifest.json",
                 canonical_json(
@@ -626,9 +629,7 @@ class CheckpointStore:
             )
             optimizer = optimizer_factory(model)
             scheduler = scheduler_factory(optimizer)
-            runtime = torch.load(
-                recovered.path / "runtime.pt", map_location="cpu", weights_only=False
-            )
+            runtime = load_runtime(recovered.path)
             _validate_model_modes(runtime["model_modes"], model)
             for name, module in model.named_modules():
                 module.training = runtime["model_modes"][name]

@@ -70,9 +70,25 @@ def commit(
     )
 
 
-def test_roundtrip(tmp_path):
+def test_roundtrip(tmp_path, monkeypatch):
+    def reject_pickle(*args, **kwargs):
+        raise AssertionError("checkpoint used pickle serialization")
+
+    monkeypatch.setattr(torch, "save", reject_pickle)
+    monkeypatch.setattr(torch, "load", reject_pickle)
     store, model, optimizer, scheduler, rng, identity = setup_store(tmp_path)
+    python_state = random.getstate()
+    numpy_state = np.random.get_state()
+    torch_state = torch.get_rng_state()
+    stream_state = rng.evaluation.getstate()
     manifest = commit(store, model, optimizer, scheduler, rng, identity)
+    assert random.getstate() == python_state
+    actual_numpy = np.random.get_state()
+    assert actual_numpy[0] == numpy_state[0]
+    assert np.array_equal(actual_numpy[1], numpy_state[1])
+    assert actual_numpy[2:] == numpy_state[2:]
+    assert torch.equal(torch.get_rng_state(), torch_state)
+    assert rng.evaluation.getstate() == stream_state
     draws = (
         random.random(),
         np.random.rand(),
@@ -126,9 +142,122 @@ def test_roundtrip(tmp_path):
         and torch.equal(draws[2], actual[2])
         and draws[3:] == actual[3:]
     )
+    inputs = torch.arange(2 * 4 * 8 * 8, dtype=torch.float32).reshape(2, 4, 8, 8) / 100
+    for candidate_model, candidate_optimizer, candidate_scheduler in (
+        (model, optimizer, scheduler),
+        (restored.model, restored.optimizer, restored.scheduler),
+    ):
+        candidate_optimizer.zero_grad()
+        candidate_model(inputs).value.sum().backward()
+        candidate_optimizer.step()
+        candidate_scheduler.step()
+    assert all(
+        torch.equal(value, restored.model.state_dict()[key])
+        for key, value in model.state_dict().items()
+    )
+    assert restored.scheduler.state_dict() == scheduler.state_dict()
 
 
-def test_consumption_replay_and_fallback(tmp_path):
+@pytest.mark.parametrize(
+    "corruption", ["metadata", "tensors", "legacy", "extra", "scheduler"]
+)
+def test_rehashed_invalid_runtime_cannot_become_a_verified_candidate(
+    tmp_path, corruption
+):
+    import hashlib
+    import json
+
+    from lfu_tree_self_play.dataset_codec import canonical_json
+    from lfu_tree_self_play.runtime_codec import load_runtime, save_runtime
+
+    store, model, optimizer, scheduler, rng, identity = setup_store(tmp_path)
+    first = commit(store, model, optimizer, scheduler, rng, identity)
+    commit(
+        store,
+        model,
+        optimizer,
+        scheduler,
+        rng,
+        identity,
+        name="second",
+        parent=first.commit_id,
+    )
+    candidate = store.recover().path
+    envelope = json.loads((candidate / "manifest.json").read_bytes())
+    if corruption == "metadata":
+        (candidate / "runtime.json").write_text(
+            '{"version":1,"state":{"type":"unknown"}}'
+        )
+    elif corruption == "tensors":
+        (candidate / "runtime.safetensors").write_bytes(b"corrupt")
+    elif corruption == "legacy":
+        envelope["payload"]["version"] = 1
+        (candidate / "runtime.pt").write_bytes(b"legacy pickle must never be opened")
+        (candidate / "runtime.json").unlink()
+        (candidate / "runtime.safetensors").unlink()
+    elif corruption == "extra":
+        (candidate / "extra.safetensors").write_bytes(b"unexpected")
+    else:
+        state = load_runtime(candidate)
+        state["scheduler"] = 1
+        save_runtime(state, candidate)
+    envelope["payload"]["artifacts"] = sorted(
+        (
+            path.relative_to(candidate).as_posix(),
+            hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+        for path in candidate.rglob("*")
+        if path.is_file() and path.name != "manifest.json"
+    )
+    envelope["checksum"] = hashlib.sha256(
+        canonical_json(envelope["payload"])
+    ).hexdigest()
+    (candidate / "manifest.json").write_bytes(canonical_json(envelope))
+    assert store.recover().manifest == first
+    # The same invalid candidate must fail closed if no valid ancestor remains.
+    import shutil
+
+    shutil.rmtree(store.root / "committed" / f"{first.sequence:020d}-{first.commit_id}")
+    with pytest.raises(ValueError, match="no verified"):
+        store.recover()
+
+
+@pytest.mark.parametrize("scheduler_kind", ["none", "plateau"])
+def test_optional_and_infinity_bearing_scheduler_roundtrip(tmp_path, scheduler_kind):
+    store, model, optimizer, _, rng, identity = setup_store(tmp_path)
+    factory = (
+        (lambda o: None)
+        if scheduler_kind == "none"
+        else (lambda o: torch.optim.lr_scheduler.ReduceLROnPlateau(o))
+    )
+    scheduler = factory(optimizer)
+    first = commit(store, model, optimizer, scheduler, rng, identity)
+    commit(
+        store,
+        model,
+        optimizer,
+        scheduler,
+        rng,
+        identity,
+        name="evaluated",
+        parent=first.commit_id,
+    )
+    restored = store.restore(
+        store.recover(),
+        optimizer_factory=lambda m: torch.optim.Adam(m.parameters()),
+        scheduler_factory=factory,
+    )
+    if scheduler is None:
+        assert restored.scheduler is None
+    else:
+        assert restored.scheduler.state_dict() == scheduler.state_dict()
+        scheduler.step(0.5)
+        restored.scheduler.step(0.5)
+        assert restored.scheduler.state_dict() == scheduler.state_dict()
+
+
+@pytest.mark.parametrize("artifact", ["runtime.json", "runtime.safetensors"])
+def test_consumption_replay_and_fallback(tmp_path, artifact):
     store, model, optimizer, scheduler, rng, identity = setup_store(tmp_path)
     first = commit(store, model, optimizer, scheduler, rng, identity)
     second = commit(
@@ -169,7 +298,7 @@ def test_consumption_replay_and_fallback(tmp_path):
             name="update",
             parent=first.commit_id,
         )
-    (store.recover().path / "runtime.pt").write_bytes(b"broken")
+    (store.recover().path / artifact).write_bytes(b"broken")
     assert store.recover().manifest == first
 
 
@@ -449,10 +578,11 @@ def test_same_generation_cannot_hide_model_update(tmp_path):
     assert store.recover().manifest == first
 
 
-def test_all_corrupt_commits_fail_closed(tmp_path):
+@pytest.mark.parametrize("artifact", ["runtime.json", "runtime.safetensors"])
+def test_all_corrupt_commits_fail_closed(tmp_path, artifact):
     store, model, optimizer, scheduler, rng, identity = setup_store(tmp_path)
     commit(store, model, optimizer, scheduler, rng, identity)
-    (store.recover().path / "runtime.pt").write_bytes(b"corrupt")
+    (store.recover().path / artifact).write_bytes(b"corrupt")
     with pytest.raises(ValueError, match="no verified"):
         store.recover()
 
@@ -581,6 +711,7 @@ def test_model_mode_change_requires_generation_and_invalid_flags_recover_previou
     import json
 
     from lfu_tree_self_play.dataset_codec import canonical_json
+    from lfu_tree_self_play.runtime_codec import load_runtime, save_runtime
 
     store, model, optimizer, scheduler, rng, identity = setup_store(tmp_path)
     first = commit(store, model, optimizer, scheduler, rng, identity)
@@ -609,17 +740,17 @@ def test_model_mode_change_requires_generation_and_invalid_flags_recover_previou
         consumed=(identity.unit_id,),
     )
     candidate = store.recover().path
-    original_runtime = torch.load(candidate / "runtime.pt", weights_only=False)
+    original_runtime = load_runtime(candidate)
     original_manifest = json.loads((candidate / "manifest.json").read_bytes())
     for flags in ({**original_runtime["model_modes"], "": 1}, {"": False}):
         runtime = {**original_runtime, "model_modes": flags}
-        torch.save(runtime, candidate / "runtime.pt")
+        save_runtime(runtime, candidate)
         envelope = json.loads(json.dumps(original_manifest))
         artifacts = envelope["payload"]["artifacts"]
         for artifact in artifacts:
-            if artifact[0] == "runtime.pt":
+            if artifact[0] in {"runtime.json", "runtime.safetensors"}:
                 artifact[1] = hashlib.sha256(
-                    (candidate / "runtime.pt").read_bytes()
+                    (candidate / artifact[0]).read_bytes()
                 ).hexdigest()
         envelope["checksum"] = hashlib.sha256(
             canonical_json(envelope["payload"])

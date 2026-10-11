@@ -43,11 +43,29 @@ training mode を変更できません。コストは非負有限値で単調増
 
 `CheckpointManifest` は commit ID、parent ID、sequence、T02 の `experiment_id(config)`、
 正規化設定 JSON、入力 manifest、Progress、全 artifact checksum を結合します。
-モデルは Transformers の `save_pretrained`、追加状態は `runtime.pt` に保存します。
+モデルは Transformers の `save_pretrained(safe_serialization=True)`、追加状態の
+tensor は `runtime.safetensors`、構造と非 tensor 値は型情報付き `runtime.json` に
+保存します。両 runtime artifact をモデルの二 artifact とともに checksum で検証し、
+不足・追加 artifact と未参照・重複 tensor を拒否します。pickle による保存・読込はありません。
 model の全 named module の training mode（root と mixed train/eval mode を含む）、
 optimizer、任意 scheduler、四つの `RNGStreams`、global Python/NumPy/Torch CPU RNG、
 利用可能 CUDA 全 device と MPS RNG を含みます。device RNG の利用環境が変わった場合は
 再開を拒否します。seed からの再生成ではなく状態を復元します。
+
+runtime JSON の形式 version は 1、checkpoint manifest の version は 2 です。
+以前の未統合実験形式（manifest version 1 と `runtime.pt`）は読込を拒否し、
+自動変換や pickle fallback は行いません。experiment root の設定 binding は version 1 のままです。
+runtime は None、bool、int、str、float（scheduler の inf/-inf/nan を含む）、
+str/int key の dict、list、tuple、torch.device を扱います。tensor の dtype は bool、
+符号付き/符号なし 8/16/32/64 bit 整数、float16/bfloat16/float32/float64 に限定します。
+NumPy ndarray は native byte order の同じ数値/bool dtype（bfloat16 を除く）を扱います。
+tuple と list、int key と str key は区別します。
+tensor は独立した CPU contiguous clone として保存し、値・dtype・shape を復元します。
+dict は key の型と値の順に正規化し、挿入順に依存せず同じ artifact を生成します。
+list と tuple の要素順は保持します。
+元の device、stride、共有 storage の identity は復元しません。疎 tensor、meta tensor、
+量子化 tensor、任意 object、循環参照は拒否します。metadata の未知 tag、型・shape・dtype の
+不一致も拒否し、tree の深さは 128、node 数は 100,000 までに制限します。
 
 ## 確定と再開
 
@@ -69,14 +87,15 @@ binding と expected_parent を検証し、初回 binding も同じ lock 内で�
 全状態の読込に成功した後に global RNG を復元します。factory 失敗時は global RNG を
 元に戻し、呼出側の既存 model/optimizer を変更しません。
 
-artifact は信頼するローカル実験出力です。`torch.load(weights_only=False)` による
-Python/NumPy RNG の読込を含むため、第三者の checkpoint を受け入れる import API では
-ありません。network filesystem、分散 writer、device 間移行、外部評価サービスの実行保証
+artifact は信頼するローカル実験出力であり、第三者の checkpoint を受け入れる import API は
+含みません。network filesystem、分散 writer、device 間移行、外部評価サービスの実行保証
 は対象外です。原結果の確定単位として開始局面ペアを使います。
 
 ## 検証
 
-`tests/test_checkpoints.py` は populated optimizer/scheduler/model と次の RNG 出力、
+`tests/test_runtime_codec.py` は型・tensor 値の保存、deterministic replay、metadata と payload の
+厳密な検証を扱います。`tests/test_checkpoints.py` は populated optimizer/scheduler/model と
+次の RNG 出力・学習更新、scheduler なしと無限値を持つ scheduler、
 入力範囲と後続公開、設定・generation・checksum・消費不一致、replay/conflict、
 rename 前停止と rename 後 fsync retry、破損 fallback、評価結果保存、factory 失敗時の
 rollback を検証します。これは T09 の成果であり G1 全体の完了ではありません。
