@@ -159,7 +159,16 @@ def test_roundtrip(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "corruption", ["metadata", "tensors", "legacy", "extra", "scheduler"]
+    "corruption",
+    [
+        "metadata",
+        "tensors",
+        "legacy",
+        "extra",
+        "scheduler",
+        "python-overflow",
+        "numpy-overflow",
+    ],
 )
 def test_rehashed_invalid_runtime_cannot_become_a_verified_candidate(
     tmp_path, corruption
@@ -199,7 +208,20 @@ def test_rehashed_invalid_runtime_cannot_become_a_verified_candidate(
         (candidate / "extra.safetensors").write_bytes(b"unexpected")
     else:
         state = load_runtime(candidate)
-        state["scheduler"] = 1
+        if corruption == "scheduler":
+            state["scheduler"] = 1
+        elif corruption == "python-overflow":
+            version, values, gaussian = state["rng"]["python"]
+            state["rng"]["python"] = (version, (2**1000, *values[1:]), gaussian)
+        else:
+            generator, values, _, gaussian_flag, gaussian = state["rng"]["numpy"]
+            state["rng"]["numpy"] = (
+                generator,
+                values,
+                2**1000,
+                gaussian_flag,
+                gaussian,
+            )
         save_runtime(state, candidate)
     envelope["payload"]["artifacts"] = sorted(
         (
@@ -214,10 +236,24 @@ def test_rehashed_invalid_runtime_cannot_become_a_verified_candidate(
     ).hexdigest()
     (candidate / "manifest.json").write_bytes(canonical_json(envelope))
     assert store.recover().manifest == first
-    # The same invalid candidate must fail closed if no valid ancestor remains.
+    # Fail closed with a corrupt genesis as well as a corrupt later candidate.
     import shutil
 
-    shutil.rmtree(store.root / "committed" / f"{first.sequence:020d}-{first.commit_id}")
+    genesis = store.root / "committed" / f"{first.sequence:020d}-{first.commit_id}"
+    if corruption.endswith("-overflow"):
+        for name in ("runtime.json", "runtime.safetensors"):
+            shutil.copyfile(candidate / name, genesis / name)
+        envelope = json.loads((genesis / "manifest.json").read_bytes())
+        for artifact in envelope["payload"]["artifacts"]:
+            artifact[1] = hashlib.sha256(
+                (genesis / artifact[0]).read_bytes()
+            ).hexdigest()
+        envelope["checksum"] = hashlib.sha256(
+            canonical_json(envelope["payload"])
+        ).hexdigest()
+        (genesis / "manifest.json").write_bytes(canonical_json(envelope))
+    else:
+        shutil.rmtree(genesis)
     with pytest.raises(ValueError, match="no verified"):
         store.recover()
 
@@ -583,6 +619,14 @@ def test_all_corrupt_commits_fail_closed(tmp_path, artifact):
     store, model, optimizer, scheduler, rng, identity = setup_store(tmp_path)
     commit(store, model, optimizer, scheduler, rng, identity)
     (store.recover().path / artifact).write_bytes(b"corrupt")
+    with pytest.raises(ValueError, match="no verified"):
+        store.recover()
+
+
+def test_nested_manifest_filename_cannot_escape_artifact_validation(tmp_path):
+    store, model, optimizer, scheduler, rng, identity = setup_store(tmp_path)
+    commit(store, model, optimizer, scheduler, rng, identity)
+    (store.recover().path / "model" / "manifest.json").write_bytes(b"unexpected")
     with pytest.raises(ValueError, match="no verified"):
         store.recover()
 

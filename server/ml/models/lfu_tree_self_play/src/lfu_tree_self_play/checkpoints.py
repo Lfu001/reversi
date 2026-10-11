@@ -120,9 +120,12 @@ def _validate_rng(state):
         state["streams"]
     ) != set(_NAMES):
         raise ValueError("RNG state fields mismatch")
-    for value in [state["python"], *state["streams"].values()]:
-        random.Random().setstate(value)
-    np.random.RandomState().set_state(state["numpy"])
+    try:
+        for value in [state["python"], *state["streams"].values()]:
+            random.Random().setstate(value)
+        np.random.RandomState().set_state(state["numpy"])
+    except OverflowError as error:
+        raise ValueError("invalid RNG integer state") from error
     torch.Generator().set_state(state["torch"])
     if len(state["cuda"]) != (
         torch.cuda.device_count() if torch.cuda.is_available() else 0
@@ -409,7 +412,7 @@ class CheckpointStore:
                     hashlib.sha256(p.read_bytes()).hexdigest(),
                 )
                 for p in path.rglob("*")
-                if p.is_file() and p.name != "manifest.json"
+                if p.is_file() and p != path / "manifest.json"
             )
         )
         if actual != manifest.artifacts or {
