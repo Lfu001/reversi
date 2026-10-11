@@ -275,6 +275,7 @@ dependencies = [
     { name = "omegaconf" },
     { name = "pydantic" },
     { name = "reversi" },
+    { name = "safetensors" },
     { name = "torch" },
     { name = "transformers" },
 ]
@@ -290,6 +291,7 @@ requires-dist = [
     { name = "omegaconf", specifier = "==2.3.1" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "reversi", directory = "../../reversi-py" },
+    { name = "safetensors", specifier = "==0.8.0" },
     { name = "torch", specifier = "==2.14.1" },
     { name = "transformers", specifier = "==5.18.0" },
 ]
