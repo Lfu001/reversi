@@ -18,6 +18,7 @@ uv run --locked lfu-tree-self-play check-config configs/example.toml
 ## 利用ガイド
 
 - [設定と乱数の管理](docs/configuration.md)
+- [分岐位置の抽選と実行記録](docs/schedules.md)
 - [期待リターンと方策勾配の検証](docs/verification.md)
 - [Policy/value モデル](docs/model.md)
 - [収集 record と共通検証器](docs/records.md)
