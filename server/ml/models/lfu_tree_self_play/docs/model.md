@@ -34,6 +34,8 @@ policy の index は盤面の行優先順で、`index = row * 8 + column` です
 `masked_policy_logits(policy_logits, legal_mask).softmax(dim=-1)` を使います。
 終局局面には合法手がないため、この関数は `ValueError` を返します。
 
+収集ラウンドのモデルを固定して行動を復元抽出する場合は、[FrozenPolicySampler](sampling.md) を使います。
+
 ## 保存する
 
 モデル重みと構成だけを保存する場合は Transformers の `save_pretrained(directory)` を使います。optimizer、乱数、消費位置を含む学習の再開には [CheckpointStore](checkpoints.md) を使ってください。
