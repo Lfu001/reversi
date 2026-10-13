@@ -49,6 +49,7 @@ action_seed = derive_seed(run_seed, "action_sampling")
 
 `create_rng_streams(run_seed)` は位置抽選、行動抽出、兄弟の継続試行、評価用の独立した `random.Random` を返します。
 別の RNG 実装が必要な場合は `derive_seed(run_seed, purpose)` で同じ用途別 seed を取得できます。
+根局面の生成には専用の `root_position` を使います。これは `create_rng_streams` の4 streamには含まれず、[根局面API](roots.md) が独立したRNGを作ります。
 
 | stream / purpose | 用途 |
 | --- | --- |
@@ -56,5 +57,6 @@ action_seed = derive_seed(run_seed, "action_sampling")
 | `action_sampling` | 方策からの行動抽出 |
 | `sibling_rollout` | 兄弟標本の継続試行 |
 | `evaluation` | 評価 |
+| `root_position`（seed導出のみ） | 根局面の手数と合法着手の抽出 |
 
 同じ run seed と用途からは、呼出し順に依存せず同じ seed を導出します。再開時に途中から乱数列を継続するには、seed から作り直さず [チェックポイント](checkpoints.md) に保存した RNG state を復元します。

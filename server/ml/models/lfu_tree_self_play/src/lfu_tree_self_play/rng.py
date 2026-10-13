@@ -5,7 +5,13 @@ import random
 from dataclasses import dataclass
 from typing import Literal
 
-Purpose = Literal["branch_position", "action_sampling", "sibling_rollout", "evaluation"]
+Purpose = Literal[
+    "branch_position",
+    "action_sampling",
+    "sibling_rollout",
+    "evaluation",
+    "root_position",
+]
 _PURPOSES = frozenset(Purpose.__args__)
 
 
