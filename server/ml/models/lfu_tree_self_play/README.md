@@ -19,6 +19,7 @@ uv run --locked lfu-tree-self-play check-config configs/example.toml
 
 - [設定と乱数の管理](docs/configuration.md)
 - [根局面の生成と用途別集合の固定](docs/roots.md)
+- [分岐位置の抽選と実行記録](docs/schedules.md)
 - [期待リターンと方策勾配の検証](docs/verification.md)
 - [Policy/value モデル](docs/model.md)
 - [固定方策からの行動抽出](docs/sampling.md)
