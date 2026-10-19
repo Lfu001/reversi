@@ -20,6 +20,7 @@ uv run --locked lfu-tree-self-play check-config configs/example.toml
 - [設定と乱数の管理](docs/configuration.md)
 - [期待リターンと方策勾配の検証](docs/verification.md)
 - [Policy/value モデル](docs/model.md)
+- [固定方策からの行動抽出](docs/sampling.md)
 - [収集 record と共通検証器](docs/records.md)
 - [終局リターンと経路重み](docs/returns.md)
 - [自己対戦データの保存と読込](docs/dataset-store.md)
