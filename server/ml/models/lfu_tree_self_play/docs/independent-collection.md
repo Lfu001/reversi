@@ -2,7 +2,7 @@
 
 [← ドキュメント一覧](README.md)
 
-`collector.py` は比較群 A の独立自己対戦を終局まで生成し、B/C と同じ形式の `CollectionRecord`（`mode="independent"`）、`ReturnTargets`、同一根からの複数経路に対する `1/K` 重み付け、および収集コストを提供します。
+`collector.py` は固定した方策（π_old）同士の独立自己対戦を終局まで生成し、木状自己対戦と共通の `CollectionRecord`（`mode="independent"`）、`ReturnTargets`、同一根からの複数経路に対する `1/K` 重み付け、および収集コストを提供します。
 
 ## 独立対局を1局収集する
 
@@ -88,4 +88,4 @@ weighted_targets = weight_independent_records(loaded_records, game)
 uv run --locked pytest tests/test_independent_collector.py
 ```
 
-終局までの完全生成、`validate_record` と `DatasetStore` の保存・読込 round-trip、`H=0` と強制パス、同一根からの複数経路生成と `1/K` 重み付け、収集中のモデル不変性、RNG ストリーム分離を検証します。要件の正本は [T14](research/milestones/02-collection.md#t14-aの独立自己対戦collector) です。
+終局までの完全生成、`validate_record` と `DatasetStore` の保存・読込 round-trip、`H=0` と強制パス、同一根からの複数経路生成と `1/K` 重み付け、収集中のモデル不変性、RNG ストリーム分離を検証します。

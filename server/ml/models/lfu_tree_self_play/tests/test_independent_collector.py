@@ -1,4 +1,4 @@
-"""Acceptance tests for Group A independent self-play collection (T14)."""
+"""Acceptance tests for independent self-play trajectory collection."""
 
 import math
 import random
@@ -48,7 +48,7 @@ def test_independent_game_reaches_terminal_and_matches_frozen_policy_outputs():
         game,
         root,
         unit_id="game-0",
-        experiment_id="exp-a",
+        experiment_id="experiment",
         round_id="round-0",
         model_generation=3,
         run_seed=101,
@@ -118,7 +118,7 @@ def test_h_zero_terminal_root_produces_single_node_without_consuming_rng():
     collector = IndependentCollector(
         model,
         game,
-        experiment_id="exp-a",
+        experiment_id="experiment",
         round_id="round-0",
         model_generation=0,
         run_seed=77,
@@ -162,7 +162,7 @@ def test_forced_pass_preserves_actual_mover_perspective_targets():
         game,
         forced_pass_root,
         unit_id="forced-pass",
-        experiment_id="exp-a",
+        experiment_id="experiment",
         round_id="round-0",
         model_generation=1,
         run_seed=13,
@@ -270,7 +270,7 @@ def test_collector_is_isolated_from_training_model_mutations_and_other_rng_strea
     collector_a = IndependentCollector(
         model,
         game,
-        experiment_id="exp-a",
+        experiment_id="experiment",
         round_id="round-0",
         model_generation=0,
         run_seed=99,
@@ -294,7 +294,7 @@ def test_collector_is_isolated_from_training_model_mutations_and_other_rng_strea
     collector_b = IndependentCollector(
         model,
         game,
-        experiment_id="exp-a",
+        experiment_id="experiment",
         round_id="round-0",
         model_generation=0,
         run_seed=99,
@@ -375,7 +375,7 @@ def test_invalid_collect_paths_arguments_do_not_consume_rng(
     collector = IndependentCollector(
         model,
         game,
-        experiment_id="exp-a",
+        experiment_id="experiment",
         round_id="round-0",
         model_generation=0,
         run_seed=7,
@@ -407,7 +407,7 @@ def test_failed_game_transition_restores_rng_state_and_draw_index():
     collector = IndependentCollector(
         model,
         FailingGame(),
-        experiment_id="exp-a",
+        experiment_id="experiment",
         round_id="round-0",
         model_generation=0,
         run_seed=7,
@@ -432,7 +432,7 @@ def test_weight_independent_records_rejects_mismatched_or_non_independent_groups
         root_a,
         paths_per_root=2,
         unit_ids=("u-0", "u-1"),
-        experiment_id="exp-a",
+        experiment_id="experiment",
         round_id="round-0",
         model_generation=0,
         run_seed=7,
@@ -442,7 +442,7 @@ def test_weight_independent_records_rejects_mismatched_or_non_independent_groups
         game,
         root_b,
         unit_id="u-2",
-        experiment_id="exp-a",
+        experiment_id="experiment",
         round_id="round-0",
         model_generation=0,
         run_seed=8,
@@ -452,7 +452,7 @@ def test_weight_independent_records_rejects_mismatched_or_non_independent_groups
         game,
         root_a,
         unit_id="u-dup-draw",
-        experiment_id="exp-a",
+        experiment_id="experiment",
         round_id="round-0",
         model_generation=0,
         run_seed=7,
@@ -485,7 +485,7 @@ def test_scale_return_targets_rejects_invalid_weights(bad_weight):
         game,
         endgame_position(1),
         unit_id="u0",
-        experiment_id="exp-a",
+        experiment_id="experiment",
         round_id="round-0",
         model_generation=0,
         run_seed=7,
