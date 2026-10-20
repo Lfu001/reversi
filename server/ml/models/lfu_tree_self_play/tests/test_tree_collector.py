@@ -1,4 +1,4 @@
-"""Acceptance tests for the shared B/C tree self-play collector (T15)."""
+"""Acceptance tests for pre-scheduled width-four tree self-play collection."""
 
 import math
 import random

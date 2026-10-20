@@ -1,4 +1,4 @@
-"""Shared B/C tree self-play collector with pre-sampled width-four branching."""
+"""Tree self-play collector with pre-sampled width-four branching."""
 
 import math
 import random
@@ -112,7 +112,7 @@ def _peak_memory_bytes() -> int:
 
 @dataclass(frozen=True)
 class CollectedTree:
-    """A validated B/C self-play tree with aggregated returns and branch counts."""
+    """A validated self-play tree with aggregated returns and branch counts."""
 
     record: CollectionRecord
     targets: ReturnTargets
@@ -135,7 +135,7 @@ class CollectedTree:
 
 
 class TreeCollector:
-    """Collect B/C self-play trees from a frozen round-start policy/value model."""
+    """Collect self-play trees from a frozen round-start policy/value model."""
 
     def __init__(
         self,
@@ -209,7 +209,7 @@ class TreeCollector:
                 return candidate
 
     def collect_tree(self, root: RootInput, *, unit_id: str) -> CollectedTree:
-        """Build one complete B/C tree, advancing all branches to terminal states."""
+        """Build one complete self-play tree, advancing all branches to terminal states."""
         checked_unit_id = _require_unit_id(unit_id)
         root_state = _extract_root_state(root)
 
@@ -450,7 +450,7 @@ class TreeCollector:
     def collect_and_publish(
         self, root: RootInput, store: DatasetStore, *, unit_id: str
     ) -> tuple[CollectedTree, UnitIdentity]:
-        """Collect one complete B/C tree and publish it atomically to a DatasetStore."""
+        """Collect one complete self-play tree and publish it atomically to a DatasetStore."""
         if type(store) is not DatasetStore:
             raise ValueError("store must be a DatasetStore")
         if store.experiment_id != self.experiment_id:
@@ -474,7 +474,7 @@ def collect_tree(
     strategy: PositionStrategy = "uniform",
     game: Game | None = None,
 ) -> CollectedTree:
-    """Collect a single validated B/C self-play tree from a frozen policy/value snapshot."""
+    """Collect a single validated self-play tree from a frozen policy/value snapshot."""
     collector = TreeCollector(
         model,
         experiment_id=experiment_id,

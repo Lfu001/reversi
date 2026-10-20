@@ -1,8 +1,8 @@
-# B/C 共通の木状データ収集
+# 木状自己対戦データの収集
 
 [← ドキュメント一覧](README.md)
 
-`TreeCollector` と `collect_tree` は、収集ラウンド開始時に固定した `PolicyValueModel`（$\pi_{\text{old}}$）から幅 4・最大 2 段の浅い分岐木を生成し、全枝を実際の終局まで進めて検証済みの完了単位を作ります。比較群 B と C は同じ木構造を共有し、学習時の advantage 計算だけを分けます。
+`TreeCollector` と `collect_tree` は、収集ラウンド開始時に固定した `PolicyValueModel` から幅 4・最大 2 段の浅い分岐木を生成し、全枝を実際の終局まで進めて検証済みの完了単位を作ります。生成した木には学習方式を埋め込まないため、通常の終局リターンによる更新と兄弟分岐の比較による更新の双方に同じ木データを利用できます。
 
 ```python
 from lfu_tree_self_play.game import ReversiPyGame
@@ -32,7 +32,7 @@ print(tree.planned_branch_count, tree.executed_branch_count, tree.terminal_leaf_
 
 ## 固定方策と乱数系列の分離
 
-`TreeCollector` は初期化時に `PolicyValueModel` をコピーし、評価モード・勾配なしで保持します。収集途中に元のモデルを更新しても $\pi_{\text{old}}$ は変化せず、元のモデルの訓練モードやグローバル RNG も変更しません。
+`TreeCollector` は初期化時に `PolicyValueModel` をコピーし、評価モード・勾配なしで保持します。収集途中に元のモデルを更新しても収集方策は変化せず、元のモデルの訓練モードやグローバル RNG も変更しません。
 
 乱数系列は用途ごとに分離します。
 
@@ -50,7 +50,7 @@ print(tree.planned_branch_count, tree.executed_branch_count, tree.terminal_leaf_
 
 - 石を置く直前の `placement_depth` が予定位置に達していれば、同じ親局面から幅 4 の行動標本を復元抽出します。
 - 同じ手が複数回抽出された兄弟標本も 1 本にまとめず、別々の `EdgeRecord`・子 `NodeRecord`・`sample_index`・`continuation_seed` を持つ独立した終局試行として保持します。実際に異なる行動の数は `SiblingGroupRecord.distinct_action_count` に記録します。
-- 予定位置より前に終局した経路では未到達の分岐を実行せず、位置の移動・補充・再抽選もしません。$H=0$（終局根）では推論も分岐も行わず、単一終局ノードの木を返します。
+- 予定位置より前に終局した経路では未到達の分岐を実行せず、位置の移動・補充・再抽選もしません。空きマス数 0 の終局根では推論も分岐も行わず、単一終局ノードの木を返します。
 
 戻り値の `CollectedTree` は以下を保持します。
 
@@ -73,4 +73,4 @@ print(tree.planned_branch_count, tree.executed_branch_count, tree.terminal_leaf_
 uv run --locked pytest tests/test_tree_collector.py
 ```
 
-要件の正本は [T15](research/milestones/02-collection.md#t15-bc共通の木状collector) です。
+0・1・2 段の分岐と `uniform`・`stratified`・`fixed` の各戦略、16 終局の完全木、RNG 系列の分離、同一手兄弟標本の保持、終局根・空きマス 1・早期終局・強制パスでの予定と実行の記録、モデル固定、および `DatasetStore` への保存・読込の整合性を検証します。
