@@ -1,5 +1,6 @@
 """Temperature-one sampling from a fixed, legally masked old policy."""
 
+import math
 import random
 from copy import deepcopy
 from dataclasses import dataclass
@@ -16,6 +17,12 @@ class ActionSample:
     action: int
     legal_mask: tuple[bool, ...]
     old_log_probability: float
+
+
+@dataclass(frozen=True)
+class PolicyEvaluation:
+    old_value: float
+    samples: tuple[ActionSample, ...]
 
 
 def sample_policy(
@@ -60,12 +67,14 @@ class FrozenPolicySampler:
     def __init__(self, model: PolicyValueModel) -> None:
         self._model = deepcopy(model).eval().requires_grad_(False)
 
-    def sample(
+    def evaluate_and_sample(
         self, state: GameState, rng: random.Random, *, count: int = 1
-    ) -> tuple[ActionSample, ...]:
-        """Infer a nonterminal position and draw from its temperature-one policy."""
+    ) -> PolicyEvaluation:
+        """Infer a nonterminal position once and draw from its temperature-one policy."""
         if state.is_terminal:
             raise ValueError("terminal position has no legal move")
+        if type(count) is not int or count < 1:
+            raise ValueError("count must be a positive integer")
         parameter = next(self._model.parameters())
         observations = (
             torch.from_numpy(state.observation)
@@ -74,5 +83,17 @@ class FrozenPolicySampler:
         )
         mask = observations[0, 3].flatten().bool()
         with torch.no_grad():
-            logits = self._model(observations).policy_logits[0]
-        return sample_policy(logits, mask, rng, count=count)
+            output = self._model(observations)
+        old_value = float(
+            output.value[0].detach().to(device="cpu", dtype=torch.float64).item()
+        )
+        if not math.isfinite(old_value) or not -1.0 <= old_value <= 1.0:
+            raise ValueError("old_value must be finite within [-1, 1]")
+        samples = sample_policy(output.policy_logits[0], mask, rng, count=count)
+        return PolicyEvaluation(old_value=old_value, samples=samples)
+
+    def sample(
+        self, state: GameState, rng: random.Random, *, count: int = 1
+    ) -> tuple[ActionSample, ...]:
+        """Infer a nonterminal position and draw from its temperature-one policy."""
+        return self.evaluate_and_sample(state, rng, count=count).samples

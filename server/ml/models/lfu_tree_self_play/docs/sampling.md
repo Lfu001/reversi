@@ -25,6 +25,8 @@ for draw in draws:
 
 同じ局面の合法手 logits に温度1の softmax を適用し、`count` 回の復元抽出を行います。戻り値は抽出順の `tuple[ActionSample, ...]` です。同じ手が何度出ても別の標本として保持します。各標本の `legal_mask` は64要素の読み取り専用 bool tuple、`old_log_probability` は抽出分布に対応する Python float です。旧確率には勾配を流しません。
 
+非終局局面の `old_value`（着手者視点の `[-1, 1]`）と行動標本を1回の推論で同時に得る場合は、`sampler.evaluate_and_sample(state, streams.action_sampling, count=4)` を使います。戻り値の `PolicyEvaluation` は `old_value` と `samples` を保持します。
+
 抽出には呼出側が渡す `random.Random` だけを使います。位置抽選には `streams.branch_position`、通常の行動抽出には `streams.action_sampling`、兄弟の継続試行には各標本専用の RNG を使い分けてください。途中から再開する場合は RNG の `getstate()` / `setstate()` を使います。sampler 自体は stream ID、draw index、continuation seed、モデル世代を管理しません。
 
 ## 推論済み logits を使う
