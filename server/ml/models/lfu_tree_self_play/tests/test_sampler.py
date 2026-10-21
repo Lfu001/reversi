@@ -204,3 +204,22 @@ def test_frozen_sampler_rejects_terminal_without_advancing_rng():
     with pytest.raises(ValueError, match="terminal"):
         sampler.sample(state, rng)
     assert rng.getstate() == checkpoint
+
+
+def test_evaluate_and_sample_returns_detached_value_and_matching_draws():
+    from lfu_tree_self_play.sampler import FrozenPolicySampler
+
+    torch.manual_seed(17)
+    model = PolicyValueModel(PolicyValueConfig(width=8, num_blocks=1)).train()
+    reference = deepcopy(model).eval()
+    state = ReversiPyGame().initial_state()
+    observations = torch.from_numpy(state.observation).unsqueeze(0)
+    with torch.no_grad():
+        expected_value = float(reference(observations).value[0].double().item())
+
+    sampler = FrozenPolicySampler(model)
+    evaluation = sampler.evaluate_and_sample(state, random.Random(83), count=4)
+    assert type(evaluation.old_value) is float
+    assert -1.0 <= evaluation.old_value <= 1.0
+    assert evaluation.old_value == pytest.approx(expected_value)
+    assert evaluation.samples == sampler.sample(state, random.Random(83), count=4)
