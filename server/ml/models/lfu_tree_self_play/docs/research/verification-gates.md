@@ -1,6 +1,6 @@
 # 検証ゲート
 
-[← ドキュメント一覧](README.md) · [研究設計](research-design.md) · [実行モデル](execution-model.md)
+[← 一覧](README.md) · [実験計画](experiment-plan.md) · [実行モデル](execution-model.md)
 
 各ゲートの条件を満たすまで、指定された後続工程へ進みません。
 

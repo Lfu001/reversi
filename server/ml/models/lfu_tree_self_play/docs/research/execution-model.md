@@ -1,6 +1,6 @@
 # 実行モデル
 
-[← ドキュメント一覧](README.md) · [研究設計](research-design.md) · [検証ゲート](verification-gates.md)
+[← 一覧](README.md) · [実験計画](experiment-plan.md) · [検証ゲート](verification-gates.md)
 
 ## 通常フロー
 

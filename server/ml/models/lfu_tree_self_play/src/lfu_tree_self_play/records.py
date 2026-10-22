@@ -66,6 +66,8 @@ class SamplingRecord(RecordModel):
 
 
 class NodeRecord(RecordModel):
+    """Keep old_value in the mover's perspective and terminal results in black's."""
+
     node_id: RecordId
     incoming_edge_id: RecordId | None
     state: InstanceOf[GameState]
@@ -95,6 +97,8 @@ class SiblingGroupRecord(RecordModel):
 
 
 class CostRecord(RecordModel):
+    """Measured collection costs, excluding persistence and learning."""
+
     environment_transitions: Count
     evaluated_positions: Count
     inference_batches: Count

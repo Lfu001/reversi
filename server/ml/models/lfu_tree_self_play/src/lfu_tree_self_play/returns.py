@@ -33,6 +33,7 @@ def aggregate_returns(record: CollectionRecord, game: Game) -> ReturnTargets:
     Each edge's return is its child's black return. Its target uses the actual
     parent turn. Node targets use that node's turn; weights start at one and
     split equally over each parent's actual outgoing samples.
+    Terminal node targets are included; exclude them from policy training.
     """
     validate_record(record, game)
     nodes = {node.node_id: node for node in record.nodes}

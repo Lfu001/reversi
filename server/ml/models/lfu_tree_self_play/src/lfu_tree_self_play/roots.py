@@ -109,7 +109,11 @@ def _seed_sets(config: DictConfig) -> dict[RootPurpose, tuple[int, ...]]:
 
 @dataclass(frozen=True)
 class RootRegistry:
-    """A complete, immutable collection with no repeated root identities."""
+    """A complete, immutable collection with no repeated root identities.
+
+    Split membership does not enforce evaluation access restrictions or exclude
+    positions encountered later during play.
+    """
 
     experiment_id: str
     roots_per_seed: int
@@ -203,7 +207,7 @@ class RootRegistry:
         return hashlib.sha256(self._json().encode()).hexdigest()
 
     def save(self, path: str | Path) -> None:
-        """Write a versioned JSON registry, refusing to overwrite any file."""
+        """Refuse overwrites; this offline registry write is not atomic."""
         with Path(path).open("x", encoding="utf-8") as file:
             file.write(self._json())
 
