@@ -1,13 +1,14 @@
 # 研究計画
 
-木状自己対戦の仮説、比較条件、実験手順と開発タスクを定義します。パッケージの利用方法は [利用ガイド](../README.md) を参照してください。ここに記載した開発項目には、現在の API では実行できないものも含まれます。
+木状自己対戦の仮説、比較条件、実験手順と開発タスクを定義します。パッケージの利用方法は [README](../../README.md) を参照してください。ここに記載した開発項目には、現在の実装では実行できないものも含まれます。
+
+旧計画を前提とする `lfu_mcts_grpo/dev` は実装基盤にせず、`lfu_tree_self_play` を独立に構築します。共通ライブラリや旧実装の一部を利用する場合は、契約テストまたは参照実装との一致試験を通過したものだけを採用します。
 
 ## 全体像
 
-- [研究設計](research-design.md)：研究の問い、比較群、主張の範囲
 - [実行モデル](execution-model.md)：収集、学習、評価、再開の流れ
 - [検証条件](verification-gates.md)：実験の次工程へ進む条件
-- [実験計画（日本語）](experiment-plan.md) / [Experimental plan (English)](experiment-plan.en.md)：数理と実験条件の詳細
+- [実験計画（日本語）](experiment-plan.md) / [Experimental plan (English)](experiment-plan.en.md)：研究の問い、比較群、数理、実験条件、主張の範囲
 
 ## 計画内の識別子
 

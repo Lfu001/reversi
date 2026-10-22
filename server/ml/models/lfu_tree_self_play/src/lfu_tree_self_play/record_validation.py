@@ -21,7 +21,11 @@ class RecordValidationError(ValueError):
 
 
 def validate_record(record: CollectionRecord, game: Game) -> None:
-    """Reject invalid complete records without modifying the input."""
+    """Reject invalid complete records without modifying the input.
+
+    Trust the game adapter for the root's legal mask and forced-pass handling.
+    Replay checks transitions, not the historical model outputs or PRNG draws.
+    """
     try:
         checked = CollectionRecord.model_validate(record)
     except ValidationError as error:

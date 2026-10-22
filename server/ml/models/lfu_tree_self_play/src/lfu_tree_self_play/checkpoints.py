@@ -621,6 +621,11 @@ class CheckpointStore:
             return manifest
 
     def restore(self, recovered, *, optimizer_factory, scheduler_factory):
+        """Restore saved runtime state, including each module's train/eval mode.
+
+        Factories must match the saved optimizer and scheduler configuration.
+        Global RNG state changes only after loading succeeds.
+        """
         self._check_root()
         current = self.recover()
         if recovered is None or current is None or recovered != current:
