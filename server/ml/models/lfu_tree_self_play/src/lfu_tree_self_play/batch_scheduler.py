@@ -220,48 +220,59 @@ class BatchScheduler:
             item.ready_at = self._clock()
             return True
 
+        def admit(lane: CollectionLane) -> None:
+            try:
+                session = next(lane.sessions)
+            except StopIteration:
+                return
+            item = _Active(lane, session)
+            active.append(item)
+            if session.evaluator is not self.evaluator:
+                raise ValueError("session evaluator does not match scheduler")
+            if not advance(item):
+                active.remove(item)
+
+        def dispatch() -> None:
+            # Keep batch temporaries scoped here so completed payloads are
+            # released before the next admission pass allocates another unit.
+            self._check_memory()
+            selected = list(active)[: self.limits.max_batch_size]
+            dispatched = self._clock()
+            requests = [item.request for item in selected]
+            outputs = self.evaluator.evaluate(requests)
+            self.metrics.inference_batches += 1
+            self.metrics.evaluated_positions += len(selected)
+            self.metrics.batch_sizes[len(selected)] = (
+                self.metrics.batch_sizes.get(len(selected), 0) + 1
+            )
+            self.metrics.inference_seconds += sum(
+                output.inference_seconds for output in outputs
+            )
+            self.metrics.request_wait_seconds.extend(
+                max(0.0, dispatched - item.ready_at) for item in selected
+            )
+            self._check_memory()
+            for item, output in zip(selected, outputs, strict=True):
+                item.session.resume(output)
+                # Remove only after success, so failed resumes remain abortable.
+                if advance(item):
+                    active.remove(item)
+                    active.append(item)
+                else:
+                    active.remove(item)
+
         try:
             while pending or active:
-                while pending and len(active) < self.limits.max_active_units:
+                # A terminal unit consumes its admission turn too; replenishing
+                # that lane must not starve an already-ready inference request.
+                admissions = min(
+                    len(pending), self.limits.max_active_units - len(active)
+                )
+                for _ in range(admissions):
                     self._check_memory()
-                    lane = pending.popleft()
-                    try:
-                        session = next(lane.sessions)
-                    except StopIteration:
-                        continue
-                    item = _Active(lane, session)
-                    active.append(item)
-                    if session.evaluator is not self.evaluator:
-                        raise ValueError("session evaluator does not match scheduler")
-                    if not advance(item):
-                        active.remove(item)
-                if not active:
-                    continue
-                self._check_memory()
-                selected = list(active)[: self.limits.max_batch_size]
-                dispatched = self._clock()
-                requests = [item.request for item in selected]
-                outputs = self.evaluator.evaluate(requests)
-                self.metrics.inference_batches += 1
-                self.metrics.evaluated_positions += len(selected)
-                self.metrics.batch_sizes[len(selected)] = (
-                    self.metrics.batch_sizes.get(len(selected), 0) + 1
-                )
-                self.metrics.inference_seconds += sum(
-                    output.inference_seconds for output in outputs
-                )
-                self.metrics.request_wait_seconds.extend(
-                    max(0.0, dispatched - item.ready_at) for item in selected
-                )
-                self._check_memory()
-                for item, output in zip(selected, outputs, strict=True):
-                    item.session.resume(output)
-                    # Remove only after success, so failed resumes remain abortable.
-                    if advance(item):
-                        active.remove(item)
-                        active.append(item)
-                    else:
-                        active.remove(item)
+                    admit(pending.popleft())
+                if active:
+                    dispatch()
             if self.evaluator.device.type == "cuda":
                 torch.cuda.synchronize(self.evaluator.device)
                 self.metrics.device_peak_bytes = int(

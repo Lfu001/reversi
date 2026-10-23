@@ -78,6 +78,73 @@ def test_round_robin_fairness_and_partial_batch():
     assert metrics.rss_sampled_peak_bytes == 100
 
 
+def test_ready_inference_is_not_starved_by_terminal_only_lane():
+    evaluator, _, _, _ = setup_lanes(count=0)
+    events = []
+
+    def waiting():
+        yield EvaluationRequest(0, endgame_position(1))
+        events.append("ready")
+        return "ready"
+
+    def terminal(index):
+        yield from ()
+        events.append(f"terminal-{index}")
+        return index
+
+    def terminal_sessions():
+        for index in range(100):
+            yield CollectionSession(terminal(index), evaluator, on_release=lambda: None)
+
+    lanes = [
+        CollectionLane(
+            SimpleNamespace(evaluator=evaluator),
+            iter([CollectionSession(waiting(), evaluator, on_release=lambda: None)]),
+        ),
+        CollectionLane(SimpleNamespace(evaluator=evaluator), terminal_sessions()),
+    ]
+    metrics = BatchScheduler(
+        evaluator, limits=SchedulerLimits(2, 2, 100), memory_probe=Probe()
+    ).run(lanes, on_complete=lambda unit: None)
+    assert events.index("ready") < events.index("terminal-1")
+    assert metrics.completed_units == 101
+
+
+def test_completed_payload_is_released_before_next_single_active_unit():
+    import gc
+    import weakref
+
+    evaluator, _, _, _ = setup_lanes(count=0)
+    references = []
+
+    class Payload:
+        pass
+
+    def generate(index):
+        payload = Payload()
+        references.append(weakref.ref(payload))
+        yield EvaluationRequest(index, endgame_position(1))
+        return payload
+
+    def sessions():
+        for index in range(3):
+            yield CollectionSession(generate(index), evaluator, on_release=lambda: None)
+
+    class PayloadProbe:
+        def sample(self):
+            gc.collect()
+            return MemorySample(
+                100 + 1000 * sum(ref() is not None for ref in references), None
+            )
+
+    lane = CollectionLane(SimpleNamespace(evaluator=evaluator), sessions())
+    metrics = BatchScheduler(
+        evaluator, limits=SchedulerLimits(1, 1, 1100), memory_probe=PayloadProbe()
+    ).run([lane], on_complete=lambda unit: None)
+    assert metrics.completed_units == 3
+    assert all(reference() is None for reference in references)
+
+
 def test_physical_batches_not_multiplied_by_unit_count():
     evaluator, lanes, _, _ = setup_lanes(count=3, steps=1)
     metrics = BatchScheduler(
