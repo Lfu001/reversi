@@ -66,3 +66,73 @@ snapshot = store.commit(
 この checkpoint は収集後のモデルと乱数、固定入力を保存したもので、入力はまだ未消費です。学習を接続するときは、更新済みのモデルとその入力の消費を同じ checkpoint で確定します。学習への接続条件は [検証ゲート](research/verification-gates.md#g1データ生成と永続化) を参照してください。
 
 ラウンド中は同じ collector を使い、新しいラウンドでは更新後のモデルから作り直します。再開時は [復旧手順](recovery.md) に従います。
+
+## 複数の対局・木をまとめて推論する
+
+A の独立対局と B/C の木は、同じ凍結モデルと scheduler を共有できます。乱数を持つ collector ごとに lane を作り、lane 内の対局・木の順序を保って、異なる lane の次の局面をまとめます。同じ collector を複数 lane へ登録すると、乱数順が曖昧になるため拒否します。比較群には同じ batch 上限、同時進行単位数、メモリ制限を与えます。
+
+```python
+import json
+from dataclasses import asdict
+
+from lfu_tree_self_play.batch_inference import FrozenBatchEvaluator
+from lfu_tree_self_play.batch_scheduler import BatchScheduler, SchedulerLimits
+from lfu_tree_self_play.collection_session import CollectionLane
+from lfu_tree_self_play.collector import IndependentCollector
+
+batch_evaluator = FrozenBatchEvaluator(model, model_generation=0)
+independent_lane = IndependentCollector(
+    batch_evaluator,
+    game,
+    experiment_id=experiment_id(config),
+    round_id="round-0",
+    model_generation=0,
+    run_seed=10,
+)
+tree_lane = TreeCollector(
+    batch_evaluator,
+    game=game,
+    experiment_id=experiment_id(config),
+    round_id="round-0",
+    model_generation=0,
+    run_seed=11,
+    levels=1,
+)
+
+
+def tree_sessions():
+    yield tree_lane.create_session(root, unit_id="batched-tree")
+
+
+batch_store = DatasetStore(
+    Path("artifacts/batch-dataset"), experiment_id=experiment_id(config), game=game
+)
+batch_metrics = BatchScheduler(
+    batch_evaluator,
+    limits=SchedulerLimits(
+        max_active_units=2,
+        max_batch_size=2,
+        rss_limit_bytes=2 * 1024**3,
+    ),
+).run(
+    [
+        CollectionLane(
+            independent_lane,
+            independent_lane.iter_sessions(
+                root,
+                paths_per_root=2,
+                unit_ids=["batched-game-0", "batched-game-1"],
+            ),
+        ),
+        CollectionLane(tree_lane, tree_sessions()),
+    ],
+    on_complete=lambda unit: batch_store.publish(unit.record, unit.targets),
+)
+Path("artifacts/batch-metrics.json").write_text(json.dumps(asdict(batch_metrics)))
+```
+
+この例の上限値は実行環境に応じて調整します。accelerator では `device_limit_bytes` も指定します。RSS は現在のプロセス使用量、device 側は生存 tensor の割当量を別々に確認します。上限超過・計測失敗時は実行を止め、未完成単位を破棄してその乱数状態を開始時点へ戻します。公開済みの完成単位は残ります。判定は admission・推論・公開の境界で行うため、処理途中の一時ピークを抑える OS の hard cap ではありません。
+
+batch サイズ分布、各要求の待機時間、物理的な推論回数、RSS/device の観測ピークは別の計測ファイルへ保存し、既存 dataset の schema は変えません。CUDA の `device_peak_bytes` はプロセスのピーク counter、MPS ではこの counter がないため `null` です。単位の `inference_batches` は参加した batch 数なので、複数単位の合計を物理的な推論回数として使わず、`batch_metrics.inference_batches` を使います。推論時間は batch 内の行数で等分し、待機時間を含めません。
+
+同じ根から得た A の K 経路は `unit.weighted_targets` で各経路を `1/K` に重み付けできます。上の公開例は既存と同じ単位内の `targets` を保存するため、根ごとの経路重みは利用側で別に適用します。途中で永続化に失敗した完成単位の再公開は、同じ完成値を保持した利用側が既存の保存 API で行います。
