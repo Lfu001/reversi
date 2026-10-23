@@ -34,6 +34,10 @@ class CollectionSession[T]:
         self._pending: EvaluationRequest | SessionComplete[T] | None = None
         self._aborted = False
 
+    @property
+    def completed(self) -> bool:
+        return isinstance(self._pending, SessionComplete)
+
     def _advance(self, output: EvaluationOutput | None = None) -> None:
         try:
             self._pending = (
