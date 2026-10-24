@@ -5,7 +5,11 @@ import random
 import pytest
 import torch
 
-from lfu_tree_self_play.batch_inference import EvaluationRequest, FrozenBatchEvaluator
+from lfu_tree_self_play.batch_inference import (
+    EvaluationRequest,
+    FrozenBatchEvaluator,
+    evaluate_model,
+)
 from lfu_tree_self_play.game import ReversiPyGame
 from lfu_tree_self_play.model import PolicyValueConfig, PolicyValueModel
 from lfu_tree_self_play.sampler import sample_policy
@@ -43,6 +47,22 @@ def test_batch_output_order_and_masked_sampling():
 
 def test_empty_batch_skips_forward():
     assert FrozenBatchEvaluator(model(), model_generation=0).evaluate([]) == ()
+
+
+@pytest.mark.parametrize("training_child_only", [False, True])
+def test_evaluate_model_rejects_training_mode_before_updating_batchnorm(
+    training_child_only,
+):
+    caller = model()
+    if training_child_only:
+        caller.eval()
+        caller.stem[1].train()
+    before = {name: value.clone() for name, value in caller.named_buffers()}
+    with pytest.raises(ValueError, match="eval"):
+        evaluate_model(caller, [EvaluationRequest(0, endgame_position(1))])
+    for name, value in caller.named_buffers():
+        assert torch.equal(value, before[name])
+    assert caller.stem[1].training
 
 
 def test_snapshot_does_not_mutate_caller_or_global_rng():

@@ -133,6 +133,6 @@ Path("artifacts/batch-metrics.json").write_text(json.dumps(asdict(batch_metrics)
 
 この例の上限値は実行環境に応じて調整します。accelerator では `device_limit_bytes` も指定します。RSS は現在のプロセス使用量、device 側は生存 tensor の割当量を別々に確認します。上限超過・計測失敗時は実行を止め、未完成単位を破棄してその乱数状態を開始時点へ戻します。公開済みの完成単位は残ります。判定は admission・推論・公開の境界で行うため、処理途中の一時ピークを抑える OS の hard cap ではありません。
 
-batch サイズ分布、各要求の待機時間、物理的な推論回数、RSS/device の観測ピークは別の計測ファイルへ保存し、既存 dataset の schema は変えません。CUDA の `device_peak_bytes` はプロセスのピーク counter、MPS ではこの counter がないため `null` です。単位の `inference_batches` は参加した batch 数なので、複数単位の合計を物理的な推論回数として使わず、`batch_metrics.inference_batches` を使います。推論時間は batch 内の行数で等分し、待機時間を含めません。
+batch サイズ分布、各要求の待機時間、物理的な推論回数、RSS/device の観測ピークは別の計測ファイルへ保存し、既存 dataset の schema は変えません。RSS の取得は psutil、accelerator の割当量・ピーク・同期は PyTorch の統一 API に任せます。`device_peak_bytes` はプロセスのピーク counter で、CPU 実行時は `null` です。単位の `inference_batches` は参加した batch 数なので、複数単位の合計を物理的な推論回数として使わず、`batch_metrics.inference_batches` を使います。推論時間は batch 内の行数で等分し、待機時間を含めません。
 
 同じ根から得た A の K 経路は `unit.weighted_targets` で各経路を `1/K` に重み付けできます。上の公開例は既存と同じ単位内の `targets` を保存するため、根ごとの経路重みは利用側で別に適用します。途中で永続化に失敗した完成単位の再公開は、同じ完成値を保持した利用側が既存の保存 API で行います。

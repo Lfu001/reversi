@@ -174,6 +174,7 @@ def test_mps_batch_collection_matches_same_device_reference(kind):
         assert_units_equal(by_id[unit.record.unit_id], unit)
     assert metrics.completed_units == 6
     assert metrics.device_allocated_sampled_peak_bytes > 0
+    assert metrics.device_peak_bytes >= metrics.device_allocated_sampled_peak_bytes
     assert any(size > 1 for size in metrics.batch_sizes)
 
 

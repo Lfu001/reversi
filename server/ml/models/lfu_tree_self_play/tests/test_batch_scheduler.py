@@ -222,13 +222,41 @@ def test_device_measurement_required_when_limit_configured():
         scheduler.run(lanes, on_complete=lambda unit: None)
 
 
-def test_linux_current_rss_converts_pages_to_bytes(monkeypatch):
-    import lfu_tree_self_play.batch_scheduler as module
+def test_current_rss_uses_portable_process_memory_info(monkeypatch):
+    import psutil
 
-    monkeypatch.setattr(module.sys, "platform", "linux")
-    monkeypatch.setattr(module.Path, "read_text", lambda path: "200 17 3 4")
-    monkeypatch.setattr(module.os, "sysconf", lambda name: 4096)
+    monkeypatch.setattr(
+        psutil,
+        "Process",
+        lambda: SimpleNamespace(memory_info=lambda: SimpleNamespace(rss=69632)),
+    )
     assert SystemMemoryProbe(torch.device("cpu")).sample().rss_bytes == 69632
+
+
+@pytest.mark.parametrize("device", ["cuda:1", "mps"])
+def test_device_memory_uses_unified_accelerator_api(monkeypatch, device):
+    monkeypatch.setattr(
+        torch.accelerator,
+        "memory_allocated",
+        lambda actual: 123456 if actual == torch.device(device) else -1,
+    )
+    monkeypatch.setattr(torch.cuda, "memory_allocated", lambda device: 0)
+    monkeypatch.setattr(torch.mps, "current_allocated_memory", lambda: 0)
+    assert (
+        SystemMemoryProbe(torch.device(device)).sample().device_allocated_bytes
+        == 123456
+    )
+
+
+def test_process_memory_failure_is_reported(monkeypatch):
+    import psutil
+
+    def unavailable():
+        raise psutil.AccessDenied(pid=1)
+
+    monkeypatch.setattr(psutil, "Process", unavailable)
+    with pytest.raises(MemoryMeasurementError):
+        SystemMemoryProbe(torch.device("cpu")).sample()
 
 
 def test_duplicate_owner_or_snapshot_rejected_before_rng_consumption():

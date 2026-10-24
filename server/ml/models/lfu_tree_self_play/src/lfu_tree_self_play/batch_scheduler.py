@@ -1,15 +1,12 @@
 """Bounded, round-robin inference across independent collection RNG owners."""
 
-import ctypes
-import os
-import sys
 import time
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Protocol
 
+import psutil
 import torch
 
 from .batch_inference import EvaluationRequest, FrozenBatchEvaluator
@@ -55,64 +52,24 @@ class SystemMemoryProbe:
     def __init__(self, device: torch.device) -> None:
         self.device = torch.device(device)
 
-    @staticmethod
-    def _rss() -> int:
-        if sys.platform.startswith("linux"):
-            pages = int(Path("/proc/self/statm").read_text().split()[1])
-            return pages * os.sysconf("SC_PAGE_SIZE")
-        if sys.platform == "darwin":
-
-            class TaskInfo(ctypes.Structure):
-                _fields_ = [
-                    ("virtual_size", ctypes.c_uint64),
-                    ("resident_size", ctypes.c_uint64),
-                    ("resident_size_max", ctypes.c_uint64),
-                    ("user_seconds", ctypes.c_int32),
-                    ("user_microseconds", ctypes.c_int32),
-                    ("system_seconds", ctypes.c_int32),
-                    ("system_microseconds", ctypes.c_int32),
-                    ("policy", ctypes.c_int32),
-                    ("suspend_count", ctypes.c_int32),
-                ]
-
-            lib = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
-            lib.mach_task_self.restype = ctypes.c_uint32
-            lib.task_info.argtypes = [
-                ctypes.c_uint32,
-                ctypes.c_int,
-                ctypes.c_void_p,
-                ctypes.POINTER(ctypes.c_uint32),
-            ]
-            info = TaskInfo()
-            count = ctypes.c_uint32(
-                ctypes.sizeof(info) // ctypes.sizeof(ctypes.c_int32)
-            )
-            if (
-                lib.task_info(
-                    lib.mach_task_self(), 20, ctypes.byref(info), ctypes.byref(count)
-                )
-                != 0
-            ):
-                raise MemoryMeasurementError("task_info failed")
-            return int(info.resident_size)
-        raise MemoryMeasurementError(f"unsupported RSS measurement: {sys.platform}")
-
     def sample(self) -> MemorySample:
         try:
-            rss = self._rss()
-            match self.device.type:
-                case "cpu":
-                    allocated = None
-                case "cuda":
-                    allocated = int(torch.cuda.memory_allocated(self.device))
-                case "mps":
-                    allocated = int(torch.mps.current_allocated_memory())
-                case _:
-                    raise MemoryMeasurementError(f"unsupported device: {self.device}")
+            rss = psutil.Process().memory_info().rss
+            allocated = (
+                None
+                if self.device.type == "cpu"
+                else int(torch.accelerator.memory_allocated(self.device))
+            )
             if rss <= 0 or (allocated is not None and allocated < 0):
                 raise MemoryMeasurementError("invalid memory measurement")
             return MemorySample(rss, allocated)
-        except (OSError, ValueError, IndexError, AttributeError, RuntimeError) as error:
+        except (
+            psutil.Error,
+            OSError,
+            ValueError,
+            AttributeError,
+            RuntimeError,
+        ) as error:
             raise MemoryMeasurementError(str(error)) from error
 
 
@@ -273,10 +230,10 @@ class BatchScheduler:
                     admit(pending.popleft())
                 if active:
                     dispatch()
-            if self.evaluator.device.type == "cuda":
-                torch.cuda.synchronize(self.evaluator.device)
+            if self.evaluator.device.type != "cpu":
+                torch.accelerator.synchronize(self.evaluator.device)
                 self.metrics.device_peak_bytes = int(
-                    torch.cuda.max_memory_allocated(self.evaluator.device)
+                    torch.accelerator.max_memory_allocated(self.evaluator.device)
                 )
             self.metrics.stop_reason = "complete"
             return self.metrics

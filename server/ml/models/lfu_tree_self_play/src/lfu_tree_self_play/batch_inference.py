@@ -51,9 +51,15 @@ class FrozenBatchEvaluator:
 def evaluate_model(
     model: PolicyValueModel, requests: Sequence[EvaluationRequest]
 ) -> tuple[EvaluationOutput, ...]:
-    """Evaluate an already frozen snapshot without creating another copy."""
+    """Evaluate an eval-mode snapshot without changing the caller's model mode.
+
+    Snapshot owners set eval() at construction. inference_mode() disables
+    autograd bookkeeping, but does not disable dropout or BatchNorm updates.
+    """
     if not requests:
         return ()
+    if any(module.training for module in model.modules()):
+        raise ValueError("model and all submodules must be in eval mode")
     if any(request.state.is_terminal for request in requests):
         raise ValueError("terminal position has no legal move")
     start = time.perf_counter()
