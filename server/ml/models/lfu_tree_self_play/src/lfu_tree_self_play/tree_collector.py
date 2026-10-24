@@ -1,18 +1,19 @@
 """Tree self-play collector with pre-sampled width-four branching."""
 
-import math
 import random
 import re
 import resource
 import sys
 import time
 from collections import Counter
-from copy import deepcopy
+from collections.abc import Generator
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 
+from .batch_inference import EvaluationOutput, EvaluationRequest, FrozenBatchEvaluator
+from .collection_session import CollectionSession, drain_session
 from .dataset_codec import UnitIdentity
 from .dataset_store import DatasetStore
 from .game import Game, GameState, ReversiPyGame
@@ -31,7 +32,7 @@ from .records import (
 from .returns import ReturnTargets, aggregate_returns
 from .rng import RNGStreams, create_rng_streams, derive_seed
 from .roots import RootEntry, RootPosition
-from .sampler import ActionSample, sample_policy
+from .sampler import sample_policy
 from .schedule import (
     BranchExecution,
     BranchPath,
@@ -139,7 +140,7 @@ class TreeCollector:
 
     def __init__(
         self,
-        model: PolicyValueModel,
+        model: PolicyValueModel | FrozenBatchEvaluator,
         *,
         experiment_id: str,
         round_id: str,
@@ -150,7 +151,7 @@ class TreeCollector:
         strategy: PositionStrategy = "uniform",
         game: Game | None = None,
     ) -> None:
-        if type(model) is not PolicyValueModel:
+        if type(model) not in (PolicyValueModel, FrozenBatchEvaluator):
             raise ValueError("model must be a PolicyValueModel")
         self.experiment_id = _require_nonempty_str(experiment_id, "experiment_id")
         self.round_id = _require_nonempty_str(round_id, "round_id")
@@ -179,27 +180,50 @@ class TreeCollector:
         elif not hasattr(game, "initial_state") or not hasattr(game, "step"):
             raise ValueError("game must implement initial_state and step")
         self.game = game
-        self._model = deepcopy(model).eval().requires_grad_(False)
+        if type(model) is FrozenBatchEvaluator:
+            if model.model_generation != self.model_generation:
+                raise ValueError("model_generation does not match evaluator")
+            self._evaluator = model
+        else:
+            self._evaluator = FrozenBatchEvaluator(
+                model, model_generation=self.model_generation
+            )
+        self._session_active = False
 
-    def _infer_and_sample(
-        self, state: GameState, rng: random.Random, *, count: int
-    ) -> tuple[float, tuple[ActionSample, ...]]:
-        parameter = next(self._model.parameters())
-        observations = (
-            torch.from_numpy(state.observation)
-            .unsqueeze(0)
-            .to(device=parameter.device, dtype=parameter.dtype)
+    @property
+    def evaluator(self) -> FrozenBatchEvaluator:
+        return self._evaluator
+
+    def _release_session(self) -> None:
+        self._session_active = False
+
+    def create_session(
+        self, root: RootInput, *, unit_id: str
+    ) -> CollectionSession[CollectedTree]:
+        if self._session_active:
+            raise RuntimeError("collector already has an active session")
+        checked_id = _require_unit_id(unit_id)
+        state = _extract_root_state(root)
+        self._session_active = True
+
+        def transaction():
+            names = (
+                "branch_position",
+                "action_sampling",
+                "sibling_rollout",
+                "evaluation",
+            )
+            saved = {name: getattr(self.streams, name).getstate() for name in names}
+            try:
+                return (yield from self._generate_tree(state, unit_id=checked_id))
+            except BaseException:
+                for name, snapshot in saved.items():
+                    getattr(self.streams, name).setstate(snapshot)
+                raise
+
+        return CollectionSession(
+            transaction(), self.evaluator, on_release=self._release_session
         )
-        mask = observations[0, 3].flatten().bool()
-        with torch.no_grad():
-            output = self._model(observations)
-        old_value = float(
-            output.value[0].detach().to(device="cpu", dtype=torch.float64)
-        )
-        if not math.isfinite(old_value) or not -1.0 <= old_value <= 1.0:
-            raise ValueError("model value must be finite and within [-1, 1]")
-        draws = sample_policy(output.policy_logits[0], mask, rng, count=count)
-        return old_value, draws
 
     def _next_continuation_seed(self, used_seeds: set[int]) -> int:
         while True:
@@ -210,6 +234,11 @@ class TreeCollector:
 
     def collect_tree(self, root: RootInput, *, unit_id: str) -> CollectedTree:
         """Build one complete self-play tree, advancing all branches to terminal states."""
+        return drain_session(self.create_session(root, unit_id=unit_id))
+
+    def _generate_tree(
+        self, root: GameState, *, unit_id: str
+    ) -> Generator[EvaluationRequest, EvaluationOutput, CollectedTree]:
         checked_unit_id = _require_unit_id(unit_id)
         root_state = _extract_root_state(root)
 
@@ -246,7 +275,7 @@ class TreeCollector:
             branch_path: BranchPath,
             stream_id: str,
             stream_rng: random.Random,
-        ) -> str:
+        ) -> Generator[EvaluationRequest, EvaluationOutput, str]:
             nonlocal inference_seconds, transition_seconds
             nonlocal evaluated_positions, inference_batches, environment_transitions
 
@@ -268,11 +297,15 @@ class TreeCollector:
             should_branch, next_path = branch_path.visit(state, placement_depth)
             sample_count = plan.width if should_branch else 1
 
-            infer_start = time.perf_counter()
-            old_value, draws = self._infer_and_sample(
-                state, stream_rng, count=sample_count
+            evaluation = yield EvaluationRequest(len(nodes), state)
+            old_value = evaluation.old_value
+            draws = sample_policy(
+                evaluation.policy_logits,
+                torch.from_numpy(state.observation[3]).flatten().bool(),
+                stream_rng,
+                count=sample_count,
             )
-            inference_seconds += time.perf_counter() - infer_start
+            inference_seconds += evaluation.inference_seconds
             evaluated_positions += 1
             inference_batches += 1
 
@@ -301,7 +334,7 @@ class TreeCollector:
                 transition_seconds += time.perf_counter() - step_start
                 environment_transitions += 1
 
-                child_id = visit(
+                child_id = yield from visit(
                     child_state,
                     edge_id,
                     placement_depth + 1,
@@ -363,7 +396,7 @@ class TreeCollector:
                 transition_seconds += time.perf_counter() - step_start
                 environment_transitions += 1
 
-                child_id = visit(
+                child_id = yield from visit(
                     child_state,
                     edge_id,
                     placement_depth + 1,
@@ -396,7 +429,7 @@ class TreeCollector:
             )
             return node_id
 
-        root_node_id = visit(
+        root_node_id = yield from visit(
             root_state,
             None,
             0,

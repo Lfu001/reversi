@@ -5,12 +5,14 @@ import re
 import resource
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Generator, Iterator, Sequence
 from dataclasses import dataclass
 
 import numpy as np
 import torch
 
+from .batch_inference import EvaluationOutput, EvaluationRequest, FrozenBatchEvaluator
+from .collection_session import CollectionSession, drain_session
 from .dataset_codec import UnitIdentity
 from .dataset_store import DatasetStore
 from .game import Game, GameState
@@ -28,7 +30,7 @@ from .records import (
 from .returns import ReturnTargets, aggregate_returns
 from .rng import RNGStreams, create_rng_streams, derive_seed
 from .roots import RootEntry, RootPosition
-from .sampler import FrozenPolicySampler
+from .sampler import FrozenPolicySampler, sample_policy
 
 _UNIT_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}")
 _DEFAULT_BRANCH_WIDTH = 4
@@ -211,7 +213,7 @@ class IndependentCollector:
 
     def __init__(
         self,
-        model: PolicyValueModel | FrozenPolicySampler,
+        model: PolicyValueModel | FrozenPolicySampler | FrozenBatchEvaluator,
         game: Game,
         *,
         experiment_id: str,
@@ -247,7 +249,11 @@ class IndependentCollector:
                 seed=derive_seed(self._run_seed, "sibling_rollout"),
             ),
         )
-        if type(model) is FrozenPolicySampler:
+        if type(model) is FrozenBatchEvaluator:
+            if model.model_generation != self._model_generation:
+                raise ValueError("model_generation does not match evaluator")
+            self._sampler = model
+        elif type(model) is FrozenPolicySampler:
             self._sampler = model
         elif type(model) is PolicyValueModel:
             self._sampler = FrozenPolicySampler(model)
@@ -261,6 +267,61 @@ class IndependentCollector:
             else create_rng_streams(self._run_seed)
         )
         self._game = game
+        self._session_active = False
+
+    @property
+    def evaluator(self):
+        return self._sampler
+
+    def _release_session(self) -> None:
+        self._session_active = False
+
+    def create_session(
+        self, root: GameState | RootPosition | RootEntry, *, unit_id: str
+    ) -> CollectionSession[IndependentUnit]:
+        if self._session_active:
+            raise RuntimeError("collector already has an active session")
+        checked_id = _require_unit_id(unit_id)
+        state = _extract_root_state(root)
+        self._session_active = True
+        return CollectionSession(
+            self._generate_game(state, unit_id=checked_id),
+            self.evaluator,
+            on_release=self._release_session,
+        )
+
+    def iter_sessions(
+        self,
+        root: GameState | RootPosition | RootEntry,
+        *,
+        paths_per_root: int = 1,
+        unit_ids: Sequence[str] | None = None,
+    ) -> Iterator[CollectionSession[IndependentUnit]]:
+        if type(paths_per_root) is not int or paths_per_root < 1:
+            raise ValueError("paths_per_root must be a positive integer")
+        if unit_ids is None:
+            unit_ids = tuple(f"path-{index}" for index in range(paths_per_root))
+        if not _is_nonstring_sequence(unit_ids) or len(unit_ids) != paths_per_root:
+            raise ValueError("unit_ids must match paths_per_root")
+        ids = tuple(_require_unit_id(uid) for uid in unit_ids)
+        if len(set(ids)) != len(ids):
+            raise ValueError("unit_ids must be distinct")
+        state = _extract_root_state(root)
+
+        def sessions():
+            for uid in ids:
+                if self._session_active:
+                    raise RuntimeError("previous session is still active")
+                self._session_active = True
+                yield CollectionSession(
+                    self._generate_game(
+                        state, unit_id=uid, path_weight=1 / paths_per_root
+                    ),
+                    self.evaluator,
+                    on_release=self._release_session,
+                )
+
+        return sessions()
 
     @property
     def draw_index(self) -> int:
@@ -274,6 +335,11 @@ class IndependentCollector:
         unit_id: str,
     ) -> IndependentUnit:
         """Play one independent game to termination and return its validated unit."""
+        return drain_session(self.create_session(root, unit_id=unit_id))
+
+    def _generate_game(
+        self, root: GameState, *, unit_id: str, path_weight: float = 1.0
+    ) -> Generator[EvaluationRequest, EvaluationOutput, IndependentUnit]:
         checked_unit_id = _require_unit_id(unit_id)
         root_state = _extract_root_state(root)
         saved_rng_state = self._streams.action_sampling.getstate()
@@ -298,15 +364,16 @@ class IndependentCollector:
                 edge_id = f"e{depth}"
                 child_id = f"n{depth + 1}"
 
-                infer_start = time.perf_counter()
-                evaluation = self._sampler.evaluate_and_sample(
-                    current, self._streams.action_sampling, count=1
-                )
-                inference_seconds += time.perf_counter() - infer_start
+                evaluation = yield EvaluationRequest(depth, current)
+                inference_seconds += evaluation.inference_seconds
                 evaluated_positions += 1
                 inference_batches += 1
 
-                sample = evaluation.samples[0]
+                sample = sample_policy(
+                    evaluation.policy_logits,
+                    torch.from_numpy(current.observation[3]).flatten().bool(),
+                    self._streams.action_sampling,
+                )[0]
                 draw_index = self._draw_index
                 self._draw_index += 1
 
@@ -396,8 +463,8 @@ class IndependentCollector:
             return IndependentUnit(
                 record=record,
                 targets=targets,
-                path_weight=1.0,
-                weighted_targets=targets,
+                path_weight=path_weight,
+                weighted_targets=scale_return_targets(targets, path_weight),
             )
         except BaseException:
             self._streams.action_sampling.setstate(saved_rng_state)
