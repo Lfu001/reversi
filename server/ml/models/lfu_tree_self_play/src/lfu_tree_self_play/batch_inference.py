@@ -51,15 +51,13 @@ class FrozenBatchEvaluator:
 def evaluate_model(
     model: PolicyValueModel, requests: Sequence[EvaluationRequest]
 ) -> tuple[EvaluationOutput, ...]:
-    """Evaluate an eval-mode snapshot without changing the caller's model mode.
+    """Evaluate in eval mode, then restore every module's original training mode.
 
-    Snapshot owners set eval() at construction. inference_mode() disables
-    autograd bookkeeping, but does not disable dropout or BatchNorm updates.
+    inference_mode() disables autograd bookkeeping; eval() independently
+    disables dropout and BatchNorm updates for the forward pass.
     """
     if not requests:
         return ()
-    if any(module.training for module in model.modules()):
-        raise ValueError("model and all submodules must be in eval mode")
     if any(request.state.is_terminal for request in requests):
         raise ValueError("terminal position has no legal move")
     start = time.perf_counter()
@@ -67,8 +65,15 @@ def evaluate_model(
     observations = torch.from_numpy(
         np.stack([request.state.observation for request in requests])
     ).to(device=parameter.device, dtype=parameter.dtype)
-    with torch.inference_mode():
-        output = model(observations)
+    training_modes = [(module, module.training) for module in model.modules()]
+    try:
+        model.eval()
+        with torch.inference_mode():
+            output = model(observations)
+    finally:
+        # Restore each flag directly to preserve intentionally mixed modes.
+        for module, training in training_modes:
+            module.training = training
     # MPS cannot convert to float64 on device. Transfer before converting.
     logits = output.policy_logits.detach().cpu().to(torch.float64)
     values = output.value.detach().cpu().to(torch.float64)

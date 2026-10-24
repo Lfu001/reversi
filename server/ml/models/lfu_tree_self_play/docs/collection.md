@@ -71,6 +71,8 @@ snapshot = store.commit(
 
 A の独立対局と B/C の木は、同じ凍結モデルと scheduler を共有できます。乱数を持つ collector ごとに lane を作り、lane 内の対局・木の順序を保って、異なる lane の次の局面をまとめます。同じ collector を複数 lane へ登録すると、乱数順が曖昧になるため拒否します。比較群には同じ batch 上限、同時進行単位数、メモリ制限を与えます。
 
+学習直後のモデルを渡す場合も、呼び出し側で `.eval()` する必要はありません。`FrozenBatchEvaluator` は評価モードのコピーを作り、元の学習モデルを保持します。共通推論関数 `evaluate_model()` を直接使う場合も、推論中だけ評価モードに切り替え、例外発生時を含めて各層の元のモードを復元します。推論によって BatchNorm の統計や学習済みの重み・勾配は更新しません。
+
 ```python
 import json
 from dataclasses import asdict

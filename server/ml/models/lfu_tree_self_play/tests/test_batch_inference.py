@@ -1,6 +1,7 @@
 """Batch inference keeps model ownership and sampling semantics intact."""
 
 import random
+from copy import deepcopy
 
 import pytest
 import torch
@@ -49,20 +50,65 @@ def test_empty_batch_skips_forward():
     assert FrozenBatchEvaluator(model(), model_generation=0).evaluate([]) == ()
 
 
-@pytest.mark.parametrize("training_child_only", [False, True])
-def test_evaluate_model_rejects_training_mode_before_updating_batchnorm(
-    training_child_only,
-):
+@pytest.mark.parametrize("mode", ["training", "mixed", "eval"])
+def test_evaluate_model_uses_eval_without_changing_caller_state(mode):
     caller = model()
-    if training_child_only:
+    if mode != "training":
         caller.eval()
+    if mode == "mixed":
         caller.stem[1].train()
-    before = {name: value.clone() for name, value in caller.named_buffers()}
-    with pytest.raises(ValueError, match="eval"):
-        evaluate_model(caller, [EvaluationRequest(0, endgame_position(1))])
-    for name, value in caller.named_buffers():
+    modes = [module.training for module in caller.modules()]
+    before = {name: value.clone() for name, value in caller.state_dict().items()}
+    request = EvaluationRequest(0, endgame_position(1))
+    with torch.no_grad():
+        expected = deepcopy(caller).eval()(
+            torch.from_numpy(request.state.observation).unsqueeze(0)
+        )
+    actual = evaluate_model(caller, [request])[0]
+    torch.testing.assert_close(
+        actual.policy_logits, expected.policy_logits[0].double(), atol=0, rtol=0
+    )
+    assert actual.old_value == float(expected.value[0])
+    assert [module.training for module in caller.modules()] == modes
+    for name, value in caller.state_dict().items():
         assert torch.equal(value, before[name])
-    assert caller.stem[1].training
+    assert all(parameter.requires_grad for parameter in caller.parameters())
+
+
+def test_evaluate_model_restores_mixed_modes_when_forward_fails():
+    caller = model().train()
+    caller.stem[1].eval()
+    modes = [module.training for module in caller.modules()]
+
+    def fail_forward(module, args):
+        assert not any(child.training for child in module.modules())
+        assert torch.is_inference_mode_enabled()
+        raise RuntimeError("forward failed")
+
+    handle = caller.register_forward_pre_hook(fail_forward)
+    try:
+        with pytest.raises(RuntimeError, match="forward failed"):
+            evaluate_model(caller, [EvaluationRequest(0, endgame_position(1))])
+    finally:
+        handle.remove()
+    assert [module.training for module in caller.modules()] == modes
+
+
+def test_training_can_continue_after_evaluation():
+    caller = model().train()
+    optimizer = torch.optim.SGD(caller.parameters(), lr=0.1)
+    request = EvaluationRequest(0, endgame_position(1))
+    observations = torch.from_numpy(request.state.observation).unsqueeze(0)
+    for _ in range(2):
+        optimizer.zero_grad()
+        output = caller(observations)
+        (output.value.sum() + output.policy_logits.square().mean()).backward()
+        optimizer.step()
+        gradients = [parameter.grad.clone() for parameter in caller.parameters()]
+        evaluate_model(caller, [request])
+        assert all(module.training for module in caller.modules())
+        for parameter, gradient in zip(caller.parameters(), gradients, strict=True):
+            assert torch.equal(parameter.grad, gradient)
 
 
 def test_snapshot_does_not_mutate_caller_or_global_rng():
