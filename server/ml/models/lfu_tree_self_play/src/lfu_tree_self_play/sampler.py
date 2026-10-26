@@ -2,12 +2,14 @@
 
 import math
 import random
+from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 
 import torch
 from torch import Tensor
 
+from .batch_inference import EvaluationOutput, EvaluationRequest, evaluate_model
 from .game import GameState
 from .model import PolicyValueModel, masked_policy_logits
 
@@ -46,7 +48,7 @@ def sample_policy(
         or legal_mask.dtype != torch.bool
     ):
         raise ValueError("expected 64 floating-point logits and a 64-element bool mask")
-    logits = policy_logits.detach().to(device="cpu", dtype=torch.float64)
+    logits = policy_logits.detach().cpu().to(dtype=torch.float64)
     mask = legal_mask.detach().to(device="cpu")
     if not torch.isfinite(logits[mask]).all():
         raise ValueError("legal policy logits must be finite")
@@ -67,6 +69,12 @@ class FrozenPolicySampler:
     def __init__(self, model: PolicyValueModel) -> None:
         self._model = deepcopy(model).eval().requires_grad_(False)
 
+    def evaluate(
+        self, requests: Sequence[EvaluationRequest]
+    ) -> tuple[EvaluationOutput, ...]:
+        """Evaluate the same snapshot for a collector's resumable session."""
+        return evaluate_model(self._model, requests)
+
     def evaluate_and_sample(
         self, state: GameState, rng: random.Random, *, count: int = 1
     ) -> PolicyEvaluation:
@@ -84,9 +92,7 @@ class FrozenPolicySampler:
         mask = observations[0, 3].flatten().bool()
         with torch.no_grad():
             output = self._model(observations)
-        old_value = float(
-            output.value[0].detach().to(device="cpu", dtype=torch.float64).item()
-        )
+        old_value = float(output.value[0].detach().cpu().to(dtype=torch.float64).item())
         if not math.isfinite(old_value) or not -1.0 <= old_value <= 1.0:
             raise ValueError("old_value must be finite within [-1, 1]")
         samples = sample_policy(output.policy_logits[0], mask, rng, count=count)
