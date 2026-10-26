@@ -1,8 +1,8 @@
 # Tree-Structured Terminal Trajectories for Othello Self-Play: Experimental Plan
 
-[日本語版](experiment-plan.md) · [Execution document index](README.md)
+[日本語版](experiment-plan.md) · [Research index](README.md) · [Development plan](../development/README.md)
 
-Revised 2026-09-18. This document specifies a research question and experimental protocol, not demonstrated results. The existing `mcts-grpo` implementation does not implement this plan; implementation and validation remain future work.
+This document specifies a research question and experimental protocol, not demonstrated results. It includes unimplemented stages such as training and evaluation. See the [package README](../../README.md) for currently available collection, persistence, and verification instructions, and the [development plan](../development/README.md) for tasks and integration conditions. The existing `mcts-grpo` implementation does not implement this plan. The Japanese version is the editorial source; keep this translation synchronized with it.
 
 ## 1. Research question and scope
 
@@ -143,9 +143,7 @@ Do not average attainment times only over successful seeds. Report attainment ra
 
 ### Stage 0: Semantic correctness
 
-Check terminal outcomes, passes, color exchange, legal-only probabilities, zero relative advantage for equal sibling returns, and increased probability for winning branches in controlled cases. Verify equal loss/path weights with shared execution enabled and disabled, and identical per-position network depth and recurrent iteration counts during training and evaluation.
-
-Check schedule reproducibility and bounds, location versus action sampling, no resampling after early termination, H=0 and H=1, and move-range coverage.
+Before comparing performance or playing strength, validate game and mathematical semantics against [G0](../development/verification-gates.md#g0ゲームと数理の意味検証), and schedules and persisted data against [G1](../development/verification-gates.md#g1データ生成と永続化). Check schedule reproducibility, bounds, and move-range coverage in the [collection tasks](../development/milestones/02-collection.md), and increased probability for winning branches in controlled cases against [G3](../development/verification-gates.md#g3学習信号の小規模比較).
 
 In an enumerable game or endgame, compare Monte Carlo returns with exact expectations under the frozen policy, not minimax values. Freeze the opponent and differentiate only one player's policy; compare the conditional policy gradient and leave-one-out baseline with enumeration. Repeat for both colors.
 
@@ -153,7 +151,7 @@ In an enumerable game or endgame, compare Monte Carlo returns with exact expecta
 
 Start with a common small network (candidate: four residual blocks, width 64), AdamW, and batch size 32. Measure memory and time. Defer URM and Muon comparisons. Batch small trees and choose inference batch size/concurrency from measurements.
 
-Before long runs, demonstrate recovery after forced termination, exclusion of incomplete trees, and no duplicate consumption of completed data.
+Before long runs, complete persistence and recovery validation against [G1](../development/verification-gates.md#g1データ生成と永続化) and an end-to-end run against [G2](../development/verification-gates.md#g2最小end-to-end).
 
 ### Stage 2: Small learning-signal comparison
 
@@ -169,14 +167,9 @@ Add validated AlphaZero-style D. Subsequently investigate adaptive branching, hi
 
 ## 8. Persistence and recovery
 
-Separate collection, training, and evaluation into explicit phases on one machine. A distributed system is not initially required.
+Persistence preserves comparison conditions after interruption and makes generated data, models, and raw results traceable. Separate collection, training, and evaluation into explicit phases on one machine, excluding incomplete data and preventing duplicate consumption of completed data. A distributed system is not initially required.
 
-- Persist each completed tree with parent IDs, positions, players, actions, old log probabilities/values, model generation, schedule, path weights, terminal results, randomness metadata, and compute cost.
-- Publish complete trees using temporary files plus atomic rename or SQLite transactions. Never train on partially written trees.
-- Save model, optimizer, scheduler, RNG, model generation, consumed-data position, phase, accumulated compute, and configuration as a consistent checkpoint.
-- Tie model state and consumption to the same manifest. After interruption, reuse completed trees and discard only incomplete small trees.
-- Finalize a checkpoint before evaluation so evaluation failure cannot erase updates. Also save periodically during training by time or update count.
-- Retain old trees for reproducibility and analysis. Storage availability and eligibility for current-policy updates are separate concerns.
+Retain old trees for reproducibility and analysis. Storage availability and eligibility for current-policy updates are separate concerns. The [execution model](../development/execution-model.md) defines phase integration, commit boundaries, storage mechanisms, and failure handling. The [recovery guide](../guides/recovery.md) describes how to restore state using the current persistence implementation.
 
 ## 9. Settings to freeze and reporting
 

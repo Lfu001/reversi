@@ -4,7 +4,9 @@ dataset の公開と checkpoint の確定には atomic rename を使います。
 
 ## 復元する
 
-[収集と保存の例](collection.md) で保存した成果物を開き直します。保存時と同じ設定、dataset、optimizer・scheduler の種類と構成が必要です。この例では scheduler を使っていません。
+[収集と保存の例](collection.md) で保存した成果物を開き直します。[セットアップ](../../README.md#クイックスタート) 済みのパッケージのディレクトリで実行してください。保存時と同じ設定、dataset、optimizer・scheduler の種類と構成が必要です。この例では scheduler を使っていません。
+
+以下を `recover.py` として保存します。新しいプロセスで実行でき、収集例の Python 変数は使いません。
 
 ```python
 from pathlib import Path
@@ -35,11 +37,22 @@ runtime = store.restore(
     scheduler_factory=lambda optimizer: None,
 )
 loaded = dataset.load("tree-0")
+print(f"Checkpoint: {runtime.manifest.commit_id}")
+print(f"Stage: {runtime.manifest.progress.stage}")
+print(f"Loaded unit: {loaded.identity.unit_id}")
 ```
+
+```sh
+uv run --locked python recover.py
+```
+
+収集例の直後なら `Checkpoint: collected-0`、`Stage: collection`、`Loaded unit: tree-0` が表示されます。収集例は学習を行わないため、checkpoint の固定入力はまだ未消費です。復元された `runtime.manifest.inputs` と `runtime.manifest.progress` で、入力と確定済みの消費位置を確認できます。
 
 `runtime` のモデル、optimizer、乱数、進捗を使って再開します。乱数を seed から作り直したり、モデルを初期化し直したりすると保存時点の続きになりません。
 
 ## 再開する範囲
+
+以下は保存基盤で扱う確定境界です。学習・評価を含む処理ループ全体の再開は [開発計画の実行モデル](../development/execution-model.md) に定める計画であり、この復元例だけでは検証できません。
 
 | 停止した処理 | 再開時の扱い |
 | --- | --- |

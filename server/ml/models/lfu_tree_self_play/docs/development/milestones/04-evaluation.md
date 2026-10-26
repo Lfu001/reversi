@@ -1,6 +1,6 @@
 # M4：評価と統計
 
-[← M3](03-learning.md) · [一覧](../README.md) · [実験計画](../experiment-plan.md) · [次：M5](05-pilot.md)
+[← M3](03-learning.md) · [一覧](../README.md) · [実験計画](../../research/experiment-plan.md) · [次：M5](05-pilot.md)
 
 モデル選択に使う評価と、最終的な主張に使う評価を分離し、未到達seedを含めて集計します。
 
