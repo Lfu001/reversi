@@ -2,7 +2,7 @@
 
 オセロの自己対戦データを収集・検証し、学習用のリターンを計算して、データとモデル状態を保存する Python パッケージです。独立対局と、途中で複数の継続試行に分岐する木を Python から生成できます。
 
-CLI は設定検証と方策勾配の数値検証を提供します。収集から学習・対戦評価までを実行するコマンドはありません。
+CLI は設定検証、方策勾配の数値検証、共有経路の同一性・生成コストの比較を提供します。収集から学習・対戦評価までを実行するコマンドはありません。
 
 ## クイックスタート
 
@@ -21,6 +21,7 @@ uv run --locked lfu-tree-self-play check-config configs/example.toml
 | --- | --- |
 | 小さな自己対戦木を収集し、データと checkpoint を保存する | [自己対戦データの収集と保存](docs/guides/collection.md) |
 | 複数の対局・木をまとめて推論し、処理量を計測する | [batch 推論による収集](docs/guides/batch-collection.md) |
+| 同じ木の共有方式と再計算方式で生成コストを比較する | [共有経路の同一性と生成コスト](docs/guides/shared-paths.md) |
 | 保存済みのデータとモデル状態を復元する | [停止後の復旧と再試行](docs/guides/recovery.md) |
 | 期待リターンと方策勾配の正しさを確認する | [数値検証の実行](docs/guides/verification.md) |
 | 研究の仮説、数理、比較条件を理解する | [研究計画](docs/research/README.md) |
