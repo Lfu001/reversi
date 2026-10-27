@@ -1,4 +1,4 @@
-"""Benchmark acceptance tests derived from the public H1 contract."""
+"""Check shared-path identity, process isolation, and generation cost reporting."""
 
 import json
 import os

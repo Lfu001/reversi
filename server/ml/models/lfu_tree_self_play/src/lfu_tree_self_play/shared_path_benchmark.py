@@ -1,4 +1,4 @@
-"""Isolated H1 comparison of shared paths and root-to-leaf replay."""
+"""Compare generation costs of shared paths and repeated root-to-leaf replay."""
 
 import argparse
 import gc
@@ -70,13 +70,17 @@ class BenchmarkConfig:
         if type(self.levels) is not int or not 0 <= self.levels <= 2:
             raise ValueError("levels must be an integer from zero to two")
         if self.strategy != "uniform":
-            raise ValueError("the H1 benchmark requires uniform branch positions")
+            raise ValueError(
+                "the shared-path benchmark requires uniform branch positions"
+            )
         if self.max_active_units > 32 or self.max_batch_size > 32:
             raise ValueError(
-                "the H1 benchmark is limited to 32 active units and batch size 32"
+                "the shared-path benchmark is limited to 32 active units and batch size 32"
             )
         if max(self.rss_limit_bytes, self.device_limit_bytes) > 2 * 1024**3:
-            raise ValueError("the H1 benchmark memory limits cannot exceed 2 GiB")
+            raise ValueError(
+                "the shared-path benchmark memory limits cannot exceed 2 GiB"
+            )
 
 
 def _write_json(path: Path, data: dict) -> None:
@@ -298,7 +302,7 @@ def verify_shared_paths(*, device: str, config: BenchmarkConfig | None = None) -
     config = config or BenchmarkConfig()
     report = {
         "schema_version": 1,
-        "benchmark": "H1 shared-path replay",
+        "benchmark": "Shared-path replay",
         "device": device,
         "config": asdict(config),
         "passed": False,

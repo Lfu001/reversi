@@ -1,4 +1,4 @@
-"""One disposable process measuring exactly one H1 mode and repetition."""
+"""Measure one shared-path or repeated-path run in a disposable process."""
 
 import gc
 import json

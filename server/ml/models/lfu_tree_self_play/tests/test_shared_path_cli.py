@@ -1,4 +1,4 @@
-"""The H1 command reports identity failures without losing its evidence."""
+"""The shared-path command preserves reports when identity checks fail."""
 
 import json
 

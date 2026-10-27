@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     verification_command.add_argument("--seed", type=int, default=314159)
     shared_paths = commands.add_parser(
         "verify-shared-paths",
-        help="Verify shared/recomputed tree identity and H1 costs",
+        help="Verify shared/recomputed tree identity and compare generation costs",
     )
     shared_paths.add_argument("--output", required=True, type=Path)
     shared_paths.add_argument("--device", required=True, choices=("cpu", "mps"))
