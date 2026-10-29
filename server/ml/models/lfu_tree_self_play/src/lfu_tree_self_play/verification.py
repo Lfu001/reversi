@@ -8,6 +8,7 @@ import numpy as np
 import torch
 from numpy.typing import NDArray
 
+from lfu_tree_self_play.advantages import leave_one_out_advantages
 from lfu_tree_self_play.game import Game, GameState
 from lfu_tree_self_play.model import masked_policy_logits
 from lfu_tree_self_play.oracle import expected_black_return
@@ -153,16 +154,6 @@ def monte_carlo_value_and_gradient(
         gradient=gradients.mean(axis=0),
         gradient_se=gradients.std(axis=0, ddof=1) / math.sqrt(pairs),
     )
-
-
-def leave_one_out_advantages(returns: tuple[float, ...]) -> tuple[float, ...]:
-    """Subtract each sibling's mean return without changing the reward scale."""
-    if len(returns) < 2:
-        raise ValueError("leave-one-out requires at least two siblings")
-    if not all(math.isfinite(value) for value in returns):
-        raise ValueError("sibling returns must be finite")
-    total = math.fsum(returns)
-    return tuple(value - (total - value) / (len(returns) - 1) for value in returns)
 
 
 def _legal_probabilities(
