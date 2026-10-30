@@ -20,7 +20,8 @@ class LossBatch(NamedTuple):
 
     Observations and value vectors follow node_ids; edge vectors follow edge_ids.
     Weights may already include an independent trajectory's 1/K root weight.
-    The nested tuple can be passed through an Accelerate-prepared DataLoader.
+    Each item is a complete, variable-size unit. Pass batch_size=None to
+    DataLoader before Accelerate preparation to disable automatic batching.
     The training runtime owns device placement and execution precision.
     ppo_value_loss detaches targets; only current model outputs receive gradients.
     """
