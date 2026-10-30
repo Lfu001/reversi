@@ -1,4 +1,4 @@
-"""Hand-calculated B/C targets on complete records, including forced passes."""
+"""Hand-calculated policy advantages on complete records, including forced passes."""
 
 from dataclasses import FrozenInstanceError
 
