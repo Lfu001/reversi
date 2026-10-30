@@ -1,8 +1,7 @@
 """Sampled-action PPO and node-value MSE with conserved path weights."""
 
 import math
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
 from typing import NamedTuple
 
 import numpy as np
@@ -16,18 +15,18 @@ from .returns import ReturnTargets
 PLACEMENT_NORMALIZER = 60
 
 
-@dataclass(frozen=True)
-class LossBatch:
+class LossBatch(NamedTuple):
     """One unit: unique nonterminal nodes, and every saved edge sample in order.
 
     Observations and value vectors follow node_ids; edge vectors follow edge_ids.
     Weights may already include an independent trajectory's 1/K root weight.
-    All tensors are on CPU when built; ppo_value_loss moves targets to the output
-    device and detaches them. Only the current model output receives gradients.
+    The nested tuple can be passed through an Accelerate-prepared DataLoader.
+    The training runtime owns device placement and execution precision.
+    ppo_value_loss detaches targets; only current model outputs receive gradients.
     """
 
-    node_ids: tuple[str, ...]
-    edge_ids: tuple[str, ...]
+    node_ids: Sequence[str]
+    edge_ids: Sequence[str]
     observations: Tensor
     edge_parent_indices: Tensor
     actions: Tensor
@@ -103,19 +102,19 @@ def build_loss_batch(
         ),
         actions=torch.tensor([edge.action for edge in record.edges], dtype=torch.long),
         old_log_probabilities=torch.tensor(
-            [edge.old_log_probability for edge in record.edges], dtype=torch.float64
+            [edge.old_log_probability for edge in record.edges], dtype=torch.float32
         ),
         advantages=torch.tensor(
-            [advantages[key] for key in edge_ids], dtype=torch.float64
+            [advantages[key] for key in edge_ids], dtype=torch.float32
         ),
         edge_weights=torch.tensor(
-            [targets.edge_weights[key] for key in edge_ids], dtype=torch.float64
+            [targets.edge_weights[key] for key in edge_ids], dtype=torch.float32
         ),
         value_targets=torch.tensor(
-            [targets.node_player_targets[key] for key in node_ids], dtype=torch.float64
+            [targets.node_player_targets[key] for key in node_ids], dtype=torch.float32
         ),
         node_weights=torch.tensor(
-            [targets.node_weights[key] for key in node_ids], dtype=torch.float64
+            [targets.node_weights[key] for key in node_ids], dtype=torch.float32
         ),
     )
 
@@ -134,8 +133,8 @@ def ppo_value_loss(
     No averaging by edge count, leaf count, or realized trajectory length occurs.
     The output rows must follow batch.node_ids. Evaluate the current model with
     the same inference mode as collection to reproduce ratios at theta = old.
-    Log-softmax uses temperature one, matching sample_policy. Computation uses
-    float64, or float32 on MPS where float64 is unavailable.
+    Inputs must already be placed together by the training runtime. The loss
+    uses the supplied tensor dtypes and temperature one, matching sample_policy.
     A terminal-only unit contributes differentiable zeros for empty outputs.
     Nonfinite legal logits, predicted values, targets, or weights raise ValueError,
     as do invalid shapes or actions. Illegal-action logits are masked and ignored.
@@ -171,27 +170,20 @@ def _prepare_loss_inputs(output: PolicyValueOutput, batch: LossBatch) -> _LossIn
         or values.shape != (node_count,)
         or not logits.is_floating_point()
         or not values.is_floating_point()
-        or logits.device != values.device
         or batch.observations.shape != (node_count, 4, 8, 8)
     ):
         raise ValueError(
             "expected matching floating-point node outputs and observations"
         )
-    device = logits.device
-    loss_dtype = torch.float32 if device.type == "mps" else torch.float64
-
-    def prepare_target(tensor: Tensor) -> Tensor:
-        return tensor.detach().to(device=device, dtype=loss_dtype)
-
     inputs = _LossInputs(
-        legal_mask=batch.observations[:, 3].flatten(1).to(device=device).bool(),
-        parents=batch.edge_parent_indices.detach().to(device),
-        actions=batch.actions.detach().to(device),
-        old_log_probabilities=prepare_target(batch.old_log_probabilities),
-        advantages=prepare_target(batch.advantages),
-        edge_weights=prepare_target(batch.edge_weights),
-        value_targets=prepare_target(batch.value_targets),
-        node_weights=prepare_target(batch.node_weights),
+        legal_mask=batch.observations[:, 3].flatten(1).bool(),
+        parents=batch.edge_parent_indices.detach(),
+        actions=batch.actions.detach(),
+        old_log_probabilities=batch.old_log_probabilities.detach(),
+        advantages=batch.advantages.detach(),
+        edge_weights=batch.edge_weights.detach(),
+        value_targets=batch.value_targets.detach(),
+        node_weights=batch.node_weights.detach(),
     )
     _validate_edge_samples(inputs, node_count, edge_count)
     _validate_frozen_targets(inputs, node_count, edge_count)
@@ -244,10 +236,7 @@ def _validate_frozen_targets(
 
 
 def _sampled_policy_ratios(logits: Tensor, inputs: _LossInputs) -> Tensor:
-    loss_dtype = inputs.old_log_probabilities.dtype
-    logs = masked_policy_logits(
-        logits.to(dtype=loss_dtype), inputs.legal_mask
-    ).log_softmax(-1)
+    logs = masked_policy_logits(logits, inputs.legal_mask).log_softmax(-1)
     ratios = (logs[inputs.parents, inputs.actions] - inputs.old_log_probabilities).exp()
     if not torch.isfinite(ratios).all():
         raise ValueError("policy ratios must be finite")
@@ -267,9 +256,7 @@ def _weighted_objectives(
         ratios.clamp(1 - clip_epsilon, 1 + clip_epsilon) * inputs.advantages,
     )
     denominator = PLACEMENT_NORMALIZER * num_roots
-    value_errors = (
-        values.to(dtype=inputs.value_targets.dtype) - inputs.value_targets
-    ).square()
+    value_errors = (values - inputs.value_targets).square()
     return PPOValueLoss(
         policy=-(inputs.edge_weights * surrogate).sum() / denominator,
         value=(inputs.node_weights * value_errors).sum() / denominator,

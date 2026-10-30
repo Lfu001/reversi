@@ -5,8 +5,11 @@ from dataclasses import replace
 
 import pytest
 import torch
+from accelerate import Accelerator
+from accelerate.utils import send_to_device
 from tests.test_records import build_record, position
 from tests.test_returns import uneven_record
+from torch.utils.data import DataLoader
 
 from lfu_tree_self_play.advantages import compute_advantages
 from lfu_tree_self_play.collector import scale_return_targets
@@ -22,10 +25,10 @@ from lfu_tree_self_play.tree_collector import collect_tree
 from lfu_tree_self_play.verification import endgame_position
 
 
-def uniform_output(batch):
+def uniform_output(batch, dtype=torch.float64):
     return PolicyValueOutput(
-        torch.zeros((len(batch.node_ids), 64), dtype=torch.float64, requires_grad=True),
-        torch.zeros(len(batch.node_ids), dtype=torch.float64, requires_grad=True),
+        torch.zeros((len(batch.node_ids), 64), dtype=dtype, requires_grad=True),
+        torch.zeros(len(batch.node_ids), dtype=dtype, requires_grad=True),
     )
 
 
@@ -54,7 +57,9 @@ def test_old_policy_ratios_match_collected_logs_and_model_gets_gradients():
     before = {key: tensor.clone() for key, tensor in model.state_dict().items()}
     result = ppo_value_loss(model(batch.observations), batch, num_roots=1)
 
-    torch.testing.assert_close(result.ratios, torch.ones_like(result.ratios))
+    torch.testing.assert_close(
+        result.ratios, torch.ones_like(result.ratios), rtol=1e-6, atol=1e-7
+    )
     assert result.ratios.shape == (len(tree.record.edges),)
     (result.policy + result.value).backward()
     assert model.policy_head.weight.grad.abs().sum() > 0
@@ -116,7 +121,7 @@ def test_old_probabilities_advantages_targets_and_weights_receive_no_gradients()
             "node_weights",
         )
     }
-    batch = replace(batch, **teachers)
+    batch = batch._replace(**teachers)
     result = ppo_value_loss(output, batch, num_roots=1)
     (result.policy + result.value).backward()
     assert all(tensor.grad is None for tensor in teachers.values())
@@ -129,8 +134,7 @@ def test_uneven_tree_uses_node_mean_targets_and_actual_mover_perspective():
     batch = batch_for(record, game)
     # This enumerated topology reuses a Reversi template's historical logs.
     # Set its old policy to the uniform policy over the enumerated legal moves.
-    batch = replace(
-        batch,
+    batch = batch._replace(
         old_log_probabilities=-batch.observations[:, 3]
         .flatten(1)
         .sum(-1)
@@ -140,7 +144,7 @@ def test_uneven_tree_uses_node_mean_targets_and_actual_mover_perspective():
     result = ppo_value_loss(uniform_output(batch), batch, num_roots=1)
     assert batch.node_ids == ("root", "right", "sample1", "sample2")
     torch.testing.assert_close(
-        batch.value_targets, torch.tensor([-0.25, 0.5, -1.0, 0.0]).double()
+        batch.value_targets, torch.tensor([-0.25, 0.5, -1.0, 0.0])
     )
     # The early terminal leaf and two deeper leaves do not get equal mass.
     assert batch.edge_weights.tolist() == [0.5, 0.5, 0.25, 0.25, 0.25, 0.25]
@@ -291,7 +295,7 @@ def test_targets_and_weights_cannot_broadcast_or_propagate_nan(field, bad):
     batch, output = clipping_batch()
     value = torch.zeros((4, 1)) if bad == "shape" else torch.full((4,), torch.nan)
     with pytest.raises(ValueError, match="finite, matching vectors"):
-        ppo_value_loss(output, replace(batch, **{field: value}), num_roots=1)
+        ppo_value_loss(output, batch._replace(**{field: value}), num_roots=1)
 
 
 @pytest.mark.parametrize(
@@ -310,13 +314,13 @@ def test_targets_and_weights_cannot_broadcast_or_propagate_nan(field, bad):
 def test_invalid_predictions_or_samples_fail_clearly(case):
     batch, output = clipping_batch()
     if case == "illegal":
-        batch = replace(batch, actions=torch.full((4,), 63))
+        batch = batch._replace(actions=torch.full((4,), 63))
     elif case == "parent":
-        batch = replace(batch, edge_parent_indices=torch.full((4,), 4))
+        batch = batch._replace(edge_parent_indices=torch.full((4,), 4))
     elif case == "actions":
-        batch = replace(batch, actions=batch.actions.float())
+        batch = batch._replace(actions=batch.actions.float())
     elif case == "terminal":
-        batch = replace(batch, observations=torch.zeros_like(batch.observations))
+        batch = batch._replace(observations=torch.zeros_like(batch.observations))
     elif case == "nan_logits":
         output = output._replace(policy_logits=torch.full((4, 64), torch.nan))
     elif case == "nan_value":
@@ -324,7 +328,7 @@ def test_invalid_predictions_or_samples_fail_clearly(case):
     elif case == "value_shape":
         output = output._replace(value=torch.zeros((4, 1)))
     else:
-        batch = replace(batch, old_log_probabilities=torch.full((4,), -10000.0))
+        batch = batch._replace(old_log_probabilities=torch.full((4,), -10000.0))
     with pytest.raises(ValueError):
         ppo_value_loss(output, batch, num_roots=1)
 
@@ -340,16 +344,62 @@ def test_illegal_logits_are_masked_even_if_nan():
     assert torch.count_nonzero(logits.grad[:, 2:]) == 0
 
 
-@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="requires MPS")
-def test_mps_keeps_loss_and_gradients_on_device_without_float64():
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_loss_uses_supplied_execution_precision(dtype):
     batch, cpu_output = clipping_batch()
-    output = PolicyValueOutput(
-        cpu_output.policy_logits.detach()
-        .to(device="mps", dtype=torch.float32)
-        .requires_grad_(),
-        cpu_output.value.detach().to(device="mps").requires_grad_(),
+    batch = batch._replace(
+        **{
+            name: getattr(batch, name).to(dtype=dtype)
+            for name in (
+                "old_log_probabilities",
+                "advantages",
+                "edge_weights",
+                "value_targets",
+                "node_weights",
+            )
+        }
     )
-    expected = ppo_value_loss(cpu_output, batch, num_roots=1)
+    output = PolicyValueOutput(
+        cpu_output.policy_logits.detach().to(dtype=dtype).requires_grad_(),
+        cpu_output.value.detach().to(dtype=dtype).requires_grad_(),
+    )
+    result = ppo_value_loss(output, batch, num_roots=1)
+    assert all(tensor.dtype == dtype for tensor in result)
+    (result.policy + result.value).backward()
+    assert torch.isfinite(output.policy_logits.grad).all()
+    assert torch.isfinite(output.value.grad).all()
+
+
+def test_accelerator_prepares_loss_batch_and_model_for_backward():
+    batch = batch_for(build_record())
+    model = PolicyValueModel(PolicyValueConfig(width=8, num_blocks=1)).eval()
+    loader = DataLoader([batch], batch_size=None)
+    accelerator = Accelerator(cpu=True)
+    model, loader = accelerator.prepare(model, loader)
+    prepared = next(iter(loader))
+    assert isinstance(prepared, LossBatch)
+    assert tuple(prepared.node_ids) == tuple(batch.node_ids)
+    assert tuple(prepared.edge_ids) == tuple(batch.edge_ids)
+    for value in prepared:
+        if isinstance(value, torch.Tensor):
+            assert value.device == accelerator.device
+    result = ppo_value_loss(model(prepared.observations), prepared, num_roots=1)
+    accelerator.backward(result.policy + result.value)
+    unwrapped = accelerator.unwrap_model(model)
+    assert torch.isfinite(unwrapped.policy_head.weight.grad).all()
+    assert unwrapped.policy_head.weight.grad.abs().sum() > 0
+    assert unwrapped.value_head[2].weight.grad.abs().sum() > 0
+
+
+@pytest.mark.skipif(not torch.backends.mps.is_available(), reason="requires MPS")
+def test_accelerate_places_loss_inputs_on_mps():
+    cpu_batch = batch_for(build_record())
+    cpu_output = uniform_output(cpu_batch, dtype=torch.float32)
+    batch, output = send_to_device((cpu_batch, cpu_output), "mps")
+    output.policy_logits.retain_grad()
+    output.value.retain_grad()
+    assert isinstance(batch, LossBatch)
+    expected = ppo_value_loss(cpu_output, cpu_batch, num_roots=1)
     result = ppo_value_loss(output, batch, num_roots=1)
     assert result.policy.device.type == result.value.device.type == "mps"
     assert result.policy.item() == pytest.approx(expected.policy.item(), abs=1e-7)
