@@ -126,7 +126,8 @@ def ppo_value_loss(
     Log-softmax uses temperature one, matching sample_policy. Computation uses
     float64, or float32 on MPS where float64 is unavailable.
     A terminal-only unit contributes differentiable zeros for empty outputs.
-    Invalid shapes, actions, or nonfinite inputs raise ValueError.
+    Nonfinite legal logits, predicted values, targets, or weights raise ValueError,
+    as do invalid shapes or actions. Illegal-action logits are masked and ignored.
     """
     if type(num_roots) is not int or num_roots < 1:
         raise ValueError("num_roots must be a positive integer")
