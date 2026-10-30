@@ -46,6 +46,17 @@ class PPOValueLoss(NamedTuple):
     ratios: Tensor
 
 
+class _LossInputs(NamedTuple):
+    legal_mask: Tensor
+    parents: Tensor
+    actions: Tensor
+    old_log_probabilities: Tensor
+    advantages: Tensor
+    edge_weights: Tensor
+    value_targets: Tensor
+    node_weights: Tensor
+
+
 def build_loss_batch(
     record: CollectionRecord,
     targets: ReturnTargets,
@@ -129,6 +140,19 @@ def ppo_value_loss(
     Nonfinite legal logits, predicted values, targets, or weights raise ValueError,
     as do invalid shapes or actions. Illegal-action logits are masked and ignored.
     """
+    _validate_loss_options(num_roots, clip_epsilon)
+    inputs = _prepare_loss_inputs(output, batch)
+    ratios = _sampled_policy_ratios(output.policy_logits, inputs)
+    return _weighted_objectives(
+        ratios,
+        output.value,
+        inputs,
+        num_roots=num_roots,
+        clip_epsilon=clip_epsilon,
+    )
+
+
+def _validate_loss_options(num_roots: int, clip_epsilon: float) -> None:
     if type(num_roots) is not int or num_roots < 1:
         raise ValueError("num_roots must be a positive integer")
     if (
@@ -137,79 +161,117 @@ def ppo_value_loss(
         or not 0 < clip_epsilon < 1
     ):
         raise ValueError("clip_epsilon must be finite and in (0, 1)")
+
+
+def _prepare_loss_inputs(output: PolicyValueOutput, batch: LossBatch) -> _LossInputs:
     logits, values = output
-    n, e = len(batch.node_ids), len(batch.edge_ids)
+    node_count, edge_count = len(batch.node_ids), len(batch.edge_ids)
     if (
-        logits.shape != (n, 64)
-        or values.shape != (n,)
+        logits.shape != (node_count, 64)
+        or values.shape != (node_count,)
         or not logits.is_floating_point()
         or not values.is_floating_point()
         or logits.device != values.device
-        or batch.observations.shape != (n, 4, 8, 8)
+        or batch.observations.shape != (node_count, 4, 8, 8)
     ):
         raise ValueError(
             "expected matching floating-point node outputs and observations"
         )
     device = logits.device
     loss_dtype = torch.float32 if device.type == "mps" else torch.float64
-    parents = batch.edge_parent_indices.detach().to(device)
-    actions = batch.actions.detach().to(device)
+
+    def prepare_target(tensor: Tensor) -> Tensor:
+        return tensor.detach().to(device=device, dtype=loss_dtype)
+
+    inputs = _LossInputs(
+        legal_mask=batch.observations[:, 3].flatten(1).to(device=device).bool(),
+        parents=batch.edge_parent_indices.detach().to(device),
+        actions=batch.actions.detach().to(device),
+        old_log_probabilities=prepare_target(batch.old_log_probabilities),
+        advantages=prepare_target(batch.advantages),
+        edge_weights=prepare_target(batch.edge_weights),
+        value_targets=prepare_target(batch.value_targets),
+        node_weights=prepare_target(batch.node_weights),
+    )
+    _validate_edge_samples(inputs, node_count, edge_count)
+    _validate_frozen_targets(inputs, node_count, edge_count)
     if (
-        parents.shape != (e,)
-        or actions.shape != (e,)
+        not torch.isfinite(logits[inputs.legal_mask]).all()
+        or not torch.isfinite(values).all()
+    ):
+        raise ValueError("legal logits and predicted values must be finite")
+    return inputs
+
+
+def _validate_edge_samples(
+    inputs: _LossInputs, node_count: int, edge_count: int
+) -> None:
+    parents, actions = inputs.parents, inputs.actions
+    if (
+        parents.shape != (edge_count,)
+        or actions.shape != (edge_count,)
         or parents.dtype != torch.long
         or actions.dtype != torch.long
-        or not ((parents >= 0) & (parents < n)).all()
+        or not ((parents >= 0) & (parents < node_count)).all()
         or not ((actions >= 0) & (actions < 64)).all()
     ):
         raise ValueError("edge parents and actions must be valid int64 vectors")
-    old_logs, advantages, edge_weights, value_targets, node_weights = (
-        tensor.detach().to(device=device, dtype=loss_dtype)
-        for tensor in (
-            batch.old_log_probabilities,
-            batch.advantages,
-            batch.edge_weights,
-            batch.value_targets,
-            batch.node_weights,
-        )
-    )
+    if not inputs.legal_mask[parents, actions].all():
+        raise ValueError("saved actions must be legal at their parent nodes")
+
+
+def _validate_frozen_targets(
+    inputs: _LossInputs, node_count: int, edge_count: int
+) -> None:
     for tensor, size in (
-        (old_logs, e),
-        (advantages, e),
-        (edge_weights, e),
-        (value_targets, n),
-        (node_weights, n),
+        (inputs.old_log_probabilities, edge_count),
+        (inputs.advantages, edge_count),
+        (inputs.edge_weights, edge_count),
+        (inputs.value_targets, node_count),
+        (inputs.node_weights, node_count),
     ):
         if tensor.shape != (size,) or not torch.isfinite(tensor).all():
             raise ValueError("targets and weights must be finite, matching vectors")
     if (
-        (old_logs > 0).any()
-        or (edge_weights <= 0).any()
-        or (node_weights <= 0).any()
-        or (value_targets.abs() > 1).any()
+        (inputs.old_log_probabilities > 0).any()
+        or (inputs.edge_weights <= 0).any()
+        or (inputs.node_weights <= 0).any()
+        or (inputs.value_targets.abs() > 1).any()
     ):
         raise ValueError(
             "invalid old log probabilities, path weights, or value targets"
         )
-    mask = batch.observations[:, 3].flatten(1).to(device=device).bool()
-    if not mask[parents, actions].all():
-        raise ValueError("saved actions must be legal at their parent nodes")
-    if not torch.isfinite(logits[mask]).all() or not torch.isfinite(values).all():
-        raise ValueError("legal logits and predicted values must be finite")
-    logs = masked_policy_logits(logits.to(dtype=loss_dtype), mask).log_softmax(-1)
-    ratios = (logs[parents, actions] - old_logs).exp()
+
+
+def _sampled_policy_ratios(logits: Tensor, inputs: _LossInputs) -> Tensor:
+    loss_dtype = inputs.old_log_probabilities.dtype
+    logs = masked_policy_logits(
+        logits.to(dtype=loss_dtype), inputs.legal_mask
+    ).log_softmax(-1)
+    ratios = (logs[inputs.parents, inputs.actions] - inputs.old_log_probabilities).exp()
     if not torch.isfinite(ratios).all():
         raise ValueError("policy ratios must be finite")
+    return ratios
+
+
+def _weighted_objectives(
+    ratios: Tensor,
+    values: Tensor,
+    inputs: _LossInputs,
+    *,
+    num_roots: int,
+    clip_epsilon: float,
+) -> PPOValueLoss:
     surrogate = torch.minimum(
-        ratios * advantages,
-        ratios.clamp(1 - clip_epsilon, 1 + clip_epsilon) * advantages,
+        ratios * inputs.advantages,
+        ratios.clamp(1 - clip_epsilon, 1 + clip_epsilon) * inputs.advantages,
     )
     denominator = PLACEMENT_NORMALIZER * num_roots
+    value_errors = (
+        values.to(dtype=inputs.value_targets.dtype) - inputs.value_targets
+    ).square()
     return PPOValueLoss(
-        policy=-(edge_weights * surrogate).sum() / denominator,
-        value=(
-            node_weights * (values.to(dtype=loss_dtype) - value_targets).square()
-        ).sum()
-        / denominator,
+        policy=-(inputs.edge_weights * surrogate).sum() / denominator,
+        value=(inputs.node_weights * value_errors).sum() / denominator,
         ratios=ratios,
     )
