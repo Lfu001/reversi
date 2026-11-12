@@ -14,7 +14,7 @@ def test_collection_batch_and_recovery_instructions(tmp_path, monkeypatch):
     copytree(package / "configs", tmp_path / "configs")
     monkeypatch.chdir(tmp_path)
     namespaces = {}
-    for name in ("collection.md", "batch-collection.md", "recovery.md"):
+    for name in ("collection.md", "batch-collection.md", "recovery.md", "training.md"):
         document = package / "docs" / "guides" / name
         blocks = re.findall(
             r"^```python\n(.*?)^```$",
@@ -63,3 +63,8 @@ def test_collection_batch_and_recovery_instructions(tmp_path, monkeypatch):
     for unit_id in ("batched-game-0", "batched-game-1", "batched-tree"):
         unit = batched["batch_store"].load(unit_id)
         assert unit.identity.unit_id == unit_id
+
+    trained = namespaces["training.md"]["result"]
+    assert trained.manifest.progress.model_generation == 1
+    assert trained.manifest.progress.consumed_unit_ids == ("tree-0",)
+    assert runpy.run_path(str(tmp_path / "training.py"))["result"] == trained

@@ -1,6 +1,6 @@
 # lfu_tree_self_play
 
-オセロの自己対戦データを収集・検証し、データとモデル状態を保存する Python パッケージです。終局結果を収集時の評価値や同じ局面の他の試行結果と比較し、方策の学習に使う信号（advantage）を計算できます。収集データを使って、方策と評価値の学習損失も計算できます。独立対局と、途中で複数の継続試行に分岐する木を Python から生成できます。
+オセロの自己対戦データを収集・検証し、データとモデル状態を保存する Python パッケージです。終局結果を収集時の評価値や同じ局面の他の試行結果と比較し、方策の学習に使う信号（advantage）を計算できます。保存した収集世代を1 epoch学習し、更新指標と消費記録を checkpoint に保存できます。独立対局と、途中で複数の継続試行に分岐する木を Python から生成できます。
 
 CLI は設定検証、方策勾配の数値検証、共有経路の同一性・生成コストの比較を提供します。収集から学習・対戦評価までを実行するコマンドはありません。
 
@@ -23,6 +23,7 @@ uv run --locked lfu-tree-self-play check-config configs/example.toml
 | 複数の対局・木をまとめて推論し、処理量を計測する | [batch 推論による収集](docs/guides/batch-collection.md) |
 | 同じ木の共有方式と再計算方式で生成コストを比較する | [共有経路の同一性と生成コスト](docs/guides/shared-paths.md) |
 | 保存済みのデータとモデル状態を復元する | [停止後の復旧と再試行](docs/guides/recovery.md) |
+| 保存済みの収集世代を一度だけ学習する | [1 epoch学習と再開](docs/guides/training.md) |
 | 期待リターンと方策勾配の正しさを確認する | [数値検証の実行](docs/guides/verification.md) |
 | 研究の仮説、数理、比較条件を理解する | [研究計画](docs/research/README.md) |
 | 開発タスクと次工程へ進む条件を確認する | [開発計画](docs/development/README.md) |

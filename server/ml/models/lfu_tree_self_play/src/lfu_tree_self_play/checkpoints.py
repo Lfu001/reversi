@@ -415,13 +415,23 @@ class CheckpointStore:
                 if p.is_file() and p != path / "manifest.json"
             )
         )
-        if actual != manifest.artifacts or {
+        required = {
             "runtime.json",
             "runtime.safetensors",
             "model/config.json",
             "model/model.safetensors",
-        } != {a[0] for a in actual}:
+        }
+        names = {a[0] for a in actual}
+        if actual != manifest.artifacts or names not in (
+            required,
+            required | {"training.json"},
+        ):
             raise ValueError("checkpoint artifact checksum mismatch")
+        if "training.json" in names:
+            report = json.loads((path / "training.json").read_bytes())
+            if not isinstance(report, dict):
+                raise ValueError("invalid training report")
+            canonical_json(report)
         runtime = load_runtime(path)
         if (
             not isinstance(runtime, dict)
@@ -500,6 +510,7 @@ class CheckpointStore:
         progress,
         inputs,
         expected_parent,
+        training_report=None,
     ):
         _identifier(commit_id)
         with self._writer():
@@ -543,6 +554,10 @@ class CheckpointStore:
                 },
                 staging,
             )
+            if training_report is not None:
+                if not isinstance(training_report, dict):
+                    raise ValueError("training report must be an object")
+                self._write(staging / "training.json", canonical_json(training_report))
             artifacts = tuple(
                 sorted(
                     (

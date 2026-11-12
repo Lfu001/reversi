@@ -16,9 +16,11 @@
 
 ## 学習実行の責務
 
-現在の loss は、学習実行基盤が配置したテンソルを受け取り、その dtype で計算します。Accelerate で準備したモデルと DataLoader を使って逆伝播する接続テストを実装済みです。学習ループ自体は [T20（1 epoch trainer）](milestones/03-learning.md#t20-1-epoch-trainerと更新量メトリクス) の実装対象です。
+現在の loss は、学習実行基盤が配置したテンソルを受け取り、その dtype で計算します。[1 epoch trainer](../guides/training.md) は Accelerate で準備したモデルと DataLoader を使い、固定入力を一度だけ逆伝播して1回の更新にまとめます。学習条件を更新前に固定し、更新指標も消費記録と同時に確定します。
 
 T20 の学習実行では、デバイス配置、分散実行、混合精度、逆伝播の実行を Accelerate に委ねます。アプリケーション側は advantage、経路重み、損失関数と、収集世代を 1 epoch だけ消費する条件などの実験固有の更新規則を扱います。
+
+現在の checkpoint は単一プロセスの状態を保持するため、trainer は単一プロセスの FP32/bfloat16 に対応します。分散実行と FP16 は rank別の乱数・scaler の確定保存を接続するまで拒否します。
 
 ## 再開単位
 
